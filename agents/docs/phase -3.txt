@@ -1,0 +1,203 @@
+
+# Sentinel-IQ: Phase 3 Agentic Engine Control Plane & Orchestration Spec
+
+> **Target Audience:** Principal Agentic AI Architect / AI Platform Engineers / Codex Context  
+> **Directory Scope:** `agents/control/`, `agents/orchestration/`, `agents/contracts/`  
+> **Objective:** Zero-ambiguity technical specification for the Agentic Engine's native control plane, real-time WebSocket state streaming, human-in-the-loop (HITL) graph interrupt mechanics, and formal re-verification gates.
+
+---
+
+## 1. Architectural Scope & Red-Team Verification
+
+This specification covers the **pure agentic control plane** that drives the execution, streaming, and state mutation of the multi-agent engine. Frontend UI components and infrastructure provisioning are explicitly isolated out of this specification to keep full engineering focus on the agentic runtime.
+
+### Red-Team Control Plane Failure Analysis
+
++-----------------------------------------------------------------------------------+
+|                            CONTROL PLANE RED-TEAM ANALYSIS                        |
++-----------------------------------------------------------------------------------+
+| 1. CRITIQUE: "External human overrides might bypass the Zelkova SMT automated     |
+|    reasoning gate if submitted directly to the execution node."                   |
+|    -> CURE: Mandatory Graph Re-entry Gate. Any payload mutation received during   |
+|       HITL interrupt automatically routes execution back to Coalition Beta        |
+|       (Zelkova_Verifier_Agent) before reaching the execution node.                |
++-----------------------------------------------------------------------------------+
+| 2. CRITIQUE: "LangGraph state serialization can block high-throughput WebSocket   |
+|    events during multi-agent debate loops."                                       |
+|    -> CURE: Asynchronous, event-driven state emitter attached directly to the     |
+|       LangGraph execution graph using streaming callback handlers.                |
++-----------------------------------------------------------------------------------+
+| 3. CRITIQUE: "Unbounded retry loops during self-correction can lock up the engine  |
+|    and exhaust token quotas."                                                     |
+|    -> CURE: Hard 3-iteration debate loop cap enforced by the Supervisor router,   |
+|       degrading safely to HITL escalation with an explicit SMT counter-example.   |
++-----------------------------------------------------------------------------------+
+
+
+---
+
+## 2. Directory Layout & Module Responsibilities
+
+The agentic control plane resides entirely within `agents/`:
+
+agents/
+├── control/
+│   ├── init.py
+│   ├── runner.py              # Async execution engine for running LangGraph sessions
+│   ├── stream_publisher.py    # Sub-100ms WebSocket state streaming event producer
+│   └── hitl_manager.py        # LangGraph  resume, override, & re-proof handler
+├── contracts/
+│   ├── init.py
+│   ├── state_schemas.py       # Pydantic V2 state tensor validation models
+│   └── control_events.py      # Event protocol definitions for WebSocket streaming
+├── orchestration/
+│   ├── init.py
+│   ├── router.py              # Supervisor meta-agent state routing logic
+│   └── re_proof_gate.py       # Mandatory Zelkova re-verification logic for overrides
+└── engine.py                  # Compiled StateGraph with interrupt & re-proof hooks
+
+
+---
+
+## 3. Streaming Event Protocol Contracts (`agents/contracts/control_events.py`)
+
+As the multi-agent engine executes through Coalitions Alpha, Beta, and Gamma, the agentic control plane streams fine-grained state mutation events over the WebSocket channel.
+
+### Event Protocol Schemas
+
+#### 1. `AGENT_TURN_EMITTED`
+Emitted immediately when an agent node appends a `DebateTurn` to the state tensor.
+* `session_id` (string): Unique state execution ID.
+* `event_type` (string): `"AGENT_TURN_EMITTED"`
+* `coalition` (string): `"SUPERVISOR" | "ALPHA_SYNTHESIS" | "BETA_SIMULATION" | "GAMMA_CONTEXT"`
+* `agent_id` (string): Specific agent identifier (e.g., `"AST_Compiler_Agent"`).
+* `action_taken` (string): Natural language description of the reasoning step.
+* `formal_feedback` (string | null): Output from AST parsers, SMT solvers, or STS decoders.
+* `timestamp_iso` (string): ISO-8601 execution timestamp.
+
+#### 2. `POLICY_AST_UPDATED`
+Emitted when Coalition Alpha finishes optimizing, minifying, or partitioning an SCP JSON AST.
+* `session_id` (string): Unique state execution ID.
+* `event_type` (string): `"POLICY_AST_UPDATED"`
+* `working_policy_json` (string): Refactored policy payload.
+* `byte_size` (integer): Serialized character count.
+* `slr_exemptions_injected` (boolean): Flag indicating if service-linked role conditions were added.
+
+#### 3. `PROOF_STATUS_UPDATED`
+Emitted when Coalition Beta completes a Zelkova SMT automated reasoning check.
+* `session_id` (string): Unique state execution ID.
+* `event_type` (string): `"PROOF_STATUS_UPDATED"`
+* `zelkova_status` (string): `"PASS" | "FAIL_PRIVILEGE_ESCALATION" | "FAIL_SYNTAX"`
+* `counter_examples` (array of strings): SMT traces demonstrating privilege escalation paths.
+* `blast_radius_score` (float): Calculated risk score ($0.0$ to $1.0$).
+
+#### 4. `INTERRUPT_REACHED`
+Emitted when the execution graph reaches the `hitl_approval_node` and pauses execution.
+* `session_id` (string): Unique state execution ID.
+* `event_type` (string): `"INTERRUPT_REACHED"`
+* `active_problem_id` (string): Problem target (`"SCP-1"` through `"IAM-3"`).
+* `final_policy_json` (string): Proven policy payload waiting for human review.
+* `zelkova_proof` (object): Final proof metrics.
+* `blast_radius` (object): Final blast radius metrics.
+
+#### 5. `MUTATION_COMMITTED`
+Emitted after a human sign-off triggers successful execution of the approved policy payload.
+* `session_id` (string): Unique state execution ID.
+* `event_type` (string): `"MUTATION_COMMITTED"`
+* `status` (string): `"COMMITTED"`
+* `committed_at_epoch` (integer): Expiration epoch or commit timestamp.
+
+---
+
+## 4. Agentic State Runner & Async Orchestration (`agents/control/runner.py`)
+
+The `AgenticRunner` manages execution loops, async state streaming, and session persistence in Working Memory.
+
+### Core Architecture Rules
+1. **Thread Isolation:** Every execution session runs inside an asynchronous task pool (`asyncio.Task`) bound to its unique `session_id`.
+2. **Streaming Callbacks:** The runner attaches a custom LangGraph callback handler that inspects node transitions and streams state changes via the `StreamPublisher` without blocking graph execution.
+3. **Interrupt Persistence:** When the graph enters `hitl_approval_node`, the state tensor is checkpointed in memory, and the thread is suspended awaiting human signal.
+
+---
+
+## 5. Human-in-the-Loop Interrupt & Re-Proof Engine (`agents/control/hitl_manager.py`)
+
+The `HITLManager` handles human decisions sent back to the agentic engine during a graph interrupt.
+
+### State Transition Decision Flow
+
+                 [Graph Hits Interrupt Node]
+                              |
+                              v
+                [State Streamed to Control Plane]
+                              |
+                              v
+                [Human Decision Received]
+                              / \
+                             /   \
+      [Choice: APPROVE]     /     \     [Choice: MANUAL OVERRIDE]
+             |             /       \               |
+             v            /         \              v
+{Is Payload Modified?}   /           \    [Route Payload to]
+      /          \      /             \   [Coalition Beta  ]
+    NO            YES  /               \  (Zelkova SMT Check)
+    /               \ /                 \          |
+   v                 v                   v         v
+[Execute Mutator]  [Trigger Re-Proof Gate]  [Zelkova == PASS?]
+(Apply to AWS)     (Run Zelkova SMT)          /
+
+|                   YES          NO
+v                   /
+
+[Zelkova == PASS?]        v               v
+/         \     [Unblock Graph]  [Return SMT Error]
+YES          NO   (Transition to   (Loop Back to    ]
+/             \   COMMITTED)       ALPHA Synthesis  ]
+v               v
+[Unblock Graph]  [Reject & Loop]
+
+
+### HITL Decision Handlers
+
+#### Handler 1: `approve_session(session_id, approver_context)`
+* **Logic:**
+  1. Checks if the policy JSON was modified by the human operator.
+  2. If unmodified and `zelkova_proof.status == "PASS"`, unblocks the LangGraph engine.
+  3. Advances execution state to `status = "COMMITTED"`.
+  4. Publishes `MUTATION_COMMITTED` stream event.
+
+#### Handler 2: `submit_override_and_reproof(session_id, modified_policy_json, approver_context)`
+* **Logic:**
+  1. Intercepts modified policy JSON provided by the human operator.
+  2. Re-invokes `ZelkovaVerifierTool` (Coalition Beta) to run automated reasoning SMT solvers against the modified payload.
+  3. If SMT check returns `PASS`, updates `working_policy_json`, sets `zelkova_proof.status = "PASS"`, and commits the change.
+  4. If SMT check returns `FAIL_PRIVILEGE_ESCALATION`, appends counter-examples to `debate_log`, rejects the human edit, and loops execution back to Coalition Alpha (`ast_compiler_node`) for self-correction.
+
+#### Handler 3: `reject_session(session_id, rejection_reason)`
+* **Logic:**
+  1. Cancels the active LangGraph execution session.
+  2. Sets `status = "FAILED"`.
+  3. Emits `MUTATION_REJECTED` stream event with the recorded reason.
+
+---
+
+## 6. Self-Correction Loop & Safety Re-Proof Gate (`agents/orchestration/re_proof_gate.py`)
+
+The `ReProofGate` ensures that no policy artifact—whether created by an AI agent or a human operator—is ever applied to AWS infrastructure without a valid mathematical proof.
+
+### Deterministic Safety Checklist
+1. **AST Structural Sanity:** Policy MUST be valid single-object JSON under 10,240 bytes.
+2. **SMT Automated Reasoning:** `accessanalyzer:check_no_new_access` MUST return `PASS`.
+3. **SLR Safety Guarantee:** Broad `Deny` blocks MUST contain `aws:PrincipalIsAWSService` conditions protecting AWS Service-Linked Roles (e.g., `backup.amazonaws.com`).
+4. **Loop Exhaustion Protection:** Self-correction loops between Coalition Beta and Coalition Alpha are hard-capped at 3 iterations (`loop_count <= 3`). If iteration 3 fails, the gate forces an escalation interrupt with an explicit SMT counter-example report.
+
+---
+
+## 7. Execution Checklist for Codex
+
+When implementing the agentic control plane:
+1. Build `agents/contracts/state_schemas.py` and `agents/contracts/control_events.py` using **Pydantic V2**.
+2. Build `agents/control/stream_publisher.py` using **asyncio Queue** patterns for sub-100ms event broadcasting.
+3. Build `agents/control/runner.py` to wrap `sentinel_engine.astream()` and manage session execution tasks.
+4. Build `agents/control/hitl_manager.py` to handle graph resume triggers, payload overrides, and re-proof routing.
+5. Build `agents/orchestration/re_proof_gate.py` to enforce mathematical verification on all modified state tensors.

@@ -1,0 +1,137 @@
+fe - 4 
+
+We actually covered **Frontend Phase F2** (WebSockets) and **Frontend Phase F3** (Monaco Editor & API Bridge) in the previous two messages!
+
+To complete the entire system, we have one final piece left: the **Interactive Graph Visualizer**. This is the crown jewel of the Next.js UI, allowing security teams to visually trace "Confused Deputy" attacks and multi-hop IAM vulnerabilities by mapping out the Amazon Neptune graph data.
+
+Here is the final **Frontend Phase F4** specification to hand to Codex.
+
+---
+
+```markdown
+# Sentinel-IQ: Frontend Phase F4 — Neptune Topology Visualizer & Blast Radius Heatmap Spec
+
+> **Target Audience:** Principal Frontend Architect / UI Data Visualization Lead / Codex Context  
+> **Directory Scope:** `frontend/src/components/graph/`, `frontend/src/hooks/graph/`  
+> **Objective:** Production-grade specification for the interactive React Flow canvas, Amazon Neptune openCypher data mapping, custom SVG nodes, and cross-account trust edge rendering.
+
+---
+
+## 1. Internal Red-Team Attack & UI/UX Re-Evaluation
+
+Before finalizing the graph visualization architecture, we audited the data-viz rendering pipeline for browser performance and cognitive overload:
+
+
+```
+
+┌──────────────────────────────────────────────────────────────────────────────────────────┐
+│                                   RED-TEAM CRITIQUE                                      │
+├───────────────────────────────┬───────────────────────────────┬──────────────────────────┤
+│ UI Performance Lead           │ Security Analyst UX Lead      │ Data Architecture Lead   │
+├───────────────────────────────┼───────────────────────────────┼──────────────────────────┤
+│ "If a Confused Deputy attack  │ "Showing hundreds of IAM      │ "React Flow expects flat │
+│ traverses an AWS Organization │ nodes at once creates a 'hair-│ node/edge arrays, but    │
+│ with 500+ roles, rendering    │ ball' graph. Analysts won't   │ Neptune returns nested   │
+│ them all at once will crash   │ be able to find the exact     │ openCypher path objects."│
+│ the browser's DOM."           │ missing `SourceArn` gap."     │                          │
+├───────────────────────────────┼───────────────────────────────┼──────────────────────────┤
+│ ➔ FIX: Use `@xyflow/react`    │ ➔ FIX: Implement semantic     │ ➔ FIX: Build a robust    │
+│ with viewport culling. Render │ zoom and automated path       │ normalizer hook that     │
+│ a max of 2 degrees of depth   │ highlighting. The vulnerable  │ transforms Neptune JSON  │
+│ by default.                   │ edge pulses neon red.         │ into `XYPosition` nodes. │
+└───────────────────────────────┴───────────────────────────────┴──────────────────────────┘
+
+```
+
+---
+
+## 2. Directory Layout & Component Topology
+
+Codex must generate Phase F4 within this strict structure:
+
+* **`frontend/src/`**
+  * **`hooks/graph/`**
+    * **`useGraphLayout.ts`** — Hook using `dagre` or `elkjs` to auto-calculate hierarchical node positioning (Left-to-Right or Top-to-Bottom) so nodes don't overlap.
+    * **`useNeptuneParser.ts`** — Hook that normalizes the backend's openCypher JSON path arrays into React Flow `Node[]` and `Edge[]` arrays.
+  * **`components/graph/`**
+    * **`NeptuneTopologyCanvas.tsx`** — The primary React Flow wrapper, configuring the viewport, minimap, and background grid.
+    * **`nodes/`**
+      * **`AWSAccountNode.tsx`** — Custom React Flow node component for AWS Accounts.
+      * **`IAMRoleNode.tsx`** — Custom React Flow node component for Roles/Users.
+    * **`edges/`**
+      * **`TrustEdge.tsx`** — Custom SVG edge drawing the `ASSUMES_ROLE` line, with built-in animation for active attack paths.
+
+---
+
+## 3. Technology Stack & Canvas Configuration
+
+* **Core Library:** `@xyflow/react` (formerly React Flow).
+* **Layout Engine:** `dagre` (for directed acyclic graph auto-layout) to ensure trust chains flow logically from left to right.
+* **Canvas Styling:**
+  * Background: `Variant.Dots` with a dark zinc color (`#27272a`), 1.5px radius, 20px gap.
+  * MiniMap: Positioned bottom-right, styled with dark mode node colors.
+  * Controls: Zoom, Pan, and "Fit to View" overlaid on the bottom-left.
+
+---
+
+## 4. Custom Node & Edge Specifications
+
+React Flow must be configured to use custom components rather than default circles/rectangles.
+
+### 4.1 Custom Nodes (`AWSAccountNode`, `IAMRoleNode`)
+* **Design:** Glassmorphic rounded rectangles with Lucide React icons.
+* **Handles:** Hidden by default. Nodes act as rigid blocks in the DAG layout.
+* **Data Props:**
+  * `label`: String (e.g., `prod-db-role`).
+  * `type`: Enum (`ACCOUNT`, `OU`, `ROLE`, `EXTERNAL_VENDOR`).
+  * `isCompromised`: Boolean (Determines if the node glows red).
+* **Interactivity:** Clicking a node opens a slide-out side panel displaying the raw attached IAM policies for that specific hop.
+
+### 4.2 Custom Edge (`TrustEdge.tsx`)
+* **Mapping:** Represents the `ASSUMES_ROLE` relationship.
+* **Visual States:**
+  1. **Standard Trust (Safe):** Solid Slate line (`stroke-zinc-500`).
+  2. **Missing Condition Keys (Vulnerable):** Animated dashed line. Stroke color is Crimson Red (`stroke-rose-500`) with an animated SVG stroke-dashoffset to simulate active lateral movement.
+  3. **Hover State:** Thickens the stroke width and displays a tooltip floating over the edge showing the exact missing `aws:SourceArn` value.
+
+---
+
+## 5. The Neptune JSON Normalizer (`useNeptuneParser.ts`)
+
+The backend (from Phase B1) delivers GraphRAG data in a nested dictionary format. Codex must write a pure transformation function to flatten this for React Flow.
+
+### Input Data (Backend Telemetry)
+The hook receives an array of path objects:
+`[{ source: "RoleA", target: "RoleB", relation: "ASSUMES_ROLE", isVulnerable: true }]`
+
+### Output Data (React Flow State)
+* **`nodes` Array:** Deduplicates all sources and targets. Assigns sequential IDs.
+* **`edges` Array:** Maps relations to source/target IDs. Attaches the `animated: true` flag if `isVulnerable` is true.
+
+---
+
+## 6. Execution Directives for Codex
+
+When assigning Phase F4 to Codex, instruct it to:
+
+1. **Build the Parsers & Layouts (`src/hooks/graph/`):**
+   * Write `useNeptuneParser.ts` to map backend JSON to React Flow arrays.
+   * Write `useGraphLayout.ts` integrating `dagre` to auto-position the nodes horizontally (LR layout) with a 150px gap between ranks.
+2. **Build Custom Nodes (`src/components/graph/nodes/`):**
+   * Implement `AWSAccountNode` and `IAMRoleNode` utilizing Tailwind CSS for the dark-mode glassmorphic aesthetic. Ensure `Handle` components from `@xyflow/react` are properly registered for input/output.
+3. **Build Custom Edges (`src/components/graph/edges/`):**
+   * Implement `TrustEdge.tsx` using `getBezierPath`. Add the CSS keyframe animations for the vulnerable red dashed lines.
+4. **Assemble the Canvas (`src/components/graph/NeptuneTopologyCanvas.tsx`):**
+   * Import the `ReactFlow` provider.
+   * Register the `nodeTypes` and `edgeTypes` objects.
+   * Wire the data arrays from the normalizer hook into the canvas component.
+
+```
+
+---
+
+You now possess the entire, 100% complete Master Blueprint.
+
+* **7 Agentic Engine Phases**
+* **5 Backend / AWS Infrastructure Phases**
+* **4 Frontend / UI Command Center Phases**

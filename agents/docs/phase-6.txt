@@ -1,0 +1,232 @@
+
+
+```markdown
+# Sentinel-IQ: Phase 6 Infrastructure-as-Code & Agentic CI/CD Pipeline Architecture Spec
+
+> **Target Audience:** Principal DevOps & Platform Engineers / Site Reliability Engineers / Codex Execution Context  
+> **Directory Scope:** `infra/cdk/`, `infra/terraform/`, `.github/workflows/`, `scripts/deploy/`  
+> **Objective:** Zero-ambiguity specification for AWS Infrastructure-as-Code (IaC) topology, multi-tier agent hosting, SQS/EventBridge event pipelines, automated evaluation deployment gates, and progressive canary rollout pipelines.
+
+---
+
+## 1. Red-Team Infrastructure Critique & Hardening Matrix
+
+Before establishing the Phase 6 infrastructure blueprint, we subjected our deployment, queuing, and compute architecture to an enterprise SRE/DevOps red-team audit. This section details identified platform failure modes and their infrastructure countermeasures.
+
+
+```
+
+┌──────────────────────────────────────────────────────────────────────────────────────────┐
+│                                PHASE 6 RED-TEAM CRITIQUE                                 │
+├───────────────────────────────┬───────────────────────────────┬──────────────────────────┤
+│ Platform Failure Mode         │ Systemic Impact               │ Architectural Counter    │
+├───────────────────────────────┼───────────────────────────────┼──────────────────────────┤
+│ AWS Organizations CloudTrail  │ Spike in concurrent API calls │ SQS FIFO Queue with      │
+│ Burst Ingestion Overwhelm     │ drops events and crashes      │ Dedicated Dead-Letter    │
+│                               │ single-threaded FastAPIs.     │ Queue (DLQ) & Backoff.   │
+├───────────────────────────────┼───────────────────────────────┼──────────────────────────┤
+│ State Disruption During       │ In-flight LangGraph sessions  │ Sticky State Checkpoints │
+│ Agentic Engine Deployments    │ lose working memory tensors   │ in DynamoDB / ElastiCache│
+│                               │ mid-debate turn.              │ with Blue/Green Deployment│
+├───────────────────────────────┼───────────────────────────────┼──────────────────────────┤
+│ Neptune Graph Connection Pool │ Concurrent agent tasks deplete│ Serverless Neptune Cluster│
+│ Exhaustion Under Load         │ WebSocket database handles,   │ with Read Replicas and   │
+│                               │ stalling path traversals.     │ Built-in Connection Pool.│
+├───────────────────────────────┼───────────────────────────────┼──────────────────────────┤
+│ Unvalidated Prompt/Node       │ Regressed agent logic deploys │ Automated Phase 4 Eval   │
+│ Production Promotion          │ to prod, breaking Zelkova SMT │ Gate in CI/CD pipeline   │
+│                               │ solver checks on live policies│ (Halt if Pass Rate < 95%)│
+└───────────────────────────────┴───────────────────────────────┴──────────────────────────┘
+
+```
+
+---
+
+## 2. Directory Layout & Repository Structure (`infra/`)
+
+The infrastructure provisioning and deployment workspace adheres strictly to this structure:
+
+
+```
+
+infra/
+├── cdk/
+│   ├── app.py                      # AWS CDK Entrypoint application
+│   ├── stacks/
+│   │   ├── networking_stack.py     # Multi-AZ VPC, Private Subnets, NAT Gateways
+│   │   ├── database_stack.py       # Amazon Neptune Graph & OpenSearch Serverless
+│   │   ├── queue_stack.py          # EventBridge Rules, SQS FIFO Queues, & DLQs
+│   │   ├── compute_stack.py        # ECS Fargate Cluster, Task Definitions, Auto-scaling
+│   │   └── security_stack.py       # IAM Execution Roles, KMS Keys, S3 WORM Buckets
+├── terraform/                      # Alternative Terraform module topology
+│   ├── main.tf
+│   ├── variables.tf
+│   └── modules/
+│       ├── neptune/
+│       ├── opensearch/
+│       └── ecs_app/
+.github/
+└── workflows/
+├── agent_ci_eval.yml          # Continuous Integration: Phase 4 Evaluation Runner
+└── agent_cd_deploy.yml        # Continuous Deployment: Blue/Green ECS Canary Rollout
+
+```
+
+---
+
+## 3. Production Multi-Tier Cloud Architecture Topology
+
+Sentinel-IQ runs inside a secure, multi-AZ Virtual Private Cloud (VPC) with zero public subnet database exposures. Reasoning agents communicate with AWS services solely through private VPC Endpoints.
+
+
+```
+
+┌──────────────────────────────────────────────────────────────────────────────────────────┐
+│                                    AWS CLOUD REGION                                      │
+│                                                                                          │
+│  ┌────────────────────────────────────────────────────────────────────────────────────┐  │
+│  │ AWS EVENTBRIDGE (CloudTrail Management Events & PagerDuty Webhooks)               │  │
+│  └────────────────────────────────────────┬───────────────────────────────────────────┘  │
+│                                           │                                              │
+│                                           v                                              │
+│  ┌────────────────────────────────────────────────────────────────────────────────────┐  │
+│  │ SQS FIFO QUEUE (sentinel-drift-events.fifo)  ──► [DEAD-LETTER QUEUE (DLQ)]         │  │
+│  └────────────────────────────────────────┬───────────────────────────────────────────┘  │
+│                                           │                                              │
+│                                           v                                              │
+│  ┌────────────────────────────────────────────────────────────────────────────────────┐  │
+│  │ VIRTUAL PRIVATE CLOUD (VPC) - MULTI-AZ                                             │  │
+│  │                                                                                    │  │
+│  │  ┌──────────────────────────────────────────────────────────────────────────────┐  │  │
+│  │  │ PUBLIC SUBNETS (Application Load Balancer / AWS API Gateway)                 │  │  │
+│  │  └─────────────────────────────────────┬────────────────────────────────────────┘  │  │
+│  │                                        │                                           │  │
+│  │                                        v                                           │  │
+│  │  ┌──────────────────────────────────────────────────────────────────────────────┐  │  │
+│  │  │ PRIVATE SUBNETS (ECS Fargate Task Cluster - Agentic Engine Engine API)       │  │  │
+│  │  │ - FastAPIs + LangGraph Engine Workers                                        │  │  │
+│  │  │ - Auto-scaling: Min 2, Max 20 Tasks based on CPU/Queue Depth                 │  │  │
+│  │  └──────────────┬──────────────────────┬──────────────────────┬─────────────────┘  │  │
+│  │                 │                      │                      │                    │  │
+│  │                 v                      v                      v                    │  │
+│  │  ┌──────────────────────┐  ┌──────────────────────┐  ┌──────────────────────────┐  │  │
+│  │  │ ISOLATED DATA SUBNET │  │ ISOLATED DATA SUBNET │  │ PRIVATE VPC ENDPOINTS    │  │  │
+│  │  │ Amazon Neptune Graph │  │ OpenSearch Serverless│  │ - Bedrock API            │  │  │
+│  │  │ (GraphRAG Memory)    │  │ (Vector RAG Memory)  │  │ - Access Analyzer        │  │  │
+│  │  │                      │  │                      │  │ - S3 / DynamoDB Checkpts │  │  │
+│  │  └──────────────────────┘  └──────────────────────┘  └──────────────────────────┘  │  │
+│  └────────────────────────────────────────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────────────────────────────────────┘
+
+```
+
+---
+
+## 4. Infrastructure Stack Specifications
+
+### 4.1 Networking & Security Stack (`networking_stack.py` & `security_stack.py`)
+* **VPC Footprint:** 3 Availability Zones, 3 Public Subnets, 3 Private Application Subnets, and 3 Isolated Database Subnets.
+* **VPC Endpoints (AWS PrivateLink):** Private interfaces for Amazon Bedrock (`bedrock-runtime`), AWS Access Analyzer (`accessanalyzer`), AWS STS (`sts`), Organizations (`organizations`), and DynamoDB (`dynamodb`). Prevents agent traffic from traversing the public internet.
+* **Encryption Standards:** AWS KMS Customer Managed Keys (CMK) with automatic annual rotation for encrypting Neptune clusters, OpenSearch indexes, SQS queues, and S3 WORM buckets.
+
+### 4.2 Database & Dual-Memory Stack (`database_stack.py`)
+* **Amazon Neptune Cluster Spec:**
+  * Engine: Neptune Serverless (`db.serverless`).
+  * Scaling Bounds: 2.5 NCU (Neptune Capacity Units) to 128 NCU.
+  * Multi-AZ high availability with an automated read replica in AZ-2.
+  * Audit Logging enabled for openCypher graph traversals.
+* **Amazon OpenSearch Serverless Spec:**
+  * Collection Type: `SEARCH` (Vector Search).
+  * Compute Units: Minimum 2 OCU (OpenSearch Capacity Units) for Indexing, 2 OCU for Search.
+  * Encrypted at rest via KMS CMK; Network Policy enforces private VPC access only.
+
+### 4.3 Queue & Event Pipeline Stack (`queue_stack.py`)
+* **EventBridge Rule:** Matches AWS Organizations (`UpdatePolicy`, `CreatePolicy`), IAM (`PutRolePolicy`), and STS AccessDenied events.
+* **SQS FIFO Queue:** `sentinel-drift-events.fifo` configured with `ContentBasedDeduplication=true` and a 14-day message retention period.
+* **Dead-Letter Queue (DLQ):** Messages failing processing 3 times are routed to `sentinel-drift-dlq.fifo` for SRE inspection, triggering a CloudWatch Alarm.
+
+### 4.4 Compute Engine Stack (`compute_stack.py`)
+* **Execution Platform:** AWS ECS Fargate running ARM64 (AWS Graviton3) containers to optimize cost-performance for heavy async processing.
+* **Task Allocation:** 2 vCPU, 4 GB RAM per task instance.
+* **Auto-Scaling Policy:** Scales out when SQS Queue backlog exceeds 50 messages or ECS CPU utilization exceeds 70% for 2 consecutive minutes.
+* **State Checkpointing:** LangGraph session states checkpointed to Amazon DynamoDB (`sentinel_langgraph_checkpoints`) with Strong Consistency enabled.
+
+---
+
+## 5. Agentic Continuous Integration & Deployment (CI/CD) Pipeline
+
+The deployment pipeline enforces automated reasoning evaluations before promoting agent logic or prompts to production.
+
+
+```
+
+[Developer Pushes Code / Prompt Change]
+│
+▼
+┌─────────────────────────────────────────────────────┐
+│ STEP 1: STATIC & SYNTAX CHECKS                      │
+│ - Python Pydantic V2 State Model Validation         │
+│ - AST Minifier Syntax Correctness Test              │
+└──────────────────┬──────────────────────────────────┘
+│
+▼
+┌─────────────────────────────────────────────────────┐
+│ STEP 2: AUTOMATED EVALUATION HARNESS (PHASE 4)     │
+│ - Runs 80-scenario Gold Standard Benchmark Suite    │
+│ - Executes Red-Team Mutation Fuzzer                 │
+└──────────────────┬──────────────────────────────────┘
+│
+▼
+[Pass Rate >= 95% AND SMT Safety == 100%?]
+/                                 
+
+YES                                  NO
+/                                     
+
+v                                       v
+┌───────────────────────────┐       ┌───────────────────────────┐
+│ STEP 3: CANARY DEPLOYMENT │       │ PIPELINE BLOCKED          │
+│ - Build ECR Image         │       │ - Issue Failure Report    │
+│ - Deploy Blue/Green Tasks │       │ - Notify SRE / Dev Team   │
+│ - Shift 10% Traffic (15m) │       └───────────────────────────┘
+└─────────────┬─────────────┘
+│
+v
+┌───────────────────────────┐
+│ STEP 4: PROMOTION         │
+│ - Shift 100% Traffic      │
+│ - Retire Old Revision     │
+└───────────────────────────┘
+
+```
+
+### 5.1 CI Stage Contract (`.github/workflows/agent_ci_eval.yml`)
+* **Trigger:** Pull Requests targeting `main` or `release/*`.
+* **Execution:** Spawns an ephemeral test environment containing local Neptune and OpenSearch mocks.
+* **Gate Assertions:**
+  1. `eval_pass_rate >= 0.95` (Overall benchmark suite pass percentage).
+  2. `zelkova_smt_proof_rate == 1.00` (Zero privilege escalations allowed).
+  3. `byte_limit_compliance == 1.00` (Zero generated SCPs exceeding 10,240 bytes).
+
+### 5.2 CD Stage Contract (`.github/workflows/agent_cd_deploy.yml`)
+* **Trigger:** Merge to `main` branch post-CI approval.
+* **Strategy:** Blue/Green ECS Deployment using AWS CodeDeploy.
+* **Canary Schedule:** Shifts 10% traffic to the new revision, waits for a 15-minute soak period monitoring CloudWatch error rates, then shifts remaining 90% traffic.
+* **Auto-Rollback Trigger:** Automatically rolls back if ECS task health checks fail or HTTP 5xx responses exceed 1% during the canary window.
+
+---
+
+## 6. Execution Directives for Codex
+
+When generating Phase 6 Infrastructure-as-Code and deployment modules:
+
+1. **CDK Constructs (`infra/cdk/stacks/`):**
+   * Define multi-AZ VPC topologies with PrivateLink VPC Endpoints.
+   * Configure Neptune Serverless clusters, OpenSearch Serverless collections, SQS FIFO queues, and ECS Fargate Task Definitions.
+2. **Terraform Modules (`infra/terraform/modules/`):**
+   * Declare modular infrastructure resources matching the CDK specification for environment portability.
+3. **CI/CD Workflows (`.github/workflows/`):**
+   * Build `agent_ci_eval.yml` to execute Phase 4 evaluations and enforce strict quality gates.
+   * Build `agent_cd_deploy.yml` for zero-downtime, Blue/Green ECS canary deployments.
+
+```

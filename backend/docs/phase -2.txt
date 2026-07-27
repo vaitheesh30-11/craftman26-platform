@@ -1,0 +1,149 @@
+
+
+# Sentinel-IQ: Backend Phase 2 — FastAPI Control Plane & REST Lifecycle APIs Spec
+
+> **Target Audience:** Principal Backend Architect / API Security Lead / Codex Execution Context  
+> **Directory Scope:** `backend/app/api/v1/`, `backend/app/api/dependencies.py`, `backend/app/services/`  
+> **Objective:** Production-grade, zero-code architectural specification for the RESTful API surface, JWT Role-Based Access Control (RBAC), API dependency injection, and asynchronous LangGraph task handoff.
+
+---
+
+## 1. Internal Red-Team Attack & Re-Evaluation
+
+Before finalizing the REST Control Plane, we subjected the API architecture to a stress and security audit:
+
+
+```
+
+┌──────────────────────────────────────────────────────────────────────────────────────────┐
+│                                   RED-TEAM CRITIQUE                                      │
+├───────────────────────────────┬───────────────────────────────┬──────────────────────────┤
+│ API Concurrency Lead          │ IAM & Auth Security Lead      │ Integration Architect    │
+├───────────────────────────────┼───────────────────────────────┼──────────────────────────┤
+│ "If the `/ingest` webhook     │ "If any authenticated user    │ "If manual overrides in  │
+│ waits for the Agentic engine  │ can hit `/approve`, a basic   │ `/approve` go straight   │
+│ to finish a 3-turn debate,    │ developer could authorize     │ to AWS, it bypasses the  │
+│ API Gateway will time out     │ their own 10k SCP bypass."    │ SMT safety checks."      │
+│ (HTTP 504) under load."       │                               │                          │
+├───────────────────────────────┼───────────────────────────────┼──────────────────────────┤
+│ ➔ FIX: Immediate HTTP 202     │ ➔ FIX: Strict JWT RBAC in     │ ➔ FIX: Hardcoded Re-Proof│
+│ Accepted. The API inserts to  │ `dependencies.py` requiring   │ Gate in the controller.  │
+│ DB and passes the UUID to an  │ `role: security_admin` to     │ Edits MUST trigger the   │
+│ `asyncio.Task` background     │ access the HITL endpoints.    │ Zelkova service first.   │
+│ worker, freeing the thread.   │                               │                          │
+└───────────────────────────────┴───────────────────────────────┴──────────────────────────┘
+
+```
+
+---
+
+## 2. Directory Layout & Module Responsibilities
+
+Codex must generate the Phase 2 API layer within this strict structure:
+
+* **`backend/app/`**
+  * **`api/`**
+    * **`dependencies.py`** — Reusable FastAPI `Depends()` injectors (DB sessions, JWT parsers, RBAC enforcers).
+    * **`v1/`**
+      * **`router.py`** — Main `APIRouter` aggregating all v1 sub-routers.
+      * **`endpoints/`**
+        * **`ingest.py`** — Webhook receivers for CloudTrail/EventBridge payloads.
+        * **`sessions.py`** — CRUD controllers for monitoring governance drift sessions.
+        * **`hitl_approvals.py`** — Action endpoints for approving, rejecting, or overriding policies.
+        * **`health.py`** — K8s/ECS readiness and liveness probes validating DB/AWS connectivity.
+  * **`services/`**
+    * **`agent_dispatcher.py`** — Service layer managing the handoff between FastAPI background tasks and the LangGraph `sentinel_engine`.
+    * **`zelkova_verifier.py`** — Synchronous/Asynchronous wrapper to trigger AWS Access Analyzer proofs on demand.
+
+---
+
+## 3. Core API Dependencies (`dependencies.py`)
+
+Every protected route must implement these dependency injection gates:
+
+1. **`get_async_db`**: Yields an `AsyncSession` from the `async_sessionmaker` and ensures it closes gracefully.
+2. **`verify_jwt_token`**: Extracts Bearer token from headers, verifies RSA signatures against the Identity Provider (Okta/Auth0), and returns the `UserContext` payload.
+3. **`require_security_admin`**: Depends on `verify_jwt_token`. Inspects the `groups` or `roles` claim. Raises `HTTP 403 Forbidden` if the user lacks the `Sentinel_Security_Admin` entitlement.
+
+---
+
+## 4. REST Route Specifications & Contracts
+
+### 4.1 Ingestion & Webhooks (`endpoints/ingest.py`)
+
+* **`POST /api/v1/ingest/cloudtrail`**
+  * **Auth:** Validates API Key or AWS SigV4 header from EventBridge/SQS.
+  * **Payload:** `SessionStateCreateDTO` (Maps directly to the 8 problem statements).
+  * **Controller Logic:**
+    1. Validates the problem-specific payload structure (e.g., ensuring `SCP-1` includes `current_byte_size`).
+    2. Inserts a new row into `governance_sessions` with `status = "ROUTING"`.
+    3. Triggers `BackgroundTasks.add_task(agent_dispatcher.launch_session, session_id)`.
+  * **Response:** `HTTP 202 Accepted` returning the generated `session_id`.
+
+### 4.2 Session Governance (`endpoints/sessions.py`)
+
+* **`GET /api/v1/sessions`**
+  * **Auth:** `verify_jwt_token`.
+  * **Query Params:** `status`, `active_problem_id`, `limit`, `offset`.
+  * **Controller Logic:** Executes an async SQLAlchemy `select()` with optional filters, sorted by `updated_at DESC`.
+  * **Response:** `HTTP 200 OK` -> `List[SessionSummaryResponseDTO]`.
+
+* **`GET /api/v1/sessions/{session_id}`**
+  * **Auth:** `verify_jwt_token`.
+  * **Controller Logic:** Fetches the full session row. If `status == AWAITING_HITL`, it ensures the `working_policy_json` and `zelkova_status` are fully hydrated.
+  * **Response:** `HTTP 200 OK` -> `SessionDetailResponseDTO`.
+
+### 4.3 Human-In-The-Loop (HITL) Actions (`endpoints/hitl_approvals.py`)
+
+* **`POST /api/v1/sessions/{session_id}/approve`**
+  * **Auth:** `require_security_admin` (Strict enforcement).
+  * **Payload:** `ApprovalSubmitDTO` (`approver_arn`, `override_policy_json`, `approval_notes`).
+  * **Controller Logic:**
+    1. Locks the database row (Row-level lock to prevent concurrent approvals).
+    2. **Override Flow Check:** If `override_policy_json` is present:
+       * Suspends request to call `zelkova_verifier.verify_policy()`.
+       * If Zelkova returns `FAIL_PRIVILEGE_ESCALATION`, raises `HTTP 422 Unprocessable Entity` with SMT counter-examples.
+       * If Zelkova returns `PASS`, overwrites `working_policy_json` with the human's edit.
+    3. Unblocks the LangGraph engine `<Interrupt>` node via state resume.
+    4. Invokes AWS Mutator Service (Phase B5) to apply to AWS.
+    5. Writes compliance record to `audit_logs` table.
+    6. Updates session `status = "COMMITTED"`.
+  * **Response:** `HTTP 200 OK`.
+
+* **`POST /api/v1/sessions/{session_id}/reject`**
+  * **Auth:** `require_security_admin`.
+  * **Payload:** `approver_arn`, `rejection_reason`.
+  * **Controller Logic:** Transitions session `status = "FAILED"`, writes to `audit_logs`, and aborts the LangGraph task.
+  * **Response:** `HTTP 200 OK`.
+
+---
+
+## 5. Service Layer Handoff (`services/agent_dispatcher.py`)
+
+The REST controllers must not block while the multi-agent engine debates. The Dispatcher service handles the boundary between FastAPI and LangGraph.
+
+* **`launch_session(session_id: UUID, payload: dict)`**
+  * Invoked as a FastAPI `BackgroundTask` (or via Celery/SQS worker in Phase B4).
+  * Instantiates the LangGraph `sentinel_engine`.
+  * Passes the `WorkingMemoryState` tensor containing the 8 problem parameters.
+  * Runs `engine.astream_events()` to initiate the Supervisor node routing.
+
+---
+
+## 6. Execution Directives for Codex
+
+When generating Phase B2 code, instruct Codex to:
+
+1. **Implement Dependencies (`app/api/dependencies.py`):**
+   * Write asynchronous generators for database sessions (`yield db`).
+   * Write JWT validation logic checking Authorization headers and RBAC claims.
+2. **Implement Routers (`app/api/v1/endpoints/`):**
+   * Write the FastAPI route decorators (`@router.get`, `@router.post`).
+   * Use the Phase B1 Pydantic V2 DTOs as the `response_model` and request body types.
+   * Write async controller logic using SQLAlchemy 2.0 `select()`, `update()`, and `execute()`.
+3. **Implement HITL Safety Gates (`hitl_approvals.py`):**
+   * Explicitly code the `if override_policy_json:` branch to block execution and require a fresh Zelkova verification pass.
+4. **Wire up the Main App (`app/main.py`):**
+   * Register the APIRouter.
+   * Configure CORS middleware for the Next.js frontend origin.
+   * Attach the SQLAlchemy async engine lifespan manager.

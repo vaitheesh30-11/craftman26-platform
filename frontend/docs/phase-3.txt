@@ -1,0 +1,138 @@
+
+```markdown
+# Sentinel-IQ: Frontend Phase F3 — Interactive AST Diff Editor, HITL Control Center & API Bridge Spec
+
+> **Target Audience:** Principal Frontend Architect / UI Integration Lead / Codex Context  
+> **Directory Scope:** `frontend/src/components/editor/`, `frontend/src/components/workspace/`, `frontend/src/hooks/api/`  
+> **Objective:** Production-grade specification for the Monaco JSON Diff viewer, the interactive Human-In-The-Loop (HITL) approval workspace, and the strict React Query API hooks bridging the Next.js UI to the FastAPI backend.
+
+---
+
+## 1. Internal Red-Team Attack & UI/UX Re-Evaluation
+
+Before finalizing the HITL workspace, we audited the user experience for manual security overrides and the API connection boundary:
+
+
+```
+
+┌──────────────────────────────────────────────────────────────────────────────────────────┐
+│                                   RED-TEAM CRITIQUE                                      │
+├───────────────────────────────┬───────────────────────────────┬──────────────────────────┤
+│ Editor UX & Syntax Lead       │ API Integration Architect     │ Governance Workflow Lead │
+├───────────────────────────────┼───────────────────────────────┼──────────────────────────┤
+│ "If a human manually edits    │ "If the API call to approve   │ "Hitting 'Approve' on a  │
+│ the JSON to fix an issue but  │ the policy fails or times out,│ modified policy without  │
+│ accidentally misses a comma,  │ the UI will show 'Committed'  │ re-running the SMT proof │
+│ the AWS mutation will crash." │ but AWS will be untouched."   │ creates a blind spot."   │
+├───────────────────────────────┼───────────────────────────────┼──────────────────────────┤
+│ ➔ FIX: The Monaco editor must │ ➔ FIX: Implement TanStack     │ ➔ FIX: If the Monaco AST │
+│ enforce strict JSON schema    │ React Query Mutations with    │ is edited, the 'Approve' │
+│ validation natively, blocking │ `onMutate` optimistic UI and  │ button transforms into   │
+│ submission on syntax errors.  │ `onError` rollback toasts.    │ 'Re-Run Zelkova Proof'.  │
+└───────────────────────────────┴───────────────────────────────┴──────────────────────────┘
+
+```
+
+---
+
+## 2. Directory Layout & Component Topology
+
+Codex must generate Phase F3 within this strict structure:
+
+* **`frontend/src/`**
+  * **`hooks/api/`**
+    * **`useSessionApi.ts`** — TanStack React Query hooks connecting frontend components to the FastAPI REST backend (`/api/v1/sessions`).
+  * **`components/`**
+    * **`editor/`**
+      * **`ASTDiffEditor.tsx`** — Side-by-side Monaco code editor comparing original and modified AWS policies.
+      * **`ByteQuotaGauge.tsx`** — Progress bar visualizing character count limits.
+    * **`workspace/`**
+      * **`HITLControlPanel.tsx`** — The command center housing the Approve, Reject, and Re-Run buttons.
+      * **`ManualOverrideModal.tsx`** — Dialog prompting the security admin for approval notes/justification before committing.
+
+---
+
+## 3. The API Bridge: React Query Hooks (`hooks/api/useSessionApi.ts`)
+
+This is the critical glue layer connecting the Next.js Frontend to the FastAPI Backend. Codex must implement these using `axios` and `@tanstack/react-query`.
+
+### 3.1 `useGetSessionDetail(sessionId)`
+* **Type:** Query (`useQuery`).
+* **Endpoint:** `GET /api/v1/sessions/{sessionId}`
+* **Behavior:** Fetches the `SessionDetailResponseDTO`. Populates the baseline JSON, current working JSON, and blast radius into the UI.
+
+### 3.2 `useApproveSessionMutation()`
+* **Type:** Mutation (`useMutation`).
+* **Endpoint:** `POST /api/v1/sessions/{sessionId}/approve`
+* **Payload:** `ApprovalSubmitDTO` (`approverArn`, `approvalNotes`, `overridePolicyJson`).
+* **Behavior:** 
+  * On success: Triggers `queryClient.invalidateQueries` to refresh the dashboard, and displays a success Toast notification ("Mutation Committed to AWS").
+  * On error: Displays a destructive Toast notification with the FastAPI error message.
+
+---
+
+## 4. Interactive Monaco AST Diff Editor (`ASTDiffEditor.tsx`)
+
+This component provides a side-by-side code comparison, exactly like GitHub's PR review UI, but specialized for AWS IAM/SCPs.
+
+### 4.1 Technology & Configuration
+* **Library:** `@monaco-editor/react` using the `<DiffEditor />` component.
+* **Theme:** `vs-dark` (customized to match the Zinc/Obsidian SOC aesthetic).
+* **Language:** `json`.
+* **Validation:** Monaco's native JSON worker must be enabled to highlight missing quotes, trailing commas, or bracket mismatches.
+
+### 4.2 Editor State Management
+* **Left Panel (Original):** Binds to `baseline_policy_json`. Strictly read-only.
+* **Right Panel (Modified):** Binds to `working_policy_json`. 
+* **Edit Mode:** By default, the right panel is read-only. The user must click a "Enable Manual Override" toggle to unlock the right panel for editing.
+* **Callback Hook:** Emits `onTargetPolicyChange(newJson)` up to the parent component whenever the human types.
+
+### 4.3 Byte Quota Gauge (`ByteQuotaGauge.tsx`)
+* Placed directly below the Monaco Editor.
+* Calculates the byte length of the minified JSON string from the right panel.
+* **Visual States:**
+  * Green: $0$ – $8,000$ bytes.
+  * Yellow Warning: $8,001$ – $10,239$ bytes.
+  * Red Error: $\ge 10,240$ bytes. Disables the "Approve" button immediately.
+
+---
+
+## 5. HITL Control Panel (`HITLControlPanel.tsx`)
+
+This is the primary action workspace for the Security Administrator.
+
+### 5.1 Dynamic Button States
+The primary action button must intelligently adapt based on user behavior:
+1. **State 1 (Clean Approval):** If the user has *not* edited the Monaco JSON, and the Zelkova status is `PASS`.
+   * Button: `[ Approve & Deploy to AWS ]` (Green).
+   * Action: Opens the `ManualOverrideModal` to collect mandatory audit notes, then fires `useApproveSessionMutation`.
+2. **State 2 (Human Override Detected):** If the user types in the Monaco editor.
+   * Button: `[ Re-Run Zelkova SMT Proof ]` (Purple/Indigo).
+   * Action: Warns the user that human edits must be mathematically proven before deployment.
+3. **State 3 (Unsafe State):** If Zelkova status is `FAIL_PRIVILEGE_ESCALATION` or JSON syntax is invalid.
+   * Button: `[ Deployment Blocked ]` (Disabled, Red border).
+
+### 5.2 Mandatory Audit Log Modal (`ManualOverrideModal.tsx`)
+* Before the API mutation fires, a Radix UI Dialog must appear.
+* Requires the user to select their AWS Identity/Role.
+* Requires a text input: "Justification for Security Audit (minimum 10 characters)."
+* Connects the submit button directly to the React Query API mutation.
+
+---
+
+## 6. Execution Directives for Codex
+
+When assigning Phase F3 to Codex, instruct it to:
+
+1. **Build the API Bridge (`src/hooks/api/useSessionApi.ts`):**
+   * Write the `useQuery` and `useMutation` hooks utilizing an Axios client. Ensure strict typing against the Phase F1 DTOs.
+2. **Build the Monaco Viewer (`src/components/editor/ASTDiffEditor.tsx`):**
+   * Integrate `@monaco-editor/react`. Configure the `DiffEditor` for JSON syntax highlighting and dark mode.
+   * Implement the edit-tracking logic so the parent component knows if the human modified the JSON.
+3. **Build the Gauge (`src/components/editor/ByteQuotaGauge.tsx`):**
+   * Write a reactive progress bar that calculates string length bytes and dynamically swaps Tailwind color classes (emerald -> amber -> rose).
+4. **Build the Control Workspace (`src/components/workspace/HITLControlPanel.tsx`):**
+   * Implement the dynamic button logic (Deploy vs. Re-Prove) based on editor state and Zelkova proof status.
+   * Wire the "Deploy" button to the `useApproveSessionMutation` hook.
+
+```

@@ -1,0 +1,166 @@
+
+# Sentinel-IQ: Backend Phase B4 — AWS Event Ingestion Pipeline & SQS Ingestion Workers Spec
+
+> **Target Audience:** Principal Backend Architect / AWS Solutions Architect / Async Systems Engineer / Codex Context  
+> **Directory Scope:** `backend/app/workers/`, `backend/app/connectors/sqs_connector.py`, `backend/app/services/ingestion_service.py`  
+> **Objective:** Production-grade, zero-code architectural specification for the AWS EventBridge ingestion rules, SQS FIFO queue consumer loop, Dead-Letter Queue (DLQ) fail-safe handling, and normalized payload extraction for the 8 enterprise governance problem statements.
+
+---
+
+## 1. Internal Red-Team Attack & Re-Evaluation
+
+Before finalizing the ingestion pipeline architecture, we subjected the event consumer design to an enterprise AWS resilience and concurrency audit:
+
+
+```
+
+┌──────────────────────────────────────────────────────────────────────────────────────────┐
+│                                   RED-TEAM CRITIQUE                                      │
+├───────────────────────────────┬───────────────────────────────┬──────────────────────────┤
+│ AWS Infrastructure Lead       │ Async Concurrency Architect   │ Error Recovery Lead      │
+├───────────────────────────────┼───────────────────────────────┼──────────────────────────┤
+│ "If CloudTrail fires 1,000    │ "If an unhandled exception    │ "If a malformed event    │
+│ concurrent `AccessDenied`     │ occurs during LangGraph       │ causes the SQS listener  │
+│ events during an AWS outage,  │ task dispatch, the worker     │ to crash, the queue will │
+│ API rates will spike and drop │ will lose the event without   │ stall, blocking all      │
+│ governance drift events."     │ writing to the DB."           │ subsequent drift events."│
+├───────────────────────────────┼───────────────────────────────┼──────────────────────────┤
+│ ➔ FIX: Route via AWS Event-   │ ➔ FIX: Strict two-phase       │ ➔ FIX: SQS FIFO with     │
+│ Bridge into SQS FIFO Queues   │ commit: Persist DB record in  │ dedicated Dead-Letter    │
+│ with Content-Based Deduplic-  │ `ROUTING` status BEFORE deleting│ Queue (DLQ). Retries 3   │
+│ ation and 14-day retention.   │ message from the SQS queue.   │ times before DLQ route.  │
+└───────────────────────────────┴───────────────────────────────┴──────────────────────────┘
+
+```
+
+---
+
+## 2. Directory Layout & Module Responsibilities
+
+Codex must generate the Phase B4 event ingestion layer within this strict structure:
+
+* **`backend/app/`**
+  * **`connectors/`**
+    * **`sqs_connector.py`** — Async `aioboto3` client manager handling SQS long-polling, message deletion, and visibility extension.
+    * **`eventbridge_connector.py`** — Utility connector for emitting custom event buses and status signals back to AWS EventBridge.
+  * **`services/`**
+    * **`ingestion_service.py`** — Service layer that transforms raw AWS CloudTrail or Webhook payloads into normalized problem-specific DTOs and initializes database sessions.
+  * **`workers/`**
+    * **`sqs_listener.py`** — Continuous background worker task running inside the FastAPI lifespan context, handling long-polling event loops.
+    * **`event_parser.py`** — Pattern-matching parser that categorizes incoming raw events into one of the 8 enterprise governance problem statements.
+    * **`dlq_handler.py`** — Recovery processor for inspecting and re-driving messages sent to the Dead-Letter Queue.
+
+---
+
+## 3. AWS Ingestion Architecture & SQS FIFO Topology
+
+The ingestion architecture acts as a buffer between AWS infrastructure events and the FastAPI backend control plane.
+
+
+```
+
+┌──────────────────────────────────────────────────────────────────────────────────────────┐
+│                              AWS EVENT INGESTION TOPOLOGY                                │
+├──────────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                          │
+│  [AWS CloudTrail / IAM Identity Center / PagerDuty Outage Webhooks]                      │
+│                                           │                                              │
+│                                           v                                              │
+│  [AWS EventBridge Bus Rules] (Filtering: SCP & IAM Drift Events)                         │
+│                                           │                                              │
+│                                           v                                              │
+│  [SQS FIFO Queue: sentinel-drift-events.fifo]                                            │
+│  - ContentBasedDeduplication = True                                                      │
+│  - VisibilityTimeout = 300 Seconds                                                       │
+│  - MessageRetentionPeriod = 14 Days                                                      │
+│                                           │                                              │
+│                     ┌─────────────────────┴─────────────────────┐                        │
+│                     │ (Fails 3 Times)                           │ (Successful Read)      │
+│                     v                                           v                        │
+│  [SQS Dead-Letter Queue (DLQ)]               [FastAPI Background SQS Listener]           │
+│  (sentinel-drift-dlq.fifo)                   - Long-Poll Interval: 20s                  │
+│                                              - Concurrency Cap: 20 Async Tasks           │
+│                                              - Persists to DB -> Launches Agent Engine   │
+└──────────────────────────────────────────────────────────────────────────────────────────┘
+
+```
+
+### 3.1 SQS FIFO Configuration Parameters
+* **Queue Name:** `sentinel-drift-events.fifo`
+* **Deduplication:** Content-Based Deduplication enabled (`ContentBasedDeduplication=true`).
+* **Message Group ID Strategy:** Grouped by Target AWS Account ID (`MessageGroupId = event.account_id`). This guarantees sequential processing per account while allowing parallel processing across different AWS accounts.
+* **Visibility Timeout:** 300 seconds (5 minutes). Allows sufficient time for the backend to insert DB records and dispatch tasks.
+* **Dead-Letter Queue Target:** `sentinel-drift-dlq.fifo` configured with `maxReceiveCount = 3`.
+
+---
+
+## 4. Normalized Event Parsing Contracts (The 8 Problems)
+
+The `event_parser.py` module inspects raw JSON bodies from SQS and maps them to one of the 8 enterprise problem statements:
+
+### Problem 1: `SCP-1` (10k Character Limit Exceeded)
+* **Trigger Event:** EventBridge captures CloudTrail `organizations:CreatePolicy` or `organizations:UpdatePolicy` raising `Client.LimitExceededException` or payload size errors.
+* **Extracted Attributes:** `target_ou_id`, `current_byte_size`, `raw_policy_json`, `account_id`.
+
+### Problem 2: `SCP-2` (7-Layer Policy Collision)
+* **Trigger Event:** CloudTrail captures an `AccessDenied` event where evaluation includes SCPs, IAM Permissions Boundaries, Resource Control Policies (RCPs), and Session Policies.
+* **Extracted Attributes:** `target_arn`, `effective_deny_actions`, `permissions_boundary_arn`, `rcp_arn`, `scp_ids`.
+
+### Problem 3: `SCP-3` (Encoded Authorization Error)
+* **Trigger Event:** CloudTrail captures an explicit `AccessDenied` containing an `encodedAuthorizationMessage` string.
+* **Extracted Attributes:** `encoded_authorization_message`, `calling_principal_arn`, `target_service`.
+
+### Problem 4: `SCP-4` (Service-Linked Role Breakage)
+* **Trigger Event:** CloudWatch Alarm or EventBridge event showing AWS Backup, Macie, or GuardDuty service principal failure due to an explicit `Deny` SCP.
+* **Extracted Attributes:** `blocked_service_principal`, `failing_action`, `target_scp_id`.
+
+### Problem 5: `SCP-5` (Contextless Break-Glass Request)
+* **Trigger Event:** Webhook ingress from PagerDuty/Slack triggering an emergency P1 outage elevated access request.
+* **Extracted Attributes:** `pagerduty_incident_id`, `requester_arn`, `requested_actions`, `requested_ttl_seconds`.
+
+### Problem 6: `IAM-1` (Multi-Hop Confused Deputy)
+* **Trigger Event:** CloudTrail `iam:UpdateAssumeRolePolicy` or `sts:AssumeRole` event missing `aws:SourceArn` or `aws:SourceAccount` condition keys.
+* **Extracted Attributes:** `trust_role_arn`, `vendor_principal_arn`, `missing_condition_keys`, `hop_depth`.
+
+### Problem 7: `IAM-2` (Safe Auto-Remediation)
+* **Trigger Event:** CloudTrail Access Advisor 90-day activity scan identifying wildcard `s3:*` or `kms:*` permissions with zero usage.
+* **Extracted Attributes:** `target_role_arn`, `unutilized_actions_list`, `last_accessed_timestamp`.
+
+### Problem 8: `IAM-3` (Identity Center SSO Creep)
+* **Trigger Event:** AWS IAM Identity Center telemetry event flagging stale SSO assignment (>120 days inactive).
+* **Extracted Attributes:** `sso_instance_arn`, `principal_id`, `permission_set_arn`, `inactivity_days`.
+
+---
+
+## 5. Async Worker Processing Pipeline (`sqs_listener.py`)
+
+The worker operates as a non-blocking asynchronous loop executing within the FastAPI lifespan context.
+
+### Step-by-Step Execution Protocol
+1. **Poll:** Long-polls `sentinel-drift-events.fifo` using `aioboto3` with `WaitTimeSeconds=20` and `MaxNumberOfMessages=10`.
+2. **Parse & Categorize:** Passes raw message body to `event_parser.py`. Identifies target problem category (`SCP-1` through `IAM-3`).
+3. **Database Insertion (Phase 1 Commit):** Opens an async database session via `AsyncSession`. Inserts a new row into `governance_sessions` table with `status = "ROUTING"` and populates problem-specific JSONB telemetry.
+4. **Agent Dispatch:** Dispatches the session ID and event payload to `agent_dispatcher.launch_session` via `asyncio.create_task`.
+5. **SQS Deletion (Phase 2 Commit):** Upon successful database insertion and task creation, calls `sqs_client.delete_message()` using the message receipt handle.
+6. **Concurrency Control:** Utilizes an `asyncio.Semaphore(max_concurrency=20)` to cap simultaneous in-flight event processing tasks, preventing database connection exhaustion.
+
+---
+
+## 6. Execution Directives for Codex
+
+When assigning Phase B4 to Codex, instruct it to:
+
+1. **Build SQS Connector (`app/connectors/sqs_connector.py`):**
+   * Implement an asynchronous SQS client wrapper using `aioboto3`.
+   * Write methods for long-polling, deleting messages, and updating message visibility timeouts.
+2. **Build Event Parser (`app/workers/event_parser.py`):**
+   * Write pattern-matching functions that parse raw EventBridge CloudTrail JSON structures into normalized problem-specific DTOs matching the 8 problem categories.
+3. **Build Ingestion Service (`app/services/ingestion_service.py`):**
+   * Implement database record creation logic that transforms parsed DTOs into `GovernanceSession` ORM models and commits them to PostgreSQL.
+4. **Build Worker Listener (`app/workers/sqs_listener.py`):**
+   * Implement the continuous `while True` async loop with `asyncio.Semaphore` concurrency limiting.
+   * Attach the worker initialization and cancellation logic to the FastAPI lifespan context manager in `main.py`.
+5. **Build DLQ Processor (`app/workers/dlq_handler.py`):**
+   * Write an administrative utility to inspect messages in `sentinel-drift-dlq.fifo` and re-inject them into the primary queue after schema correction.
+
+```

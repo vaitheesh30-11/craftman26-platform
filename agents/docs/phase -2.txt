@@ -1,0 +1,2159 @@
+phase -2 
+# Sentinel-IQ: Phase 2 Memory Architecture & Cognitive Design Specification
+
+> **Target Audience:** Principal AI Engineers • Enterprise Architects • AI Platform Engineers • Codex / Claude Code Execution Context
+>
+> **Purpose:** Defines the complete enterprise memory architecture used by Sentinel-IQ, including Working Memory, Graph Memory, Vector Memory, Procedural Memory, cognitive workflows, and formal verification contracts.
+
+---
+
+# Table of Contents
+
+- [1. Enterprise Memory Hierarchy](#1-enterprise-memory-hierarchy)
+- [2. Tier 1 – Working Memory State Tensor](#2-tier-1--working-memory-state-tensor)
+- [3. Tier 2 – Topological Graph Memory](#3-tier-2--topological-graph-memory)
+- [4. Tier 3 – Episodic Vector Memory](#4-tier-3--episodic-vector-memory)
+- [5. Tier 4 – Procedural Memory](#5-tier-4--procedural-memory)
+- [6. Multi-Agent Coalition Architecture](#6-multi-agent-coalition-architecture)
+- [7. Master Execution Graph](#7-master-execution-graph)
+
+---
+
+# 1. Enterprise Memory Hierarchy
+
+Sentinel-IQ does **not** rely on a single vector database or a single memory abstraction.
+
+Instead, it separates memory into four independent cognitive layers.
+
+Each layer has one responsibility only.
+
+This separation prevents:
+
+- Context window overflow
+- State corruption
+- Hallucinated reasoning
+- Non-deterministic execution
+- Hidden side effects between agents
+
+The memory hierarchy follows this architecture.
+
+```mermaid
+flowchart TD
+
+WM["Tier 1<br/>Working Memory<br/>LangGraph State Tensor"]
+
+GM["Tier 2<br/>Graph Memory<br/>Amazon Neptune"]
+
+VM["Tier 3<br/>Vector Memory<br/>OpenSearch Serverless"]
+
+PM["Tier 4<br/>Procedural Memory<br/>Deterministic AWS Tools"]
+
+WM --> GM
+GM --> VM
+VM --> PM
+```
+
+---
+
+## Why Four Memory Layers?
+
+Large enterprise AI systems fail when every piece of information is stored in the same place.
+
+For example,
+
+- policy JSON
+- CloudTrail logs
+- IAM trust relationships
+- PagerDuty incidents
+- execution state
+
+all have completely different lifecycles.
+
+Keeping them together causes:
+
+- duplicated information
+- stale context
+- exploding token usage
+- inconsistent reasoning
+
+Instead, Sentinel-IQ assigns each type of information to the correct memory layer.
+
+| Tier | Memory | Responsibility |
+|------|----------|----------------|
+| 1 | Working Memory | Current execution state |
+| 2 | Graph Memory | Enterprise topology |
+| 3 | Vector Memory | Historical semantic knowledge |
+| 4 | Procedural Memory | Deterministic execution |
+
+---
+
+# 2. Tier 1 – Working Memory State Tensor
+
+Working Memory is the **only mutable memory** inside the execution engine.
+
+Every LangGraph node receives exactly the same state object.
+
+Each node performs three actions:
+
+1. Read State
+2. Update State
+3. Return State
+
+No node owns private mutable memory.
+
+This guarantees deterministic execution.
+
+---
+
+## Responsibilities
+
+Working Memory stores only information required during the current execution.
+
+Examples include:
+
+- current policy AST
+- verification status
+- blast radius
+- execution metadata
+- debate history
+- retry count
+- temporary TTL values
+
+Once execution completes, Working Memory is destroyed.
+
+It is **never persisted**.
+
+---
+
+## State Lifecycle
+
+```mermaid
+flowchart LR
+
+A["Trigger Event"]
+
+B["Supervisor"]
+
+C["Initialize Working State"]
+
+D["Agent Nodes"]
+
+E["Verification"]
+
+F["Human Approval"]
+
+G["Execution Complete"]
+
+H["Destroy State"]
+
+A --> B
+B --> C
+C --> D
+D --> E
+E --> F
+F --> G
+G --> H
+```
+
+---
+
+## State Tensor Components
+
+### 1. Control Layer
+
+Tracks execution lifecycle.
+
+Fields include:
+
+- Session ID
+- Current Node
+- Active Problem
+- Execution Status
+- Retry Counter
+
+---
+
+### 2. Event Layer
+
+Stores immutable trigger information.
+
+Examples:
+
+- CloudTrail Event
+- EventBridge Payload
+- SNS Notification
+- Security Hub Finding
+
+---
+
+### 3. Target Layer
+
+Defines the resource currently being evaluated.
+
+Examples include:
+
+- AWS Account
+- Resource ARN
+- IAM Role
+- SCP Policy
+
+---
+
+### 4. Debate Layer
+
+An append-only reasoning history.
+
+Every agent appends reasoning instead of modifying previous entries.
+
+Benefits include:
+
+- auditability
+- explainability
+- replay capability
+- deterministic history
+
+---
+
+### 5. Policy Layer
+
+Contains:
+
+- Original Policy
+- Working Policy
+- AST
+- Byte Count
+
+The original policy is immutable.
+
+Only the working copy changes.
+
+---
+
+### 6. Verification Layer
+
+Contains formal proof artifacts.
+
+Examples include:
+
+- Zelkova proof
+- SMT status
+- counter examples
+- blast radius
+- impacted services
+- trust chain analysis
+
+---
+
+### 7. Lifecycle Layer
+
+Tracks temporary execution metadata.
+
+Examples include:
+
+- TTL expiration
+- Break-glass duration
+- Approval state
+- Rollback token
+
+---
+
+# Why Working Memory Is Not a Database
+
+Working Memory should never become long-term storage.
+
+It exists only to coordinate the current execution.
+
+Long-term persistence belongs elsewhere.
+
+| Information | Stored In |
+|------------|-----------|
+| Current AST | Working Memory |
+| CloudTrail History | Athena |
+| IAM Graph | Neptune |
+| Incident History | OpenSearch |
+| Policies | AWS Organizations |
+| Verification Reports | S3 |
+
+---
+
+# 3. Tier 2 – Topological Graph Memory
+
+Enterprise authorization is inherently a graph problem.
+
+Questions such as:
+
+- Who can access Production?
+- Which vendor can reach KMS?
+- Which SCP affects this account?
+- Which role can assume another role?
+
+cannot be answered efficiently using vector search or relational joins.
+
+Instead, Sentinel-IQ models AWS as a property graph.
+
+Amazon Neptune provides this capability.
+
+---
+
+## Graph Architecture
+
+```mermaid
+graph TD
+
+ROOT["AWS Organization"]
+
+ROOT --> OU1["Engineering OU"]
+ROOT --> OU2["Security OU"]
+
+OU1 --> ACC1["Production Account"]
+OU1 --> ACC2["Development Account"]
+
+ACC1 --> ROLE1["Application Role"]
+ACC1 --> ROLE2["Vendor Role"]
+
+ROLE2 --> ROLE3["Cross Account Role"]
+
+ROLE3 --> S3["S3 Bucket"]
+
+ROLE3 --> KMS["KMS Key"]
+
+OU1 --> SCP["SCP Policy"]
+```
+
+---
+
+## Graph Node Types
+
+### Organizational Unit (OU)
+
+Represents the AWS Organizations hierarchy.
+
+Properties include:
+
+- OU ID
+- Name
+- Parent ID
+
+---
+
+### AWS Account
+
+Represents an AWS account.
+
+Properties include:
+
+- Account ID
+- Environment
+- Region
+- OU Membership
+
+---
+
+### IAM Role
+
+Represents an assumable identity.
+
+Properties include:
+
+- ARN
+- Role Name
+- Account
+- Trust Policy
+
+---
+
+### IAM User
+
+Represents a human or system identity.
+
+Properties include:
+
+- Username
+- ARN
+- Account
+
+---
+
+### AWS Resource
+
+Represents protected infrastructure.
+
+Examples include:
+
+- S3
+- DynamoDB
+- KMS
+- Lambda
+- ECS
+- RDS
+- Secrets Manager
+
+---
+
+### SCP Policy
+
+Represents Service Control Policies.
+
+Properties include:
+
+- Policy ID
+- Byte Size
+- SHA Hash
+- Version
+- Attached OU
+
+## Graph Relationships
+
+Graph relationships define how identities, policies, resources, and organizational units are connected. These relationships enable the reasoning engine to perform graph traversals, blast-radius analysis, and trust validation.
+
+### Core Relationship Types
+
+| Relationship | Source | Target | Purpose |
+|--------------|--------|--------|---------|
+| `PARENT_OF` | OU | OU | Represents AWS Organization hierarchy |
+| `CONTAINS_ACCOUNT` | OU | AWS Account | Maps accounts to Organizational Units |
+| `BOUNDED_BY` | OU / Account | SCP Policy | Indicates which SCP governs the target |
+| `ASSUMES_ROLE` | IAM Role | IAM Role | Cross-account trust relationship |
+| `CAN_ACCESS` | IAM Role | AWS Resource | Effective permissions after evaluation |
+| `MEMBER_OF` | IAM User | IAM Group | Group membership |
+| `ATTACHED_POLICY` | IAM Role | IAM Policy | Attached managed/inline policy |
+| `OWNS_RESOURCE` | AWS Account | AWS Resource | Ownership mapping |
+
+---
+
+## Relationship Metadata
+
+Relationships are not simple connections.
+
+Each edge stores metadata required for security reasoning.
+
+### Example
+
+```json
+{
+  "relationship": "ASSUMES_ROLE",
+  "source_role": "VendorRole",
+  "target_role": "ProdDeployRole",
+  "has_external_id": true,
+  "has_source_arn": false,
+  "has_source_account": true,
+  "created_at": "2026-07-17T10:15:30Z"
+}
+```
+
+This metadata allows the Graph Traversal Agent to detect insecure trust relationships instead of merely discovering connectivity.
+
+---
+
+## Graph Traversal Strategy
+
+Sentinel-IQ never performs unrestricted graph traversals.
+
+Traversal depth is constrained to reduce computational cost and eliminate irrelevant paths.
+
+| Traversal | Maximum Depth | Purpose |
+|------------|--------------|---------|
+| SCP Inheritance | Root → Account | Policy evaluation |
+| AssumeRole | 5 Hops | Confused Deputy detection |
+| Blast Radius | 7 Hops | Authorization impact analysis |
+| Resource Reachability | 4 Hops | Exposure analysis |
+
+---
+
+## Example: Detecting a Confused Deputy
+
+```text
+VendorRole
+    │
+    ▼
+SharedServicesRole
+    │
+    ▼
+AutomationRole
+    │
+    ▼
+ProductionDeployRole
+    │
+    ▼
+KMSKey
+```
+
+The traversal engine evaluates every edge.
+
+If any `ASSUMES_ROLE` edge lacks:
+
+- `aws:SourceArn`
+- `aws:SourceAccount`
+- `ExternalId`
+
+the chain is flagged as vulnerable.
+
+---
+
+## SCP Inheritance Resolution
+
+The graph engine reconstructs the effective SCP boundary by traversing upward.
+
+```text
+Root
+ │
+ ├── Security OU
+ │
+ ├── Platform OU
+ │
+ ├── Application OU
+ │
+ └── Production Account
+```
+
+Each attached SCP is collected.
+
+The authorization engine evaluates the final SCP set in inheritance order.
+
+---
+
+# 4. Tier 3 – Episodic Vector Memory
+
+Graph Memory explains **how infrastructure is connected**.
+
+Vector Memory explains **what has happened before**.
+
+It provides historical operational context that cannot be represented as graph relationships.
+
+Examples include:
+
+- PagerDuty incidents
+- Jira tickets
+- Security investigations
+- Architecture decisions
+- Compliance documentation
+- Production runbooks
+- Previous approvals
+- Root Cause Analyses
+
+---
+
+## Why Vector Memory Exists
+
+Consider a break-glass request.
+
+The request states:
+
+> "Production deployment is blocked due to KMS permissions."
+
+Without historical context, an LLM cannot determine whether this request is legitimate.
+
+Vector Memory answers questions such as:
+
+- Has this happened before?
+- Was it previously approved?
+- Is there an active Sev-1 incident?
+- Which runbook applies?
+- Who approved similar requests?
+
+---
+
+## Vector Architecture
+
+```mermaid
+flowchart TD
+
+INC["PagerDuty Incident"]
+
+JIRA["Jira Ticket"]
+
+RUNBOOK["Runbook"]
+
+SOC["Compliance Docs"]
+
+POST["Postmortem"]
+
+EMBED["Titan Embedding Model"]
+
+INDEX["OpenSearch Serverless"]
+
+SEARCH["Hybrid Search Engine"]
+
+INC --> EMBED
+JIRA --> EMBED
+RUNBOOK --> EMBED
+SOC --> EMBED
+POST --> EMBED
+
+EMBED --> INDEX
+
+INDEX --> SEARCH
+```
+
+---
+
+## Index Schema
+
+The OpenSearch index stores structured metadata alongside dense vector embeddings.
+
+| Field | Type | Description |
+|--------|------|-------------|
+| document_id | Keyword | Unique identifier |
+| context_type | Keyword | Incident, Jira, Runbook, Compliance |
+| target_arn | Keyword | AWS resource |
+| title | Text | Searchable title |
+| content | Text | Full document |
+| embedding | Dense Vector | Titan embedding |
+| status | Keyword | OPEN, CLOSED, APPROVED |
+| severity | Keyword | P1, P2, P3 |
+| created_at | Date | Creation timestamp |
+| owner | Keyword | Responsible team |
+
+---
+
+## Embedding Model
+
+Sentinel-IQ uses:
+
+- Amazon Titan Text Embeddings
+
+Embedding Dimensions
+
+```
+1536
+```
+
+Distance Metric
+
+```
+Cosine Similarity
+```
+
+Approximate Nearest Neighbor
+
+```
+HNSW
+```
+
+---
+
+## Hybrid Retrieval Pipeline
+
+The retrieval engine combines lexical and semantic retrieval.
+
+```mermaid
+flowchart LR
+
+QUERY["Developer Request"]
+
+BM25["BM25 Search"]
+
+KNN["Vector Search"]
+
+MERGE["Rank Fusion"]
+
+FILTER["Business Filters"]
+
+RESULT["Retrieved Context"]
+
+QUERY --> BM25
+QUERY --> KNN
+
+BM25 --> MERGE
+KNN --> MERGE
+
+MERGE --> FILTER
+
+FILTER --> RESULT
+```
+
+---
+
+## Retrieval Workflow
+
+### Step 1
+
+Perform BM25 lexical search.
+
+Filters include:
+
+- Status = OPEN
+- Resource ARN
+- Incident Severity
+
+---
+
+### Step 2
+
+Perform semantic vector search.
+
+Retrieve the nearest contextual documents.
+
+---
+
+### Step 3
+
+Merge both rankings.
+
+Lexical precision and semantic relevance complement each other.
+
+---
+
+### Step 4
+
+Apply business constraints.
+
+Examples include:
+
+- Incident still active
+- Created within last 30 days
+- Approved by Security Team
+- Same production account
+
+---
+
+### Step 5
+
+Return the final ranked context set.
+
+---
+
+## Similarity Thresholds
+
+| Score | Interpretation |
+|--------|---------------|
+| > 0.95 | Nearly identical context |
+| 0.90–0.95 | Very high confidence |
+| 0.85–0.90 | Acceptable operational match |
+| < 0.85 | Requires manual review |
+
+Sentinel-IQ uses:
+
+```
+0.85
+```
+
+as the default production threshold.
+
+---
+
+# 5. Tier 4 – Procedural Memory
+
+Procedural Memory is fundamentally different from Graph Memory and Vector Memory.
+
+It stores **capabilities**, not **knowledge**.
+
+An LLM should never:
+
+- calculate policy byte counts
+- decode STS authorization messages
+- execute graph traversals
+- run formal verification
+- simulate IAM authorization
+
+Instead, it delegates those responsibilities to deterministic tools.
+
+---
+
+## Why Deterministic Tools?
+
+Enterprise governance requires reproducible behavior.
+
+The same input must always produce the same output.
+
+LLMs cannot guarantee deterministic execution for arithmetic, parsing, or policy evaluation.
+
+Therefore, Sentinel-IQ separates reasoning from execution.
+
+```mermaid
+flowchart LR
+
+LLM["Reasoning Agent"]
+
+TOOLS["Deterministic Tool Registry"]
+
+AWS["AWS APIs"]
+
+LLM --> TOOLS
+
+TOOLS --> AWS
+```
+
+---
+
+## Tool Registry Overview
+
+| Tool | Responsibility |
+|------|----------------|
+| AST Compiler | Policy parsing and optimization |
+| SLR Exemption Tool | Prevent AWS service lockouts |
+| Zelkova Verifier | Formal mathematical verification |
+| STS Decoder | Decode AccessDenied authorization messages |
+| Neptune GraphRAG | Trust graph traversal |
+| Chronos TTL | Automatic temporary access revocation |
+
+---
+
+## Execution Philosophy
+
+The LLM is responsible for:
+
+- planning
+- reasoning
+- orchestration
+- decision making
+
+The tools are responsible for:
+
+- execution
+- validation
+- parsing
+- simulation
+- AWS interactions
+
+This strict separation ensures production-grade reliability, repeatability, and auditability.
+
+# 6. Multi-Agent Coalition Architecture
+
+Sentinel-IQ is not implemented as a single monolithic AI agent.
+
+Instead, it is composed of specialized cognitive coalitions, where each coalition owns one responsibility within the governance lifecycle.
+
+This architecture follows the same principle used in distributed systems:
+
+> **Specialization produces more reliable systems than generalization.**
+
+Each coalition has deterministic responsibilities, bounded context, dedicated tools, and explicit contracts.
+
+---
+
+# High-Level Cognitive Architecture
+
+```mermaid
+flowchart TD
+
+    EVENT["Incoming Event"]
+
+    SUP["Supervisor Meta-Agent"]
+
+    EVENT --> SUP
+
+    SUP --> ALPHA["Coalition Alpha<br/>Policy Synthesis"]
+
+    SUP --> BETA["Coalition Beta<br/>Simulation & Verification"]
+
+    SUP --> GAMMA["Coalition Gamma<br/>Context & Lifecycle"]
+
+    ALPHA --> STATE["Working Memory"]
+
+    BETA --> STATE
+
+    GAMMA --> STATE
+
+    STATE --> HITL["Human Approval"]
+
+    HITL --> EXEC["Policy Deployment"]
+```
+
+---
+
+# Why Multiple Coalitions?
+
+Enterprise governance problems belong to different domains.
+
+For example,
+
+An SCP optimization problem requires:
+
+- AST manipulation
+- byte optimization
+- policy rewriting
+
+A trust policy problem requires:
+
+- graph traversal
+- IAM reasoning
+- transitive trust analysis
+
+A break-glass request requires:
+
+- historical incidents
+- PagerDuty context
+- operational validation
+
+Trying to solve all three with one prompt produces:
+
+- prompt bloat
+- hallucinations
+- inconsistent outputs
+- excessive token usage
+
+Instead, Sentinel-IQ routes each problem to a dedicated coalition.
+
+---
+
+# Coalition Overview
+
+| Coalition | Responsibility | Primary Problems |
+|------------|---------------|------------------|
+| Supervisor | Routing & orchestration | All |
+| Alpha | Policy synthesis | SCP-1, SCP-4 |
+| Beta | Verification & simulation | SCP-2, IAM-1, IAM-2 |
+| Gamma | Context & lifecycle | SCP-3, SCP-5, IAM-3 |
+
+---
+
+# Supervisor Meta-Agent
+
+The Supervisor is the entry point for every execution.
+
+It never modifies policies.
+
+It never executes AWS APIs.
+
+Its only responsibility is orchestration.
+
+---
+
+## Responsibilities
+
+The Supervisor performs the following tasks.
+
+### 1. Event Classification
+
+Examples include:
+
+- AccessDenied
+- SCP update
+- IAM request
+- Break-glass request
+- Security Hub finding
+- GuardDuty alert
+- PagerDuty incident
+
+---
+
+### 2. Problem Identification
+
+The Supervisor maps the incoming event into one production problem.
+
+Example mapping:
+
+| Incoming Event | Problem |
+|----------------|----------|
+| SCP exceeds limit | SCP-1 |
+| Unexpected AccessDenied | SCP-3 |
+| Trust policy review | IAM-1 |
+| Least privilege recommendation | IAM-2 |
+| Break-glass request | SCP-5 |
+
+---
+
+### 3. State Initialization
+
+The Supervisor creates the Working Memory State.
+
+It initializes:
+
+- Session ID
+- Retry Counter
+- Event Metadata
+- Target ARN
+- Account ID
+- Execution Status
+
+---
+
+### 4. Coalition Routing
+
+Once classification completes,
+
+the Supervisor routes execution to the correct coalition.
+
+```mermaid
+flowchart TD
+
+EVENT["Incoming Event"]
+
+CLASSIFY["Classify Event"]
+
+ROUTE["Determine Problem"]
+
+EVENT --> CLASSIFY
+
+CLASSIFY --> ROUTE
+
+ROUTE --> SCP1["Alpha"]
+
+ROUTE --> SCP2["Beta"]
+
+ROUTE --> SCP3["Gamma"]
+```
+
+---
+
+# Coalition Alpha – Policy Synthesis Engine
+
+Alpha is responsible for creating policy changes.
+
+It never performs verification.
+
+It only generates candidate solutions.
+
+---
+
+## Target Problems
+
+- SCP-1
+- SCP-4
+
+---
+
+## Internal Nodes
+
+```text
+AST Compiler
+
+↓
+
+Policy Optimizer
+
+↓
+
+SLR Exemption Injector
+
+↓
+
+Policy Minifier
+
+↓
+
+Byte Validator
+```
+
+---
+
+## Alpha Workflow
+
+```mermaid
+flowchart TD
+
+INPUT["Policy JSON"]
+
+AST["AST Compiler"]
+
+OPT["Statement Optimizer"]
+
+SLR["SLR Injector"]
+
+MIN["Policy Minifier"]
+
+SIZE["Byte Counter"]
+
+OUTPUT["Optimized Policy"]
+
+INPUT --> AST
+
+AST --> OPT
+
+OPT --> SLR
+
+SLR --> MIN
+
+MIN --> SIZE
+
+SIZE --> OUTPUT
+```
+
+---
+
+## Step 1 — AST Compilation
+
+The raw SCP JSON is parsed into an Abstract Syntax Tree.
+
+The AST enables structural manipulation rather than string replacement.
+
+Benefits include:
+
+- deterministic edits
+- duplicate detection
+- condition normalization
+- statement merging
+
+---
+
+## Step 2 — Statement Aggregation
+
+Duplicate statements are merged.
+
+Example
+
+Before
+
+```
+ec2:StartInstances
+
+ec2:StopInstances
+
+ec2:DescribeInstances
+```
+
+After
+
+```
+ec2:*Instances
+```
+
+This dramatically reduces SCP size.
+
+---
+
+## Step 3 — SLR Protection
+
+Broad deny statements frequently break AWS-managed services.
+
+The SLR Injector scans for these cases.
+
+Example
+
+Instead of:
+
+```
+Deny kms:*
+```
+
+the engine injects
+
+```json
+{
+  "Condition": {
+    "Bool": {
+      "aws:PrincipalIsAWSService": "true"
+    }
+  }
+}
+```
+
+This preserves AWS Backup, Macie, Config, GuardDuty, and other managed services.
+
+---
+
+## Step 4 — Byte Optimization
+
+The optimized policy is measured.
+
+Maximum SCP size
+
+```
+10,240 bytes
+```
+
+If exceeded,
+
+the compiler automatically partitions the SCP into Parent and Child organizational policies.
+
+---
+
+# Coalition Beta – Simulation & Formal Verification
+
+Beta answers one question.
+
+> "Is this policy mathematically safe?"
+
+Unlike Alpha,
+
+Beta never generates policies.
+
+It only evaluates them.
+
+---
+
+## Target Problems
+
+- SCP-2
+- IAM-1
+- IAM-2
+
+---
+
+## Internal Components
+
+```text
+Graph Traversal
+
+↓
+
+CloudTrail Replay
+
+↓
+
+IAM Simulation
+
+↓
+
+Zelkova Proof
+
+↓
+
+Blast Radius Analysis
+```
+
+---
+
+## Verification Workflow
+
+```mermaid
+flowchart TD
+
+POLICY["Candidate Policy"]
+
+GRAPH["Graph Traversal"]
+
+SIM["CloudTrail Replay"]
+
+IAM["IAM Simulation"]
+
+ZEL["Zelkova Proof"]
+
+RESULT["Verification Result"]
+
+POLICY --> GRAPH
+
+GRAPH --> SIM
+
+SIM --> IAM
+
+IAM --> ZEL
+
+ZEL --> RESULT
+```
+
+---
+
+## Step 1 — Graph Analysis
+
+Neptune Graph Memory reconstructs:
+
+- trust chains
+- SCP inheritance
+- organizational hierarchy
+- reachable resources
+
+---
+
+## Step 2 — CloudTrail Replay
+
+Historical CloudTrail events are replayed.
+
+Questions answered include:
+
+- Has this permission ever been used?
+- Which principals depend on it?
+- Will removing it cause production failures?
+
+---
+
+## Step 3 — IAM Simulation
+
+Candidate policies are evaluated using deterministic IAM simulation.
+
+This identifies:
+
+- denied requests
+- newly granted permissions
+- privilege escalation
+
+---
+
+## Step 4 — Formal Verification
+
+The candidate policy is submitted to AWS Access Analyzer.
+
+Zelkova performs SMT-based automated reasoning.
+
+Possible outcomes:
+
+| Result | Meaning |
+|---------|----------|
+| PASS | Safe |
+| FAIL_PRIVILEGE_ESCALATION | New access introduced |
+| FAIL_SYNTAX | Invalid policy |
+| UNVERIFIED | Proof unavailable |
+
+---
+
+## Step 5 — Blast Radius Calculation
+
+Beta computes:
+
+- impacted accounts
+- affected services
+- broken trust chains
+- affected IAM roles
+- Service-Linked Roles
+- production resources
+
+This information is returned to Working Memory.
+
+---
+
+# Coalition Gamma – Context & Lifecycle Governance
+
+Gamma specializes in operational context.
+
+It never modifies SCPs.
+
+It never performs mathematical verification.
+
+Instead,
+
+it determines whether requests are operationally justified.
+
+---
+
+## Target Problems
+
+- SCP-3
+- SCP-5
+- IAM-3
+
+---
+
+## Internal Components
+
+```text
+STS Decoder
+
+↓
+
+Context Retrieval
+
+↓
+
+Incident Validator
+
+↓
+
+TTL Generator
+
+↓
+
+Lifecycle Manager
+```
+
+---
+
+## Workflow
+
+```mermaid
+flowchart TD
+
+REQ["Incoming Request"]
+
+STS["STS Decoder"]
+
+CTX["Hybrid Context Search"]
+
+VAL["Context Validation"]
+
+TTL["TTL Assignment"]
+
+OUTPUT["Lifecycle Decision"]
+
+REQ --> STS
+
+STS --> CTX
+
+CTX --> VAL
+
+VAL --> TTL
+
+TTL --> OUTPUT
+```
+
+---
+
+## STS Authorization Decoder
+
+When AWS returns an encoded AccessDenied message,
+
+Gamma invokes:
+
+```
+sts:DecodeAuthorizationMessage
+```
+
+The decoded payload identifies:
+
+- failed action
+- denied policy
+- missing condition
+- missing tags
+- evaluation path
+
+This removes ambiguity from authorization failures.
+
+---
+
+## Context Validation
+
+Gamma queries OpenSearch using hybrid retrieval.
+
+It searches:
+
+- PagerDuty
+- Jira
+- Incident Reports
+- Runbooks
+- Security Documentation
+
+Only validated operational context is accepted.
+
+---
+
+## Break-Glass Validation
+
+If an engineer requests temporary access,
+
+Gamma checks:
+
+- Active Sev-1?
+- Active Sev-2?
+- Matching resource?
+- Approved runbook?
+- Similar historical incident?
+
+If validation succeeds,
+
+the request proceeds.
+
+Otherwise,
+
+Human Approval is required.
+
+---
+
+## TTL Assignment
+
+Approved temporary permissions receive:
+
+- expiration timestamp
+- revocation schedule
+- rollback metadata
+- audit identifier
+
+Chronos TTL later removes the permission automatically.
+
+---
+
+# Coalition Communication Model
+
+Coalitions never communicate directly.
+
+Every coalition exchanges information only through the Working Memory State.
+
+```mermaid
+flowchart LR
+
+ALPHA["Alpha"]
+
+STATE["Working Memory"]
+
+BETA["Beta"]
+
+GAMMA["Gamma"]
+
+ALPHA --> STATE
+
+BETA --> STATE
+
+GAMMA --> STATE
+
+STATE --> ALPHA
+
+STATE --> BETA
+
+STATE --> GAMMA
+```
+
+This architecture guarantees:
+
+- deterministic execution
+- replay capability
+- auditability
+- loose coupling
+- horizontal scalability
+- independent coalition evolution
+
+# 7. Master Execution Graph & Self-Correction Engine
+
+The Sentinel-IQ execution engine is built as a deterministic LangGraph state machine rather than a traditional sequential workflow.
+
+Unlike conventional automation pipelines, every execution path is:
+
+- State-aware
+- Interruptible
+- Self-correcting
+- Formally verifiable
+- Human-governed
+- Fully auditable
+
+The graph never executes a policy directly after synthesis.
+
+Every candidate policy must successfully pass through multiple verification gates before deployment.
+
+---
+
+# Complete Execution Pipeline
+
+```mermaid
+flowchart TD
+
+A[Trigger Event]
+
+B[Supervisor Meta-Agent]
+
+C[Initialize Working Memory]
+
+D[Route to Coalition]
+
+E[Coalition Alpha<br/>Policy Synthesis]
+
+F[Coalition Beta<br/>Simulation]
+
+G[Graph Traversal]
+
+H[CloudTrail Replay]
+
+I[Zelkova Verification]
+
+J{Verification Passed?}
+
+K[Coalition Gamma]
+
+L[Human Approval]
+
+M[Deployment Engine]
+
+N[Rollback Manager]
+
+O[Audit Log]
+
+P[Execution Complete]
+
+A --> B
+
+B --> C
+
+C --> D
+
+D --> E
+
+E --> F
+
+F --> G
+
+G --> H
+
+H --> I
+
+I --> J
+
+J -->|PASS| K
+
+J -->|FAIL| E
+
+K --> L
+
+L -->|Approve| M
+
+L -->|Reject| N
+
+M --> O
+
+N --> O
+
+O --> P
+```
+
+---
+
+# Phase 1 — Event Ingestion
+
+Every execution begins with an event.
+
+Possible event sources include:
+
+- CloudTrail
+- Security Hub
+- EventBridge
+- GuardDuty
+- AWS Config
+- IAM Access Analyzer
+- PagerDuty
+- Jira
+- Manual API Requests
+- Slack Commands
+
+Example
+
+```text
+AccessDenied
+
+↓
+
+CloudTrail Event
+
+↓
+
+EventBridge Rule
+
+↓
+
+Supervisor Agent
+```
+
+---
+
+# Phase 2 — Supervisor Initialization
+
+The Supervisor performs five responsibilities.
+
+## Responsibility 1
+
+Generate Session ID.
+
+Example
+
+```
+SESSION-20260728-001923
+```
+
+---
+
+## Responsibility 2
+
+Determine execution type.
+
+Possible categories
+
+- SCP Optimization
+- IAM Analysis
+- Break-Glass
+- AccessDenied
+- Least Privilege
+- Identity Center Review
+
+---
+
+## Responsibility 3
+
+Load Working Memory.
+
+Initialize
+
+- Session ID
+- Retry Counter
+- Policy
+- Event Metadata
+- Resource ARN
+- Account
+- Debate History
+
+---
+
+## Responsibility 4
+
+Identify production problem.
+
+Example
+
+```
+Incoming Event
+
+↓
+
+CloudTrail AccessDenied
+
+↓
+
+SCP-3
+
+↓
+
+Coalition Gamma
+```
+
+---
+
+## Responsibility 5
+
+Select execution path.
+
+Only one primary coalition executes initially.
+
+---
+
+# Phase 3 — Policy Synthesis
+
+Coalition Alpha produces the candidate solution.
+
+Pipeline
+
+```text
+Policy JSON
+
+↓
+
+AST Compiler
+
+↓
+
+Duplicate Detection
+
+↓
+
+Statement Merge
+
+↓
+
+Wildcard Optimization
+
+↓
+
+SLR Injection
+
+↓
+
+Byte Validation
+
+↓
+
+Working Policy
+```
+
+Outputs
+
+- Optimized Policy
+- Updated AST
+- Byte Metrics
+- Optimization Report
+
+---
+
+# Phase 4 — Simulation
+
+Simulation predicts production impact before deployment.
+
+Unlike testing,
+
+simulation uses production telemetry.
+
+Sources
+
+- CloudTrail
+- Neptune
+- IAM Simulator
+- AWS Organizations
+
+---
+
+## Simulation Workflow
+
+```mermaid
+flowchart LR
+
+POLICY[Working Policy]
+
+GRAPH[Graph Analysis]
+
+TRAIL[CloudTrail Replay]
+
+SIM[IAM Simulation]
+
+BLAST[Blast Radius]
+
+POLICY --> GRAPH
+
+GRAPH --> TRAIL
+
+TRAIL --> SIM
+
+SIM --> BLAST
+```
+
+Simulation identifies
+
+- impacted services
+- denied APIs
+- trust failures
+- broken deployments
+- unnecessary permissions
+- production outage risks
+
+---
+
+# Phase 5 — Formal Verification
+
+Simulation predicts behavior.
+
+Formal Verification proves behavior.
+
+Sentinel-IQ uses AWS Access Analyzer's Zelkova reasoning engine.
+
+Instead of asking
+
+> "Will this probably work?"
+
+it asks
+
+> "Can AWS mathematically prove this policy is safe?"
+
+---
+
+## Verification Pipeline
+
+```mermaid
+flowchart TD
+
+BASELINE[Existing Policy]
+
+CANDIDATE[Candidate Policy]
+
+ZELKOVA[AWS Zelkova]
+
+COMPARE[Automated Reasoning]
+
+RESULT[Formal Proof]
+
+BASELINE --> ZELKOVA
+
+CANDIDATE --> ZELKOVA
+
+ZELKOVA --> COMPARE
+
+COMPARE --> RESULT
+```
+
+Possible outputs
+
+| Status | Meaning |
+|----------|---------|
+| PASS | Safe |
+| FAIL_PRIVILEGE_ESCALATION | New permissions introduced |
+| FAIL_SYNTAX | Invalid policy |
+| UNVERIFIED | Unable to prove |
+
+---
+
+# Self-Correction Debate Loop
+
+One of the most important features of Sentinel-IQ is that failure does **not** immediately terminate execution.
+
+Instead,
+
+verification failures trigger an autonomous correction cycle.
+
+```mermaid
+flowchart TD
+
+A[Candidate Policy]
+
+B[Zelkova Verification]
+
+C{PASS?}
+
+D[Deployment]
+
+E[Counter Example]
+
+F[Append Debate Log]
+
+G[Coalition Alpha]
+
+A --> B
+
+B --> C
+
+C -->|YES| D
+
+C -->|NO| E
+
+E --> F
+
+F --> G
+
+G --> A
+```
+
+This creates an iterative refinement process.
+
+Each loop produces a better candidate policy.
+
+---
+
+# Debate Memory
+
+Every failed verification appends structured feedback.
+
+Example
+
+```json
+{
+  "iteration": 2,
+  "agent": "Beta",
+  "reason": "Privilege escalation detected",
+  "resource": "arn:aws:s3:::production-bucket",
+  "recommendation": "Restrict wildcard action"
+}
+```
+
+Coalition Alpha receives this feedback during the next iteration.
+
+No reasoning is lost.
+
+---
+
+# Retry Limits
+
+Infinite loops are unacceptable in production.
+
+Therefore,
+
+Sentinel-IQ enforces a strict retry policy.
+
+| Attempt | Action |
+|----------|---------|
+| 1 | Retry automatically |
+| 2 | Retry automatically |
+| 3 | Final retry |
+| >3 | Escalate to Human Approval |
+
+Maximum retries
+
+```
+3
+```
+
+This prevents runaway execution costs.
+
+---
+
+# Human-in-the-Loop (HITL)
+
+Certain actions require explicit human approval.
+
+Examples include
+
+- SCP deployment
+- Organization-wide changes
+- Production IAM updates
+- Break-glass approval
+- Permission revocation
+
+No coalition may bypass this stage.
+
+---
+
+## HITL Workflow
+
+```mermaid
+flowchart LR
+
+VERIFY[Verification Passed]
+
+REVIEW[Human Approval]
+
+DEPLOY[Deployment]
+
+ROLLBACK[Rejected]
+
+VERIFY --> REVIEW
+
+REVIEW -->|Approve| DEPLOY
+
+REVIEW -->|Reject| ROLLBACK
+```
+
+---
+
+# Approval Package
+
+Instead of showing raw JSON,
+
+Sentinel-IQ generates a structured approval summary.
+
+Contents include
+
+- Executive Summary
+- Proposed Change
+- Risk Score
+- Blast Radius
+- Impacted Accounts
+- Affected Services
+- Verification Result
+- Counter Examples
+- Rollback Plan
+- TTL Information
+- Approval Recommendation
+
+This enables security teams to make informed decisions quickly.
+
+---
+
+# Deployment Engine
+
+Only after approval does deployment begin.
+
+Deployment responsibilities include
+
+- Version creation
+- Policy upload
+- SCP attachment
+- IAM updates
+- Event logging
+- Change notification
+
+Deployment is transactional.
+
+If any step fails,
+
+execution transitions immediately into rollback mode.
+
+---
+
+# Rollback Manager
+
+Rollback is treated as a first-class capability.
+
+Rollback metadata includes
+
+- Previous Policy Version
+- Attachment State
+- Timestamp
+- Deployment ID
+- Rollback Token
+
+Rollback workflow
+
+```mermaid
+flowchart TD
+
+FAILURE[Deployment Failure]
+
+RESTORE[Restore Previous Version]
+
+VERIFY[Verify Rollback]
+
+AUDIT[Audit Event]
+
+DONE[Completed]
+
+FAILURE --> RESTORE
+
+RESTORE --> VERIFY
+
+VERIFY --> AUDIT
+
+AUDIT --> DONE
+```
+
+---
+
+# Audit Trail
+
+Every execution generates immutable audit records.
+
+Audit events include
+
+- Event Received
+- Coalition Routing
+- Policy Generated
+- Verification Result
+- Human Decision
+- Deployment Status
+- Rollback Events
+- TTL Expiration
+- Final Outcome
+
+The audit trail supports
+
+- Compliance
+- Forensics
+- SOC2
+- ISO 27001
+- Internal Security Reviews
+
+---
+
+# End-to-End Production Flow
+
+```mermaid
+flowchart TD
+
+EVENT[Incoming Event]
+
+SUPERVISOR[Supervisor]
+
+ALPHA[Policy Synthesis]
+
+BETA[Simulation]
+
+GRAPH[Graph Memory]
+
+VECTOR[Vector Memory]
+
+VERIFY[Zelkova]
+
+GAMMA[Context Validation]
+
+HITL[Human Approval]
+
+DEPLOY[Deployment]
+
+ROLLBACK[Rollback]
+
+AUDIT[Audit Trail]
+
+EVENT --> SUPERVISOR
+
+SUPERVISOR --> ALPHA
+
+ALPHA --> BETA
+
+BETA --> GRAPH
+
+BETA --> VECTOR
+
+GRAPH --> VERIFY
+
+VECTOR --> VERIFY
+
+VERIFY -->|PASS| GAMMA
+
+VERIFY -->|FAIL| ALPHA
+
+GAMMA --> HITL
+
+HITL -->|Approve| DEPLOY
+
+HITL -->|Reject| ROLLBACK
+
+DEPLOY --> AUDIT
+
+ROLLBACK --> AUDIT
+```
+
+---
+
+# Production Design Principles
+
+The execution engine follows several architectural principles.
+
+1. Every action is deterministic.
+2. Every state transition is auditable.
+3. Every policy is formally verified.
+4. Every deployment is reversible.
+5. Every retry is bounded.
+6. Every approval is explicit.
+7. Every temporary permission has an expiration.
+8. Every reasoning step is preserved in Working Memory.
+9. Every coalition has a single responsibility.
+10. Every production change is explainable.
+
+These principles ensure Sentinel-IQ remains predictable, secure, scalable, and suitable for enterprise governance environments.
