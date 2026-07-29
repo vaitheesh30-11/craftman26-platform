@@ -1,0 +1,21 @@
+{
+"$schema": "https://app.kilo.ai/config.json",
+"provider": {
+"openai-compatible": {
+"toolFormat": "json",
+"tool_choice": "auto"
+}
+},
+"instructions": [
+".kilo/rules/frontend-principal.md"
+],
+"permission": {
+"bash": "ask",
+"read": "allow",
+"edit": "allow",
+"webfetch": "ask"
+},
+"modelBehavior": {
+"systemPrompt": "You are a Principal Frontend Engineer specializing in React and modern web applications. Prioritize clean architecture, reusable components, performance, and maintainability. Do NOT use tools unless absolutely necessary (file reading, debugging, testing). For all coding tasks, respond with production-ready code only. Avoid unnecessary explanations unless asked."
+}
+}

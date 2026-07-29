@@ -1,0 +1,15 @@
+'use client';
+
+import * as Dialog from '@radix-ui/react-dialog';
+import { useEffect, useState } from 'react';
+
+interface RejectSessionModalProps { open: boolean; onOpenChange: (open: boolean) => void; isPending: boolean; onConfirm: (approverArn: string, reason: string) => void; }
+const roles = ['arn:aws:iam::123456789012:role/SentinelSecurityAdmin', 'arn:aws:iam::123456789012:role/CloudGovernanceLead'];
+
+export function RejectSessionModal({ open, onOpenChange, isPending, onConfirm }: RejectSessionModalProps): JSX.Element {
+  const [approverArn, setApproverArn] = useState(roles[0]);
+  const [reason, setReason] = useState('');
+  useEffect(() => { if (!open) setReason(''); }, [open]);
+  const submit = (event: React.FormEvent<HTMLFormElement>): void => { event.preventDefault(); if (reason.trim().length >= 10) onConfirm(approverArn, reason.trim()); };
+  return <Dialog.Root open={open} onOpenChange={onOpenChange}><Dialog.Portal><Dialog.Overlay className="fixed inset-0 z-40 bg-black/70 backdrop-blur-sm" /><Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-rose-500/40 bg-zinc-950 p-6 shadow-2xl"><Dialog.Title className="text-xl font-semibold text-zinc-100">Reject governed deployment</Dialog.Title><Dialog.Description className="mt-2 text-sm leading-6 text-zinc-400">This stops the current session. Record the security rationale for the audit trail.</Dialog.Description><form className="mt-5 space-y-4" onSubmit={submit}><label className="block text-sm font-medium text-zinc-200">AWS identity<select value={approverArn} onChange={(event) => setApproverArn(event.target.value)} className="mt-2 w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-rose-400">{roles.map((role) => <option key={role} value={role}>{role.split('/').pop()}</option>)}</select></label><label className="block text-sm font-medium text-zinc-200">Reason for rejection<textarea required minLength={10} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Describe the policy or risk that prevents approval…" className="mt-2 min-h-28 w-full resize-y rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-rose-400" /><span className="mt-1 block text-xs text-zinc-500">{reason.trim().length} / 10 minimum characters</span></label><div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><Dialog.Close asChild><button type="button" disabled={isPending} className="rounded-lg px-4 py-2.5 text-sm font-semibold text-zinc-300 hover:bg-zinc-900">Cancel</button></Dialog.Close><button type="submit" disabled={reason.trim().length < 10 || isPending} className="rounded-lg bg-rose-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-rose-400 disabled:cursor-not-allowed disabled:opacity-50">{isPending ? 'Rejecting…' : 'Reject session'}</button></div></form></Dialog.Content></Dialog.Portal></Dialog.Root>;
+}

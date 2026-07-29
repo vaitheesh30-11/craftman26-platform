@@ -1,0 +1,16 @@
+'use client';
+
+import * as Dialog from '@radix-ui/react-dialog';
+import { useEffect, useState } from 'react';
+
+interface ManualOverrideModalProps { open: boolean; onOpenChange: (open: boolean) => void; isPending: boolean; hasOverride: boolean; onConfirm: (approverArn: string, notes: string) => void; }
+const roles = ['arn:aws:iam::123456789012:role/SentinelSecurityAdmin', 'arn:aws:iam::123456789012:role/CloudGovernanceLead'];
+
+export function ManualOverrideModal({ open, onOpenChange, isPending, hasOverride, onConfirm }: ManualOverrideModalProps): JSX.Element {
+  const [approverArn, setApproverArn] = useState(roles[0]);
+  const [notes, setNotes] = useState('');
+  const isValid = notes.trim().length >= 10;
+  useEffect(() => { if (!open) setNotes(''); }, [open]);
+  const submit = (event: React.FormEvent<HTMLFormElement>): void => { event.preventDefault(); if (isValid) onConfirm(approverArn, notes.trim()); };
+  return <Dialog.Root open={open} onOpenChange={onOpenChange}><Dialog.Portal><Dialog.Overlay className="fixed inset-0 z-40 bg-black/70 backdrop-blur-sm" /><Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-zinc-700 bg-zinc-950 p-6 shadow-2xl"><Dialog.Title className="text-xl font-semibold text-zinc-100">Confirm governed deployment</Dialog.Title><Dialog.Description className="mt-2 text-sm leading-6 text-zinc-400">Select the identity recorded in the audit trail and add a clear justification before deployment.</Dialog.Description>{hasOverride && <div className="mt-4 rounded-lg border border-violet-500/40 bg-violet-500/10 p-3 text-sm text-violet-200">A human policy override is included with this approval.</div>}<form className="mt-5 space-y-4" onSubmit={submit}><label className="block text-sm font-medium text-zinc-200">AWS identity<select value={approverArn} onChange={(event) => setApproverArn(event.target.value)} className="mt-2 w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none transition focus:border-cyan-400">{roles.map((role) => <option key={role} value={role}>{role.split('/').pop()}</option>)}</select></label><label className="block text-sm font-medium text-zinc-200">Justification for security audit<textarea required minLength={10} value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Explain why this deployment is required…" className="mt-2 min-h-28 w-full resize-y rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none transition placeholder:text-zinc-600 focus:border-cyan-400" /><span className="mt-1 block text-xs text-zinc-500">{notes.trim().length} / 10 minimum characters</span></label><div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><Dialog.Close asChild><button type="button" disabled={isPending} className="rounded-lg px-4 py-2.5 text-sm font-semibold text-zinc-300 hover:bg-zinc-900">Cancel</button></Dialog.Close><button type="submit" disabled={!isValid || isPending} className="rounded-lg bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-zinc-950 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-50">{isPending ? 'Committing…' : 'Confirm & deploy'}</button></div></form></Dialog.Content></Dialog.Portal></Dialog.Root>;
+}
