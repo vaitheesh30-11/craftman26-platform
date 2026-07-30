@@ -40,6 +40,10 @@ class AdapterSettings(BaseSettings):
     metric_namespace: str = "IAMSentinel"
     model_haiku_id: str = "anthropic.claude-3-5-haiku-20241022-v1:0"
     model_sonnet_id: str = "anthropic.claude-3-5-sonnet-20241022-v2:0"
+    llm_provider: Literal["grok", "bedrock"] = "bedrock"
+    grok_model_id: str = "grok-4-latest"
+    xai_api_key: str = ""
+    correlation_dollar_cap: float = 1.00
 
 
 settings = AdapterSettings()

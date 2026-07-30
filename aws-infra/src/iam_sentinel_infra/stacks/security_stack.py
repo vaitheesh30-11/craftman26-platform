@@ -75,6 +75,12 @@ class SecurityStack(Stack):
             parameter_name=f"/sentinel/{stage_config.stage}/guardrail/version",
             string_value=self.guardrail.resource.get_att_string("GuardrailVersion"),
         )
+        ssm.StringParameter(
+            self,
+            "GuardrailIdParam",
+            parameter_name=f"/sentinel/{stage_config.stage}/guardrail/id",
+            string_value=self.guardrail.resource.ref,
+        )
 
         sentinel_resource_arns = [
             f"arn:aws:dynamodb:{stage_config.region}:{stage_config.account_id}:table/Sentinel*",

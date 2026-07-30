@@ -370,6 +370,7 @@ dependencies = [
     { name = "botocore" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
+    { name = "requests" },
     { name = "tenacity" },
 ]
 
@@ -383,6 +384,7 @@ dev = [
     { name = "pytest-cov" },
     { name = "ruff" },
     { name = "types-boto3" },
+    { name = "types-requests" },
 ]
 
 [package.metadata]
@@ -392,6 +394,7 @@ requires-dist = [
     { name = "botocore", specifier = "==1.35.36" },
     { name = "pydantic", specifier = "==2.9.2" },
     { name = "pydantic-settings", specifier = "==2.5.2" },
+    { name = "requests", specifier = "==2.32.3" },
     { name = "tenacity", specifier = "==8.5.0" },
 ]
 
@@ -405,6 +408,7 @@ dev = [
     { name = "pytest-cov", specifier = "==5.0.0" },
     { name = "ruff", specifier = "==0.6.9" },
     { name = "types-boto3", specifier = "==1.0.2" },
+    { name = "types-requests", specifier = "==2.32.0.20241016" },
 ]
 
 [[package]]
@@ -994,7 +998,7 @@ wheels = [
 
 [[package]]
 name = "requests"
-version = "2.34.2"
+version = "2.32.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "certifi" },
@@ -1002,9 +1006,9 @@ dependencies = [
     { name = "idna" },
     { name = "urllib3" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ac/c3/e2a2b89f2d3e2179abd6d00ebd70bff6273f37fb3e0cc209f48b39d00cbf/requests-2.34.2.tar.gz", hash = "sha256:f288924cae4e29463698d6d60bc6a4da69c89185ad1e0bcc4104f584e960b9ed", size = 142856, upload-time = "2026-05-14T19:25:27.735Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/63/70/2bf7780ad2d390a8d301ad0b550f1581eadbd9a20f896afe06353c2a2913/requests-2.32.3.tar.gz", hash = "sha256:55365417734eb18255590a9ff9eb97e9e1da868d4ccd6402399eaf68af20a760", size = 131218, upload-time = "2024-05-29T15:37:49.536Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a0/f4/c67b0b3f1b9245e8d266f0f112c500d50e5b4e83cb6f3b71b6528104182a/requests-2.34.2-py3-none-any.whl", hash = "sha256:2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0", size = 73075, upload-time = "2026-05-14T19:25:26.443Z" },
+    { url = "https://files.pythonhosted.org/packages/f9/9b/335f9764261e915ed497fcdeb11df5dfd6f7bf257d4a6a2a686d80da4d54/requests-2.32.3-py3-none-any.whl", hash = "sha256:70761cfe03c773ceb22aa2f671b4757976145175cdfca038c02654d061d6dcc6", size = 64928, upload-time = "2024-05-29T15:37:47.027Z" },
 ]
 
 [[package]]
@@ -1160,6 +1164,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/49/0a/0d160bd310f86bfcf47eedfdc31b6078428c1e964981ec107ef38a1a3e06/types-boto3-1.0.2.tar.gz", hash = "sha256:15f3ffad0314e40a0708fec25f94891414f93260202422bf8b19b6913853c983", size = 5039, upload-time = "2022-04-01T13:48:52.28Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/be/8c/02cfe4a1684d7bb645135238436f56fed4604a7595f1c74e8156cd6e5bec/types_boto3-1.0.2-py3-none-any.whl", hash = "sha256:a6a88e94d59d887839863a64095493956efc148e747206880a7eb47d90ae8398", size = 5090, upload-time = "2022-04-01T13:48:50.95Z" },
+]
+
+[[package]]
+name = "types-requests"
+version = "2.32.0.20241016"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "urllib3" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/fa/3c/4f2a430c01a22abd49a583b6b944173e39e7d01b688190a5618bd59a2e22/types-requests-2.32.0.20241016.tar.gz", hash = "sha256:0d9cad2f27515d0e3e3da7134a1b6f28fb97129d86b867f24d9c726452634d95", size = 18065, upload-time = "2024-10-16T02:46:10.818Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d7/01/485b3026ff90e5190b5e24f1711522e06c79f4a56c8f4b95848ac072e20f/types_requests-2.32.0.20241016-py3-none-any.whl", hash = "sha256:4195d62d6d3e043a4eaaf08ff8a62184584d2e8684e9d2aa178c7915a7da3747", size = 15836, upload-time = "2024-10-16T02:46:09.734Z" },
 ]
 
 [[package]]

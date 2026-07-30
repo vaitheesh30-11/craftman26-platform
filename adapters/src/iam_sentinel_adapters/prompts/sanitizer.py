@@ -12,7 +12,7 @@ import unicodedata
 
 from iam_sentinel_adapters.errors import SanitizerRejection
 
-_FORBIDDEN_PATTERNS: dict[str, re.Pattern[str]] = {
+FORBIDDEN_PATTERNS: dict[str, re.Pattern[str]] = {
     "trusted_input_close_tag": re.compile(r"</trusted_input", re.IGNORECASE),
     "untrusted_context_close_tag": re.compile(r"</untrusted_context", re.IGNORECASE),
     "system_close_tag": re.compile(r"</system", re.IGNORECASE),
@@ -40,7 +40,7 @@ def sanitize_untrusted(value: str, *, max_length: int = 4096) -> str:
     # characters the next step removes. Stripping first would make those
     # patterns permanently unmatchable -- silently defeating the fence-
     # escape detection this list exists for.
-    for name, pattern in _FORBIDDEN_PATTERNS.items():
+    for name, pattern in FORBIDDEN_PATTERNS.items():
         if pattern.search(without_control):
             raise SanitizerRejection(f"input rejected by forbidden pattern {name!r}")
 

@@ -124,7 +124,7 @@
         ],
         "Code": {
           "S3Bucket": "cdk-hnb659fds-assets-111111111111-us-east-1",
-          "S3Key": "6e06a39fcc6eeec884e22c8d0dff21c1a0c14a6d25aa99f16e471b6d3790a556.zip"
+          "S3Key": "55a938964d0a7d72c4817bd42873944a91fa96304f841b7ab8dfc6f6ab278f01.zip"
         },
         "DeadLetterConfig": {
           "TargetArn": {
@@ -350,7 +350,7 @@
         ],
         "Code": {
           "S3Bucket": "cdk-hnb659fds-assets-111111111111-us-east-1",
-          "S3Key": "6e06a39fcc6eeec884e22c8d0dff21c1a0c14a6d25aa99f16e471b6d3790a556.zip"
+          "S3Key": "55a938964d0a7d72c4817bd42873944a91fa96304f841b7ab8dfc6f6ab278f01.zip"
         },
         "DeadLetterConfig": {
           "TargetArn": {
@@ -1177,7 +1177,7 @@
         ],
         "Code": {
           "S3Bucket": "cdk-hnb659fds-assets-111111111111-us-east-1",
-          "S3Key": "4b1aaeb782cde6d1ebc24e02b9026c571ab56c99fedd9cf74ae5da5f98a8c502.zip"
+          "S3Key": "5fdd548dc0b29d8d8b4381d70d36c5569b3b03709e4a6134664aa05c0ca70cc8.zip"
         },
         "DeadLetterConfig": {
           "TargetArn": {
@@ -1354,6 +1354,21 @@
         ]
       },
       "Type": "AWS::IAM::Policy"
+    },
+    "GuardrailIdParam7A661D1E": {
+      "Properties": {
+        "Name": "/sentinel/dev/guardrail/id",
+        "Tags": {
+          "Owner": "iam-sentinel@customer.com",
+          "Project": "IAMSentinel",
+          "Stage": "dev"
+        },
+        "Type": "String",
+        "Value": {
+          "Ref": "Guardrail91D61981"
+        }
+      },
+      "Type": "AWS::SSM::Parameter"
     },
     "GuardrailVersionParam0FC74A9D": {
       "Properties": {
