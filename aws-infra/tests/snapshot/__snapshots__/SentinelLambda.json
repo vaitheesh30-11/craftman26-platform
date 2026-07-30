@@ -16,6 +16,24 @@
       ]
     }
   },
+  "Outputs": {
+    "ExportsOutputRefBoto3Layer463A0AEAFC52CB63": {
+      "Export": {
+        "Name": "SentinelLambda:ExportsOutputRefBoto3Layer463A0AEAFC52CB63"
+      },
+      "Value": {
+        "Ref": "Boto3Layer463A0AEA"
+      }
+    },
+    "ExportsOutputRefPowertoolsLayer17979D4BF1F19FF3": {
+      "Export": {
+        "Name": "SentinelLambda:ExportsOutputRefPowertoolsLayer17979D4BF1F19FF3"
+      },
+      "Value": {
+        "Ref": "PowertoolsLayer17979D4B"
+      }
+    }
+  },
   "Parameters": {
     "BootstrapVersion": {
       "Default": "/cdk-bootstrap/hnb659fds/version",
