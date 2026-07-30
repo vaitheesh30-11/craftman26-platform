@@ -1,0 +1,120 @@
+PHASE 02 — Zelkova Adapter
+===========================
+
+Owner assumption: one principal engineer. Duration: 2 days.
+
+1. Objective
+------------
+Wrap Access Analyzer's Zelkova-backed APIs — `CheckNoNewAccess`, `CheckAccessNotGranted`, `StartPolicyGeneration`, `GetGeneratedPolicy`, plus finding CRUD. Provide the pre- and post-check semantics that every policy-writing specialist depends on.
+
+Zelkova is the platform's mathematical safety net. This adapter never fails open.
+
+2. Deliverables
+---------------
+- `zelkova/client.py` — typed wrappers.
+- `zelkova/models.py` — `ZelkovaResult`, `Witness`, `PolicyPair`.
+- `zelkova/post_check.py` — 15-second-wait + 3-poll IAM eventual-consistency verification.
+
+3. Interface
+------------
+```python
+class ZelkovaClient:
+    def check_no_new_access(
+        self, *, existing: dict, candidate: dict, policy_type: str = "IDENTITY_POLICY",
+        correlation_id: str,
+    ) -> ZelkovaResult: ...
+
+    def check_access_not_granted(
+        self, *, policy: dict, access: list[dict], policy_type: str,
+        correlation_id: str,
+    ) -> ZelkovaResult: ...
+
+    def start_policy_generation(
+        self, *, principal_arn: str, cloudtrail_details: dict,
+        correlation_id: str,
+    ) -> str: ...  # returns job_id
+
+    def get_generated_policy(
+        self, *, job_id: str, correlation_id: str,
+    ) -> dict | None: ...  # None if still running
+
+    def post_check(
+        self, *, role_arn: str, expected_policy: dict, wait_seconds: int = 15,
+        max_polls: int = 3, correlation_id: str,
+    ) -> ZelkovaResult: ...
+```
+
+4. Semantics
+------------
+- Every call is metered as a Zelkova invocation ($0.0005 flat).
+- Every call emits a KMS-signed evidence blob (kind=`zelkova_invocation`) with input policies, response, timing.
+- ThrottlingException → retry with `Policy.CAUTIOUS` (3 attempts, base 500ms).
+- Any error other than throttling → raise `ZelkovaError`. Callers MUST NOT treat this as `pass_=True`. Contract: on any error, downgrade to Escalate.
+- Response with a `reasons`/`message` block indicating a violation → `ZelkovaResult(pass_=False, witness=Witness(...))`.
+
+5. Implementation Steps
+-----------------------
+Step 1 — `check_no_new_access`:
+  1. Normalize both policies via canonicalizer (RFC 8785).
+  2. `access-analyzer:CheckNoNewAccess` with `existingAccess=existing, newAccess=candidate, policyType=policy_type`.
+  3. Parse `result` (`PASS`/`FAIL`) and `reasons[]`.
+  4. Compose `Witness` from `reasons` (principal, action, resource, context).
+  5. Emit evidence + cost + metric.
+  6. Return `ZelkovaResult`.
+
+Step 2 — `start_policy_generation` + `get_generated_policy`:
+  - Kick off with `access-analyzer:StartPolicyGeneration`. Return `jobId`.
+  - Poller lives in caller (F3); adapter does not spin its own poll loop (avoid Lambda timeouts).
+  - `get_generated_policy` returns `None` when status is `IN_PROGRESS`, the policy JSON when `SUCCEEDED`, raises `ZelkovaError` on `FAILED`.
+
+Step 3 — `post_check`:
+  - Sleep `wait_seconds` (default 15 — IAM eventual consistency).
+  - Fetch observed policy via `iam:GetRolePolicy` or `iam:GetUserPolicy`.
+  - Canonicalize; compare sha256 against `expected_policy` sha256.
+  - If mismatch, poll up to `max_polls` times.
+  - Additionally run `check_no_new_access(existing=expected, candidate=observed)` — must PASS (defends against a race where a third party edited the policy in the same window).
+  - Return `ZelkovaResult` with `pass_` set only if both checks pass.
+
+Step 4 — Evidence emission (via `evidence` adapter):
+  ```json
+  {
+    "kind": "zelkova_invocation",
+    "correlation_id": "...",
+    "existing_policy_sha256": "...",
+    "candidate_policy_sha256": "...",
+    "result": "PASS" | "FAIL",
+    "witness": {...},
+    "latency_ms": 234,
+    "invoked_at": "..."
+  }
+  ```
+
+6. IAM Requirements
+-------------------
+- `access-analyzer:CheckNoNewAccess`, `CheckAccessNotGranted`, `StartPolicyGeneration`, `GetGeneratedPolicy`, `ListPolicyGenerations` — Resource `*` (API-scope).
+- `iam:GetRolePolicy`, `iam:GetUserPolicy`, `iam:GetRolePermissionsBoundary` for post-check — Resource scoped to caller's target patterns via cross-account role.
+
+7. Test Plan
+------------
+- Unit (moto for Access Analyzer + iam): 8 fixture scenarios — pass, fail with witness, throttle-then-pass, throttle-exhausted, generation-in-progress, generation-succeeded, generation-failed, post-check mismatch resolves within 2 polls.
+- Property: `pass_=True` NEVER returned on any exception path (Hypothesis-driven fault injection).
+- Contract: `ZelkovaResult` round-trip.
+- Evidence: signature verifies for every recorded invocation.
+
+8. Acceptance Criteria
+----------------------
+- [ ] Every Zelkova invocation emits evidence + cost + metric.
+- [ ] Post-check p95 latency ≤ 30 s (15 s wait + 3 polls at 5 s each in worst case).
+- [ ] Property test: 10,000 fault-injection trials produce zero `pass_=True` on error paths.
+- [ ] Every specialist that writes policy passes its adapter tests using this client.
+
+9. Risks & Mitigations
+-----------------------
+Risk: Access Analyzer regional endpoint outage.
+  Mitigation: circuit breaker per region; caller escalates on `CircuitOpenError`.
+
+Risk: post-check false failure due to canonicalization drift.
+  Mitigation: `canonicalize` is shared code (evidence adapter); property-tested for stability across whitespace/ordering permutations.
+
+Risk: rate limit on `StartPolicyGeneration` per account.
+  Mitigation: cache `jobId` per principal for 15 minutes; refuse duplicate concurrent generation requests.

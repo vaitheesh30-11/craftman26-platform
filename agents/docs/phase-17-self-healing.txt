@@ -1,0 +1,181 @@
+PHASE 17 — Self-Healing
+========================
+
+Owner assumption: one principal engineer. Duration: 3 days.
+
+1. Objective
+------------
+Make the platform recover on its own from every transient fault and from a specific catalogue of non-transient faults. Every specialist has a fallback path; every stuck session is watchdogged; every corrupted memory entry is repaired; every drifted CDK stack is drift-detected and reconciled. When Sentinel breaks, it fixes itself before a human notices.
+
+2. Deliverables
+---------------
+- `tools/common/retry.py` — adapter-level retry primitives with policy per failure class.
+- `tools/common/fallback.py` — per-specialist fallback specification and dispatcher.
+- `watchdog/` — Lambda that scans in-flight sessions for stuck states.
+- `repair/` — Lambdas that repair known corruption patterns.
+- `drift/` — CDK drift detector + auto-remediator (for Sentinel's own stacks only).
+- DR runbook `docs/runbooks/disaster-recovery.md` and quarterly game-day script.
+
+3. Failure Taxonomy
+-------------------
+| Class                     | Examples                                          | Handling            |
+|---------------------------|---------------------------------------------------|---------------------|
+| transient-throttling      | Bedrock TPS, DDB write, Athena concurrency        | Exponential retry with jitter |
+| transient-network         | STS endpoint, boto3 socket timeout                | Retry once + reroute to alternate region |
+| eventual-consistency      | IAM policy attached but not yet visible            | Poll with backoff; escalate to ESCALATE after budget |
+| adapter-fault             | Zelkova error, KMS transient                       | Circuit-break the adapter; fail-conservative |
+| model-fault               | Guardrail intervention, malformed JSON, forgery    | Fail-conservative; no retry |
+| logic-fault               | Schema mismatch, unknown action, missing citation  | Reject at contract layer; specialist sees a REJECT |
+| infra-drift               | CDK stack drift, missing IAM policy                | Auto-remediate via drift Lambda |
+| data-corruption           | Corrupted DDB item, mismatched KB manifest         | Isolate + repair Lambda + alarm |
+| region-outage             | Regional Bedrock failure                           | Regional failover (Bedrock cross-region routing) |
+
+4. Retry Policy
+---------------
+Encoded in `tools/common/retry.py`. Each adapter method is decorated with `@retry(policy=...)`.
+
+Policies:
+- `AGGRESSIVE`: 5 attempts, base 200 ms, factor 2, jitter ±25%, cap 5 s.
+- `CAUTIOUS`: 3 attempts, base 500 ms, factor 3, jitter ±20%, cap 10 s.
+- `SINGLE`: 1 retry after 200 ms fixed.
+- `NONE`: no retry.
+
+Assignments:
+- Bedrock InvokeAgent/InvokeModel: AGGRESSIVE on `ThrottlingException`; NONE on `ValidationException` / `AccessDeniedException` / `GuardrailInterventionError`.
+- Zelkova CheckNoNewAccess: CAUTIOUS on throttling; NONE on validation error.
+- STS AssumeRole: AGGRESSIVE on throttling; NONE on `AccessDenied`.
+- DDB PutItem/UpdateItem: AGGRESSIVE on throttling; SINGLE on `ProvisionedThroughputExceededException`.
+- Athena StartQueryExecution: CAUTIOUS on `TooManyRequestsException`; NONE on `InvalidRequestException`.
+- IAM PutRolePolicy (F5 write): SINGLE (idempotency handles doubles).
+
+5. Fallback Specification (Per Specialist)
+------------------------------------------
+When a specialist's slow-path invocation fails, the router tries a fallback per §4 of phase-15 (dual-mode) — the fast path deterministic mirror. When both paths fail, the specialist emits `verdict=ESCALATE` with a structured error.
+
+Additional fallbacks:
+- F1 PassRole: if scanning cross-account credentials fail, degrade to central-account-only scan; caveat noted in payload.
+- F2 Org Context: if Access Analyzer API is down, degrade to "read-only classification" (no archive) and set `archived_count=0`.
+- F3 Data Event: if Athena is down, use cached S3 access-log summaries from procedural memory (phase-14) — labeled `data_source=cached` in the payload.
+- F4 SCP Impact: if history query fails, run simulation on the current chain WITHOUT historical replay; report severity capped at MEDIUM.
+- F5 Session Terminator: no fallback. On failure, escalate to break-glass runbook.
+- F6 Shadow Guard: if SCP cache is stale, degrade to "advisory only" — findings marked `severity=INFO` until cache refreshes.
+- F7 Collision Resolver: no reasoning fallback; falls back to raw JSON dump of the SCP chain.
+- F8 SLR Guardian: if SLR DB is empty, refuse to answer — return REJECT with reason "SLR DB unavailable".
+
+6. Watchdog Lambda
+------------------
+`watchdog/scanner` runs every 60 seconds via EventBridge scheduled expression.
+
+Duties:
+1. Query `SentinelDecisionsInFlight` for records `started_at > 5 minutes ago` and `status=in_progress`.
+2. For each stuck record:
+   a. Check the Bedrock InvokeAgent trace for latest event (via `bedrock-agent-runtime:GetTrace` if the API surface allows; else via CloudWatch Logs Insights on the agent's log group).
+   b. If no activity in > 3 minutes: emit `SentinelStuckSession` metric; write a synthetic `DecisionRecord(status="ESCALATED", reason="watchdog: session stuck")`; send SNS.
+   c. Cleanup: remove from `SentinelDecisionsInFlight`.
+3. Query `SessionKillQueue.fifo` for stuck messages via `sqs:GetQueueAttributes` on `ApproximateAgeOfOldestMessage`; alarm if > 5 minutes.
+4. Query `SentinelRevocations` for records that should have been cleaned up but weren't — nudge cleanup Lambda.
+
+7. Repair Lambdas
+-----------------
+`repair/corrupted_memory` — invoked by alarm.
+- Trigger: `SentinelMemoryReadFailure` metric spike.
+- Duties: for the affected item, verify KMS signature, verify sha256, re-fetch from source of truth (episodic → re-derive from `SentinelDecisions`; semantic → re-run syncer for that entity_key; procedural → invalidate the cache entry).
+
+`repair/kb_manifest_drift` — invoked on `SentinelKbStaleRetrieval > 10/hour`.
+- Force `bedrock-agent:StartIngestionJob` on every KB data source.
+- Regenerate manifest via phase-10 §Step 2.
+
+`repair/scp_cache_stale` — invoked on `SentinelPoliciesStale` metric.
+- Bulk refresh all cached SCPs.
+
+Each repair Lambda emits an `EvidenceRecord` (kind=`repair_action`) for auditability.
+
+8. Drift Detection
+------------------
+`drift/detector` — daily.
+- `cloudformation:DetectStackDrift` on every Sentinel-owned stack.
+- Compare `cloudformation:DescribeStackResourceDrifts` against baseline.
+- On unexpected drift:
+  - EventBridge `SentinelStackDrift` event.
+  - SNS to `SentinelSecurity`.
+  - If drift is a widely-known auto-repairable pattern (e.g., IAM policy manually edited), run `cloudformation:UpdateStack` with the CDK template.
+  - Else, page a human via `SentinelOps`.
+
+Never auto-remediate:
+- KMS key policy changes (must be human-verified).
+- Guardrail changes.
+- Break-glass role changes.
+
+9. Region Failover
+------------------
+Prime and specialists are deployed in `us-east-1` (primary) and `us-west-2` (standby).
+
+Failover path:
+- Route 53 health check on Prime's API Gateway.
+- On primary failure: DNS flips to standby (30 s TTL).
+- Cross-region DDB global tables for `SentinelFindings`, `SentinelDecisions`, `SentinelMemoryEpisodic`, `SentinelPolicies`.
+- S3 buckets: Cross-Region Replication on the evidence bucket.
+- Bedrock KB: replicated ingest in the standby region (higher latency; degraded gracefully).
+
+Failover is exercised quarterly during game day.
+
+10. Interface Contracts
+-----------------------
+```python
+class FaultRecord(Base):
+    correlation_id: str
+    fault_class: Literal[
+        "transient_throttling","transient_network","eventual_consistency",
+        "adapter_fault","model_fault","logic_fault","infra_drift",
+        "data_corruption","region_outage",
+    ]
+    origin: str                            # component that observed the fault
+    action_taken: Literal["retried","fell_back","escalated","auto_repaired","paged"]
+    detail: str
+    detected_at: AwareDatetime
+    resolved_at: Optional[AwareDatetime]
+```
+
+Every self-healing action writes a `FaultRecord` to DDB `SentinelFaults` with GSI on `fault_class`.
+
+11. IAM Policy
+--------------
+Watchdog role: DDB Query + UpdateItem on `SentinelDecisionsInFlight`, `SentinelRevocations`, `SentinelFaults`; `sqs:GetQueueAttributes`; `sns:Publish`; `cloudwatch:PutMetricData`.
+
+Repair roles: scoped per repair target (memory repair sees only memory tables; KB repair sees only KB APIs; SCP repair sees only `organizations:*` read + `SentinelPolicies` write).
+
+Drift detector: `cloudformation:DetectStackDrift`, `DescribeStackDriftDetectionStatus`, `DescribeStackResourceDrifts`, `UpdateStack` on Sentinel stacks only (resource-conditioned by stack name prefix `Sentinel*`).
+
+12. Test Plan
+-------------
+- Unit: each retry policy applied against a stubbed throttle sequence; verify attempts and total wait time within jitter.
+- Fallback dispatcher: for each specialist, simulate slow-path failure; verify fast path invoked; verify escalation on both-fail.
+- Watchdog: fixture with 3 stuck sessions; verify synthetic DecisionRecords written; verify SNS emitted; verify cleanup.
+- Repair: inject a corrupt memory item; run repair; verify re-derivation.
+- Drift: `moto` fixture where a stack has an out-of-band change; verify detection and (for auto-repairable class) update.
+- Failover: game-day script scriptable via `scripts/gameday_failover.py`.
+
+13. Acceptance Criteria
+-----------------------
+- [ ] Watchdog rescues stuck sessions in < 90 s p95.
+- [ ] Every retry policy has a fault-injection test.
+- [ ] Drift detector produces zero false positives on a stable dev environment over 7 days.
+- [ ] Region failover drill: p95 total RTO ≤ 5 minutes.
+- [ ] Every FaultRecord is queryable via a `POST /operations/faults` API.
+
+14. Risks & Mitigations
+-----------------------
+Risk: infinite retry loop caused by a misclassified fault.
+  Mitigation: every retry decorator has a hard iteration cap (5) and a total-time cap (30 s); breach raises `RetryExhausted`.
+
+Risk: auto-repair triggers on a legitimate manual change (someone was fixing prod during an incident).
+  Mitigation: repair Lambdas honor a "maintenance window" SSM flag; also refuse to repair KMS/Guardrail/break-glass under any condition.
+
+Risk: watchdog rescues too aggressively and terminates in-progress long-running specialists (F3/F4).
+  Mitigation: stuck-threshold set per specialist based on its p99 latency; F3/F4 get 10-minute thresholds instead of 5.
+
+Risk: cross-region failover cost overhead.
+  Mitigation: standby region uses minimum ACUs; Bedrock KB standby is warm but not queried until failover; total standby overhead budgeted at ≤ 20% of primary.
+
+Risk: FaultRecord table becomes a firehose of noise.
+  Mitigation: sampled writes for `transient_throttling` (1/100); every non-transient fault written 100%.

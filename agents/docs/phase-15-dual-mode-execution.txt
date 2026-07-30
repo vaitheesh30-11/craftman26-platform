@@ -1,0 +1,152 @@
+PHASE 15 — Dual-Mode Execution
+==============================
+
+Owner assumption: one principal engineer. Duration: 2 days.
+
+1. Objective
+------------
+Route every incoming request through a fast deterministic path when possible and a slow reasoning (LLM) path only when necessary. Add a shadow mode that runs both in parallel and compares outputs to build confidence in the deterministic engine. This is the primary cost, latency, and safety lever for the platform.
+
+Baseline expectation: ~70% of production queries land on the fast path; ~30% go to the slow path.
+
+2. Deliverables
+---------------
+- `tools/common/router.py` — `RequestRouter` classifier with per-feature policy.
+- Deterministic mirror for each of F1, F4, F7, F8 (the features whose specialists' work is largely computation, not reasoning).
+- Shadow-mode runner that invokes both paths and writes a `DivergenceRecord`.
+- CloudWatch metrics + weekly divergence report.
+- Prime prompt update: instruction to consult the router before dispatching.
+
+3. Mode Definitions
+-------------------
+**Fast (deterministic).** Pure Python computation using the same tool Lambdas the specialists call, but WITHOUT the Bedrock Agent hop. Called directly from the router. Zero LLM tokens.
+
+**Slow (reasoning).** Full Bedrock Agent path — Prime + specialist collaboration + LLM synthesis. Used when the answer requires interpretation, ambiguity resolution, or narrative synthesis.
+
+**Shadow.** Both paths run in parallel on the same input. Their outputs are compared, and any divergence is captured for offline review. Used in `dev`/`staging` continuously; used in `prod` at a sampled rate (default 5%).
+
+4. Router Policy Matrix
+-----------------------
+Encoded in `router.py` as a decision tree.
+
+| Signal                                           | Mode         |
+|--------------------------------------------------|--------------|
+| Structured payload only (no `query_text`, `hints` complete) | Fast |
+| API path is `/analyze/passrole` with only `account_id`       | Fast |
+| API path is `/resolve/scp-collisions` with `account_id`      | Fast |
+| API path is `/scan/slr-breakage` with a `proposed_scp` JSON  | Fast |
+| API path is `/analyze/scp-impact` with `proposed_scp` + `target_ou_id` | Fast |
+| `/agent/chat` with natural-language `query_text`             | Slow |
+| Any query mentioning "why", "explain", "compare", "recommend" | Slow |
+| Query touches ≥ 2 features (routing decision)                | Slow |
+| Emergency path (`/emergency/kill-session`)                   | Fast+audit (F5's dispatcher is deterministic; no LLM in the hot path) |
+| `include_narrative=true` in query hints                      | Slow |
+| Shadow sampling coin-flip fires                              | Shadow |
+
+The router is data-driven: policy lives in `agents/data/router_policy.yaml`. Change without redeploying by SSM param update.
+
+5. Interface Contracts
+----------------------
+```python
+class RoutingDecision(Base):
+    mode: Literal["fast", "slow", "shadow"]
+    reason: str
+    dispatch_target: str                  # "F1", "F4", "prime", ...
+    matched_policy_rule_id: Optional[str]
+    fallback_target: Optional[str]        # slow-path escalation target
+    correlation_id: str
+
+class DivergenceRecord(Base):
+    correlation_id: str
+    input_hash: str
+    fast_output: dict[str, object]
+    slow_output: dict[str, object]
+    divergence_kind: Literal["identical","semantic_match","material_disagreement"]
+    diff_summary: str
+    reviewed: bool = False
+    detected_at: AwareDatetime
+```
+
+6. Implementation Steps
+-----------------------
+Step 1 — Router in the API entry Lambda.
+  - `backend/` API Gateway → Router Lambda → dispatch.
+  - Router loads policy from SSM parameter (`/sentinel/router/policy`), cached 5 min.
+  - Emits `SentinelRouterDecisions` metric with dimensions `mode`, `feature_id`.
+
+Step 2 — Fast-path specialists.
+  Each deterministic mirror:
+  - Reuses the same tool Lambdas already built for the reasoning specialist.
+  - Composes the tools in code (no LLM) to produce a `SpecialistVerdict`.
+  - Cannot handle ambiguity — if any tool returns a hint (`ambiguous=true` in the tool response), the fast path escalates: returns `RoutingDecision(mode="slow", fallback_target=<same feature>)` and the router re-dispatches.
+  - Emits the same `Finding` and `EvidenceRecord` writes as the slow path. Downstream consumers cannot tell which path produced them (that's the point).
+
+Step 3 — Shadow mode.
+  - `RequestRouter.execute` for `mode=shadow`:
+    1. Fire both fast and slow in parallel (asyncio + Bedrock InvokeAgent async).
+    2. Await both. Use whichever completes first for the response to the client; log the other for comparison.
+    3. Compute divergence:
+       - `identical`: JSON canonicalization equal.
+       - `semantic_match`: same `verdict`, `severity`, and `finding_ids` (but narrative may differ).
+       - `material_disagreement`: different verdict OR different severity OR different remediation.
+    4. PutItem `DivergenceRecord` to DDB `SentinelDivergence`.
+  - Weekly report Lambda aggregates divergence stats and surfaces material disagreements for engineer review.
+
+Step 4 — Escalation contract.
+  - Fast-path can escalate to slow at any point during its computation by returning early with `mode_switch=slow` in its internal envelope.
+  - Router sees the escalation, restarts on slow path with the fast path's partial results as `<untrusted_context type="prior_fast_path_hints">`.
+  - Escalation counted in `SentinelFastPathEscalations` metric per feature.
+
+Step 5 — Prime prompt hook.
+  Prime always operates on the slow path (Prime is the reasoning layer). But when the router already sent the query to a fast path, Prime is not invoked. Prime prompt gets:
+  ```
+  If the invoking API path is /agent/chat, you have been reached because
+  the router determined this query requires reasoning. Do not second-guess
+  that decision. Route to the appropriate specialist.
+  ```
+
+Step 6 — Cost + latency SLOs per mode.
+  - Fast path SLO: p95 ≤ 5 s, cost ≤ $0.001/invocation.
+  - Slow path SLO: p95 ≤ 45 s multi-specialist, cost ≤ $0.25/invocation typical, $1.00 hard cap (see phase-16).
+  - Shadow: max(fast, slow) latency; cost = fast + slow.
+
+Step 7 — Divergence review workflow.
+  - Weekly Lambda that reads `SentinelDivergence` where `reviewed=false` and `divergence_kind=material_disagreement`.
+  - Posts a Slack/email digest (via SNS) with links to each record.
+  - A CLI (`scripts/review_divergence.py`) walks engineers through mark-as-reviewed with an accept/reject annotation.
+  - Aggregate divergence rate per feature drives router-policy tuning.
+
+7. IAM Policy
+-------------
+Router Lambda role: `ssm:GetParameter` on `/sentinel/router/*`, `lambda:InvokeFunction` on all fast-path Lambdas, `bedrock-agent-runtime:InvokeAgent` on Prime, `dynamodb:PutItem` on `SentinelDivergence`, CloudWatch metrics.
+
+Fast-path Lambdas: same as the corresponding specialist Lambdas (they share code).
+
+8. Test Plan
+------------
+- Unit: router policy applied to 30 curated inputs; verify `mode` and `dispatch_target`.
+- Integration (moto): fast path end-to-end for F1 and F7; produces the same Finding as slow path on curated cases.
+- Divergence detection: 5 curated cases where fast and slow paths should agree (identical); 3 where fast should escalate to slow.
+- Escalation: property test — any fast-path invocation that raises `AmbiguityError` transitions to slow within 200 ms.
+- Cost: fast path invocation cost < $0.001 (Lambda + DDB only, no Bedrock).
+
+9. Acceptance Criteria
+----------------------
+- [ ] ≥ 60% of production requests served on the fast path after 2 weeks of tuning.
+- [ ] Zero material disagreements between fast and slow paths on the shadow-sampled 5% during a 7-day window (or every disagreement reviewed and reconciled).
+- [ ] Fast-path escalation rate < 15% per feature.
+- [ ] Router policy hot-swap via SSM does not require a redeploy.
+
+10. Risks & Mitigations
+-----------------------
+Risk: fast path silently produces a wrong answer that never gets shadow-checked.
+  Mitigation: 5% shadow sampling in prod is non-negotiable; also every fast-path Finding severity ≥ HIGH is randomly shadow-verified at 100% for the first 30 days after a router change.
+
+Risk: divergence backlog grows past human review capacity.
+  Mitigation: LLM-as-judge triage — a lightweight judge auto-classifies divergences as `benign` (formatting only), `nuance` (worth a look), `serious` (page). Serious ones get a same-day review.
+
+Risk: fast path drifts from slow path over time as slow path prompts evolve.
+  Mitigation: shared golden test set exercised against both paths on every PR; CI fails on unauthorized divergence.
+
+Risk: escalation loops (fast → slow → fast).
+  Mitigation: escalation is one-way; the `mode_switch=slow` flag makes the router mark the correlation_id as slow-locked in Redis (5-min TTL).

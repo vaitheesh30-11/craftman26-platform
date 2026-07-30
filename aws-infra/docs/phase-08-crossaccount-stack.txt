@@ -1,0 +1,148 @@
+PHASE 08 — Cross-Account StackSet
+==================================
+
+Owner assumption: one principal engineer. Duration: 1 day.
+
+1. Objective
+------------
+Deploy `SentinelCrossAccountRole` to every member account in the organization via CloudFormation StackSet. This is the only IAM identity Sentinel has in member accounts. It is read-only except for two narrowly scoped exceptions.
+
+2. Deliverables
+---------------
+- CloudFormation StackSet targeting the organization root (excluding Sentinel's own central account).
+- Template `SentinelCrossAccountRole` with trust and permission policies.
+- Automatic deployment target: `AutoDeployment=Enabled` so new accounts get the role at join time.
+- Drift detection scheduled monthly.
+
+3. Role Contract
+----------------
+Trust policy:
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Principal": { "AWS": "arn:aws:iam::${SentinelCentralAccountId}:root" },
+    "Action": "sts:AssumeRole",
+    "Condition": {
+      "StringEquals": {
+        "aws:PrincipalTag/Project": "IAMSentinel"
+      },
+      "StringLike": {
+        "aws:PrincipalArn": "arn:aws:iam::${SentinelCentralAccountId}:role/Sentinel*"
+      }
+    }
+  }]
+}
+```
+
+Permission policy — Read-Only Bundle (default):
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    { "Sid": "IamRead",
+      "Effect": "Allow",
+      "Action": [
+        "iam:List*", "iam:Get*",
+        "iam:SimulatePrincipalPolicy", "iam:SimulateCustomPolicy",
+        "iam:GetAccountAuthorizationDetails"
+      ],
+      "Resource": "*"
+    },
+    { "Sid": "OrgRead",
+      "Effect": "Allow",
+      "Action": [ "organizations:Describe*", "organizations:List*" ],
+      "Resource": "*"
+    },
+    { "Sid": "AccessAnalyzerRead",
+      "Effect": "Allow",
+      "Action": [
+        "access-analyzer:List*", "access-analyzer:Get*",
+        "access-analyzer:CheckNoNewAccess", "access-analyzer:CheckAccessNotGranted"
+      ],
+      "Resource": "arn:aws:access-analyzer:*:*:analyzer/*"
+    },
+    { "Sid": "AccessAnalyzerUpdate",
+      "Effect": "Allow",
+      "Action": [
+        "access-analyzer:UpdateFindings",
+        "access-analyzer:CreateArchiveRule",
+        "access-analyzer:UpdateArchiveRule"
+      ],
+      "Resource": "arn:aws:access-analyzer:*:*:analyzer/*",
+      "Condition": {
+        "StringEquals": { "aws:PrincipalTag/Feature": "F2" }
+      }
+    },
+    { "Sid": "CloudTrailReadWrite",
+      "Effect": "Allow",
+      "Action": [
+        "cloudtrail:GetTrail", "cloudtrail:GetEventSelectors",
+        "cloudtrail:PutEventSelectors"
+      ],
+      "Resource": "arn:aws:cloudtrail:*:*:trail/*",
+      "Condition": {
+        "StringEquals": { "aws:PrincipalTag/Feature": "F3" }
+      }
+    },
+    { "Sid": "SsoAdminReadOnly",
+      "Effect": "Allow",
+      "Action": [ "sso:List*", "sso:Describe*" ],
+      "Resource": "*"
+    },
+    { "Sid": "F5ScopedPutDelete",
+      "Effect": "Allow",
+      "Action": [ "iam:PutRolePolicy", "iam:GetRolePolicy", "iam:DeleteRolePolicy" ],
+      "Resource": "arn:aws:iam::*:role/aws-reserved/sso.amazonaws.com/*",
+      "Condition": {
+        "StringEquals": { "aws:PrincipalTag/Feature": "F5" },
+        "StringLike": { "iam:PolicyName": "SENTINEL_EMERGENCY_REVOKE_*" }
+      }
+    }
+  ]
+}
+```
+
+Note the `aws:PrincipalTag/Feature` conditions: only Lambdas assuming with that tag can perform the elevated action, providing defense in depth even inside a single account.
+
+4. StackSet Deployment
+----------------------
+- `PermissionModel`: `SERVICE_MANAGED`.
+- `AutoDeployment`: `Enabled=true, RetainStacksOnAccountRemoval=false`.
+- `DeploymentTargets`: `OrganizationalUnitIds=[<org root or specific OUs>]`.
+- `Regions`: single region (role is global; deploying to `us-east-1` is sufficient).
+- `OperationPreferences`: `MaxConcurrentPercentage=25`, `FailureTolerancePercentage=5`.
+
+Excluded targets: Sentinel's central account (it already hosts the assuming roles).
+
+5. Drift Detection
+------------------
+Scheduled expression `cron(0 5 ? * SAT *)` UTC runs `cloudformation:DetectStackSetDrift` and emits `SentinelCrossAccountDrift` metric per drifted instance. Alarm on any drift.
+
+6. Trust with Delegated Admin Accounts
+--------------------------------------
+For delegated-admin accounts (Access Analyzer, Identity Center), the cross-account role has a slightly wider Access Analyzer / SSO surface (see phases-02 and -03 in agents/docs). Handled by a separate `SentinelDelegatedAdminAccountRole` template deployed only to those accounts via a targeted StackSet instance.
+
+7. Test Plan
+------------
+- Snapshot.
+- Integration (moto/CloudFormation): stackset creation dry-run.
+- Trust: assume the role from Sentinel central with each Feature tag; verify allowed actions and denied actions.
+
+8. Acceptance Criteria
+----------------------
+- [ ] StackSet deployed to every current member account.
+- [ ] Drift detection returns `IN_SYNC` on all instances.
+- [ ] Feature-tag conditions enforced (unit test: F1 tag cannot perform F5 actions).
+
+9. Risks & Mitigations
+-----------------------
+Risk: SERVICE_MANAGED permission model requires trusted access enabled for CFN StackSets in Organizations.
+  Mitigation: pre-flight step: enable trusted access; deploy fails early with a clear message otherwise.
+
+Risk: new-account auto-deployment fails silently.
+  Mitigation: EventBridge rule on `CreateAccountResult` triggers a health-check Lambda that verifies the role exists in the new account within 30 minutes.
+
+Risk: role name collision with existing customer role.
+  Mitigation: reserved prefix `Sentinel*`; deploy fails if collision detected.

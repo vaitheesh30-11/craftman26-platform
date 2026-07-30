@@ -1,0 +1,112 @@
+PHASE 03 — Prompts Adapter (XML Fencer + Sanitizer)
+====================================================
+
+Owner assumption: one principal engineer. Duration: 1 day.
+
+1. Objective
+------------
+Provide two utilities every specialist (and Prime) uses to build safe prompts: a sanitizer that neutralizes untrusted strings, and an XML fencer that composes them into a `<trusted_input>` + `<untrusted_context type="...">` prompt.
+
+2. Deliverables
+---------------
+- `prompts/sanitizer.py` — `sanitize_untrusted(value, max_length)` with a fixed forbidden-pattern list.
+- `prompts/xml_fencer.py` — `build_prompt(trusted_input: dict, blocks: list[UntrustedBlock]) -> str`.
+- Property-based test suite.
+
+3. Sanitizer Contract
+---------------------
+```python
+def sanitize_untrusted(value: str, *, max_length: int = 4096) -> str:
+    """
+    1. NFKC normalize.
+    2. Strip Unicode categories starting with 'C' (control chars).
+    3. Remove characters: '<', '>', backtick.
+    4. Collapse whitespace runs to single space.
+    5. Truncate to max_length.
+    6. If result matches any forbidden pattern, raise SanitizerRejection.
+    """
+```
+
+Forbidden patterns (case-insensitive regex, applied after normalization):
+- `</trusted_input`
+- `</untrusted_context`
+- `</system`
+- `human\s*:` and `assistant\s*:`
+- `ignore\s+(the\s+)?(previous|above|prior)\s+instructions`
+- `you\s+are\s+now\s+`
+- `disregard\s+`
+- `override\s+`
+- `<\|.*?\|>` (control-token spoofs)
+
+Sanitizer rejects rather than silently masks — a caller must decide how to handle the input, not have it silently mangled.
+
+4. XML Fencer Contract
+----------------------
+```python
+def build_prompt(
+    trusted_input: dict[str, object],
+    blocks: list[UntrustedBlock],
+    *, max_block_length: int = 4096,
+) -> str:
+    """
+    Produces:
+
+    <trusted_input>
+      <canonicalized JSON with no whitespace>
+    </trusted_input>
+    <untrusted_context type="<sanitized_type>">
+      <sanitized body>
+    </untrusted_context>
+    ... (repeat per block)
+    """
+```
+
+Rules:
+- `trusted_input` is canonicalized via `evidence/canonicalize.py` (RFC 8785).
+- `UntrustedBlock.type` must match `^[a-z_]{1,64}$`; anything else raises.
+- Each block's body is passed through the sanitizer.
+- The composed prompt is bounded: total length ≤ 32,768 (Bedrock request cap accommodation); exceeded raises `PromptTooLargeError`.
+
+5. Implementation Steps
+-----------------------
+Step 1 — Sanitizer:
+  - Precompile all forbidden regex at module load.
+  - `unicodedata.normalize("NFKC", value)`.
+  - Filter code points via `unicodedata.category(cp)[0] == "C"`.
+  - `re.sub(r"[<>`]", "", ...)`.
+  - `re.sub(r"\s+", " ", ...)`.
+  - `[:max_length]`.
+  - Check all forbidden patterns; raise on match with the matched-pattern name in the exception.
+
+Step 2 — XML fencer:
+  - Compose header + blocks + footer.
+  - Use plain string concatenation (no template engine — determinism).
+  - Return the composed string.
+
+Step 3 — Registered as adapter surface:
+  - `from iam_sentinel_adapters.prompts import sanitize_untrusted, build_prompt`.
+
+6. Test Plan
+------------
+- Unit: each forbidden pattern with 5 phrasing variants — all rejected.
+- Property (Hypothesis): 10,000 random strings sanitized; assert no `<`/`>`/backtick remain, no forbidden pattern remains, length ≤ max.
+- Unit: XML fencer output snapshot for a canonical payload.
+- Injection corpus subset: 50 payloads from `tests/prompt_injection/corpus.jsonl` run through sanitize+fence; all either rejected or safely fenced.
+
+7. Acceptance Criteria
+----------------------
+- [ ] 10,000-example Hypothesis run: zero counterexamples.
+- [ ] Deterministic output for the same input (snapshot stable).
+- [ ] Rejection error message includes the matched-pattern name (for debugging).
+- [ ] No third-party dependency required beyond stdlib + `regex` (if needed for Unicode-aware patterns).
+
+8. Risks & Mitigations
+-----------------------
+Risk: legitimate content includes a forbidden phrase (e.g., a support ticket that literally says "ignore the previous instructions").
+  Mitigation: caller can opt into `strict=False` mode which masks rather than rejects for specific approved fields; not enabled by default; documented in ADR.
+
+Risk: sanitizer strips too aggressively and loses signal (e.g., angle brackets in policy JSON).
+  Mitigation: `trusted_input` (not sanitized) is the escape hatch for structured JSON; only free-form values enter `<untrusted_context>` and get sanitized.
+
+Risk: new prompt-injection patterns emerge that our list misses.
+  Mitigation: prompt-injection corpus reviewed quarterly; patterns added by PR.

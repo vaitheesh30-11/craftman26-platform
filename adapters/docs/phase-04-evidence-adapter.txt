@@ -1,0 +1,147 @@
+PHASE 04 — Evidence Adapter (S3 Object Lock + KMS + ASFF)
+==========================================================
+
+Owner assumption: one principal engineer. Duration: 2 days.
+
+1. Objective
+------------
+Every material action in Sentinel writes a KMS-signed, canonicalized evidence blob to an S3 Object Lock bucket. Every critical Finding is exported to Security Hub as an ASFF finding. This phase ships both — the evidence writer and the ASFF mapper — sharing the canonicalization core.
+
+2. Deliverables
+---------------
+- `evidence/canonicalize.py` — RFC 8785 JCS.
+- `evidence/keys.py` — content-addressed key derivation.
+- `evidence/kms_signer.py` — `kms:Sign` with `DIGEST` message type, `RSASSA_PSS_SHA_256`.
+- `evidence/kms_verifier.py` — signature verification with public-key cache.
+- `evidence/client.py` — `put_signed_evidence(kind, body, correlation_id) -> EvidenceRef` and `verify(ref) -> dict`.
+- `security_hub/client.py` — `import_findings(findings) -> BatchImportResult`.
+- `security_hub/asff_mapper.py` — `Finding` → ASFF envelope.
+
+3. Interface
+------------
+```python
+class EvidenceClient:
+    def put_signed_evidence(
+        self, *, kind: EvidenceKind, body: dict, correlation_id: str,
+        feature_id: FeatureID,
+    ) -> EvidenceRef: ...
+
+    def verify(self, ref: EvidenceRef) -> dict: ...
+```
+
+```python
+class SecurityHubClient:
+    def import_findings(self, findings: list[Finding]) -> BatchImportResult: ...
+```
+
+`EvidenceKind` is `Literal["specialist_input","specialist_output","zelkova_invocation","policy_mutation","guardrail_intervention","repair_action","fault"]`.
+
+4. Canonicalization
+-------------------
+Implement RFC 8785 (JCS — JSON Canonicalization Scheme):
+- UTF-8 encoded.
+- Sorted object keys (recursively).
+- No insignificant whitespace.
+- Numbers: shortest form per ECMA-262.
+- Strings: escape control characters exactly per spec.
+
+Include property tests: for 1,000 JSON-equivalent-but-textually-different inputs, canonicalization yields identical bytes.
+
+5. Content-Addressed Keys
+-------------------------
+Key format:
+```
+{feature_id}/{yyyy}/{mm}/{dd}/{correlation_id}/{kind}/{body_sha256}.json
+```
+
+Why:
+- `feature_id` prefix eases IAM scoping.
+- Date partitioning eases lifecycle rules.
+- `body_sha256` prevents duplicates and makes writes idempotent.
+
+6. Signing
+----------
+- `kms:Sign` with:
+  - `KeyId`: SSM `/sentinel/kms/evidence-key-arn`.
+  - `MessageType`: `DIGEST`.
+  - `SigningAlgorithm`: `RSASSA_PSS_SHA_256`.
+  - Message: `sha256(canonicalized_body_bytes)`.
+- Response `Signature` is base64-encoded.
+- Written as S3 object metadata (`x-amz-meta-sentinel-signature`, `x-amz-meta-sentinel-sha256`, `x-amz-meta-sentinel-kms-key-arn`).
+
+7. Verification
+---------------
+- Fetch object.
+- Recompute canonicalized bytes; sha256.
+- Fetch KMS public key (cached 1 h in-process).
+- `kms:Verify` with `MessageType=DIGEST`, `SigningAlgorithm=RSASSA_PSS_SHA_256`, `Message=recomputed_sha256`, `Signature=object_metadata_signature`.
+- Return the parsed JSON body only on `SignatureValid=True`.
+
+8. Object Lock
+--------------
+- Bucket configured with Object Lock enabled at creation (CDK-owned).
+- Default retention: `COMPLIANCE` mode, 7 years.
+- Legal hold available via CDK-managed action.
+- Versioning ON.
+
+9. Security Hub ASFF Mapping
+----------------------------
+- `Finding` → ASFF Finding:
+  - `ProductArn`: `arn:aws:securityhub:<region>:<account>:product/<account>/iam-sentinel`.
+  - `SchemaVersion`: `2018-10-08`.
+  - `Id`: `finding.finding_id`.
+  - `GeneratorId`: `iam-sentinel/{feature_id}`.
+  - `AwsAccountId`: `finding.account_id`.
+  - `Types`: `["Software and Configuration Checks/Governance/PolicyDrift"]` for policy findings; `["TTPs/Credential Access"]` for F5; `["Effects/Data Exposure"]` for F2 true positives.
+  - `Severity`: mapped from `finding.severity`.
+  - `Title` / `Description`: `finding.title` / `finding.detail`.
+  - `Resources`: `[{"Type": "AwsIamRole"|"AwsAccount", "Id": finding.principal_arn or resource_arn}]`.
+  - `Note`: `finding.aws_doc_citation.quote` prefixed with `"AWS documentation confirms this gap: "`.
+
+10. Implementation Steps
+------------------------
+Step 1 — Canonicalizer.
+  - Follow the JCS reference implementation; unit-test against the RFC's sample vectors.
+Step 2 — KMS signer/verifier.
+  - Use boto3 KMS client. Public-key cache keyed by KeyArn.
+Step 3 — Evidence client.
+  - Compose: canonicalize → sha256 → kms:Sign → s3:PutObject with metadata.
+  - Return `EvidenceRef`.
+Step 4 — Security Hub client.
+  - Batch size 100 (Security Hub limit).
+  - Retry on `LimitExceededException` with `Policy.AGGRESSIVE`.
+Step 5 — ASFF mapper.
+  - Deterministic, unit-tested.
+
+11. IAM Requirements
+--------------------
+- Signer role: `kms:Sign`, `kms:GetPublicKey` on the evidence CMK.
+- Writer role: `s3:PutObject` on evidence bucket with `s3:x-amz-object-lock-mode` and `s3:x-amz-object-lock-retain-until-date` allowed conditions.
+- Verifier role: `s3:GetObject`, `s3:GetObjectAttributes` on the same, `kms:Verify` + `kms:GetPublicKey`.
+- Security Hub: `securityhub:BatchImportFindings` scoped to product ARN.
+
+12. Test Plan
+-------------
+- RFC vectors: canonicalizer matches all published test vectors.
+- Property: 1,000 semantically-equivalent JSONs canonicalize to identical bytes.
+- Round-trip: put_signed_evidence → verify returns identical body.
+- Tamper: modify bytes → verify raises.
+- ASFF: 20 Finding fixtures mapped to ASFF; validated against Security Hub ASFF JSON schema.
+
+13. Acceptance Criteria
+-----------------------
+- [ ] RFC 8785 test vectors pass 100%.
+- [ ] Round-trip verification succeeds for 1,000 property examples.
+- [ ] Tamper detection is unconditional (any byte flip → verify raises).
+- [ ] ASFF submissions pass Security Hub schema validation.
+
+14. Risks & Mitigations
+-----------------------
+Risk: Object Lock retention accidentally locks in bad data.
+  Mitigation: 7-year COMPLIANCE mode is intentional — accepts the cost of locking in mistakes; legal hold on active investigations only.
+
+Risk: KMS Sign throttling.
+  Mitigation: cache signatures for identical body-hash within a single Lambda invocation; batch under high load.
+
+Risk: ASFF submission overwhelms Security Hub.
+  Mitigation: batch 100; back off on `LimitExceededException`; drop `INFO` severity submissions if backlog builds.

@@ -1,0 +1,118 @@
+PHASE 01 — Bedrock Adapter
+==========================
+
+Owner assumption: one principal engineer. Duration: 2 days.
+
+1. Objective
+------------
+Provide a single, audited surface for every Bedrock call: `InvokeModel`, `InvokeAgent`, `InvokeAgentWithResponseStream`, `Retrieve`, and `Converse`. Enforces Guardrail application, model routing, cost metering, output validation, and retry policy.
+
+2. Deliverables
+---------------
+- `bedrock/client.py` — `BedrockClient` with typed methods.
+- `bedrock/model_router.py` — Haiku-default, Sonnet-on-demand, cost-aware downgrade.
+- `bedrock/guardrail.py` — Guardrail ID/version accessor from SSM.
+- `bedrock/output_validator.py` — forged-string check (verifies the model didn't emit an evidence_id or ARN it wasn't given).
+
+3. Interface
+------------
+```python
+class BedrockClient:
+    def invoke_agent(
+        self, *, agent_id: str, alias_id: str, session_id: str,
+        input_text: str, session_state: dict | None = None,
+        enable_trace: bool = False,
+        correlation_id: str,
+    ) -> BedrockAgentResponse: ...
+
+    def invoke_agent_stream(...) -> Iterator[BedrockAgentStreamChunk]: ...
+
+    def invoke_model(
+        self, *, model_id: str, messages: list[dict],
+        system: str | None = None, guardrail_id: str, guardrail_version: str,
+        correlation_id: str, response_schema: type[BaseModel] | None = None,
+    ) -> BaseModel: ...
+
+    def retrieve(
+        self, *, knowledge_base_id: str, query: str, top_k: int = 5,
+        correlation_id: str,
+    ) -> list[KnowledgeChunk]: ...
+```
+
+4. Implementation Steps
+-----------------------
+Step 1 — `invoke_agent` pipeline:
+  1. `budget_gate.check_startable(correlation_id, principal, estimated=0.10)` (raises `BudgetExceededError`).
+  2. `breaker.state("bedrock")` — raise `CircuitOpenError` if open.
+  3. `bedrock-agent-runtime:InvokeAgent` via boto3.
+  4. Parse response; if `stopReason=="guardrail_intervened"`, raise `GuardrailInterventionError`.
+  5. Emit `bedrock_input_tokens` and `bedrock_output_tokens` cost samples.
+  6. Return typed `BedrockAgentResponse`.
+  7. On `ThrottlingException`: retry with `Policy.AGGRESSIVE`. On repeated failure: `breaker.record_failure`.
+
+Step 2 — `invoke_model`:
+  - Model router picks Haiku unless caller specifies Sonnet.
+  - If `response_schema` provided, wrap prompt to enforce JSON output, `model_validate_json` the response, and validate via `output_validator`.
+  - Same cost-metering and Guardrail path as `invoke_agent`.
+
+Step 3 — Model router logic:
+  ```python
+  def pick_model(*, request_hint: str | None, correlation_id: str) -> str:
+      spent = cost_meter.projected(correlation_id)
+      cap = settings.correlation_dollar_cap
+      pct = spent / cap
+      if pct > 0.70: return settings.haiku_id           # force downgrade
+      if request_hint == "sonnet": return settings.sonnet_id
+      return settings.haiku_id                          # default
+  ```
+
+Step 4 — Output validator:
+  - Ingested during `invoke_model`. Verifies:
+    - No `arn:aws:` string in the output that was not present in the input.
+    - No `evidence_id` value that wasn't in `sanitized_input_set` (defense against the model inventing citation refs).
+    - No forbidden pattern from the sanitizer's forbidden list.
+  - Failures raise `ValidationError` (non-retryable).
+
+Step 5 — Streaming:
+  - `invoke_agent_stream` returns an iterator over the streaming response chunks.
+  - Each chunk is validated (Guardrail intervention mid-stream is caught).
+  - Backend consumes and forwards to the client's WebSocket.
+
+Step 6 — Retrieve:
+  - Wraps `bedrock-agent-runtime:Retrieve`.
+  - Cost metering charges the caller for OSS query costs (approximate; captured as `athena_bytes_scanned` proxy for uniformity).
+
+5. IAM Requirements
+-------------------
+Adapter-consuming Lambda's role needs:
+- `bedrock:InvokeModel`, `InvokeModelWithResponseStream` on the specific model ARN.
+- `bedrock:InvokeAgent`, `InvokeAgentWithResponseStream` on Prime + specialists agent-alias ARNs.
+- `bedrock:Retrieve`, `RetrieveAndGenerate` on the KB ARN.
+- `bedrock:ApplyGuardrail` on the Guardrail ARN.
+- `ssm:GetParameter` on `/sentinel/guardrail/*` and `/sentinel/models/*`.
+
+6. Test Plan
+------------
+- Unit (botocore stubs): normal invoke; ThrottlingException → retry → success; GuardrailIntervention → raise.
+- Output validator: 20 fixture responses (5 valid, 15 with forged content); all forgeries rejected.
+- Router: 6 fixture scenarios covering the pct-of-cap thresholds.
+- Streaming: chunk validation on a 50-chunk fixture stream.
+- Prompt injection: 20 payloads inside `messages`; output validator rejects any output containing forbidden patterns.
+
+7. Acceptance Criteria
+----------------------
+- [ ] p99 adapter overhead ≤ 30 ms (vs raw boto3).
+- [ ] Zero forged outputs pass validation in the injection suite.
+- [ ] Retry exhaustion trips the breaker.
+- [ ] Model router downgrades under 70%-of-cap pressure.
+
+8. Risks & Mitigations
+-----------------------
+Risk: Guardrail applied twice (once at InvokeAgent, once by our adapter).
+  Mitigation: adapter never runs its own Guardrail; it relies on Bedrock's applied Guardrail and only inspects the `stopReason`.
+
+Risk: `usage` field absent on some response shapes.
+  Mitigation: fall back to token-count estimation via `tiktoken`-compatible counter for cost metering; log a warning metric.
+
+Risk: streaming half-completes and leaves budget in an unknown state.
+  Mitigation: adapter emits partial-token samples every 500 chunks + a final sample on stream close.

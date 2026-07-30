@@ -1,0 +1,110 @@
+PHASE 07 — API Stack (Gateway + Cognito)
+=========================================
+
+Owner assumption: one principal engineer. Duration: 2 days.
+
+1. Objective
+------------
+Expose IAM Sentinel to humans and CI systems via a REST API and a WebSocket API. All authenticated via Cognito JWT + IAM SigV4 fallback for machine callers. Backend Lambda (`backend/`) implements the routes; this stack provisions the API surface.
+
+2. Deliverables
+---------------
+- API Gateway REST API `SentinelApi`.
+- API Gateway WebSocket API `SentinelStream`.
+- Cognito User Pool + hosted UI + App Client.
+- Lambda authorizer for machine callers (IAM-signed).
+- Custom domain (optional) with ACM cert.
+- API Gateway access logging + execution logging.
+
+3. REST Routes
+--------------
+Every route → `backend` Lambda (or a routing sub-Lambda from `functions/router` for phase-15 dual-mode).
+
+| Method | Path                              | Purpose                                            |
+|--------|-----------------------------------|----------------------------------------------------|
+| POST   | `/agent/chat`                     | Natural-language query to Prime.                   |
+| POST   | `/analyze/passrole`               | Fast-path F1.                                      |
+| POST   | `/analyze/org-context`            | Fast-path F2.                                      |
+| POST   | `/enrich/policy`                  | Fast-path F3.                                      |
+| POST   | `/analyze/scp-impact`             | Fast-path F4.                                      |
+| POST   | `/emergency/kill-session`         | F5. Requires break-glass session tag.              |
+| GET    | `/monitor/shadow-violations`      | Fast-path F6 (query).                              |
+| POST   | `/resolve/scp-collisions`         | Fast-path F7.                                      |
+| POST   | `/scan/slr-breakage`              | Fast-path F8.                                      |
+| GET    | `/findings`                       | List findings with filters.                        |
+| GET    | `/findings/{id}`                  | Single finding.                                    |
+| GET    | `/decisions`                      | List decisions for the caller.                     |
+| GET    | `/decisions/{id}`                 | Single decision + narrative.                       |
+| POST   | `/decisions/{id}/approve`         | Approve a proposed remediation.                    |
+| POST   | `/decisions/{id}/reject`          | Reject a proposed remediation.                     |
+| GET    | `/operations/faults`              | Recent faults (self-healing observability).        |
+| GET    | `/operations/cost/weekly`         | Latest cost report.                                |
+
+4. WebSocket Routes
+-------------------
+- `$connect` → auth-gated Lambda; stores `connectionId` in DDB `SentinelConnections`.
+- `$default` → forwards inbound frame to `backend` for streaming Prime turns.
+- `$disconnect` → cleanup.
+
+Streaming: Prime turns run via `InvokeAgentWithResponseStream`; backend Lambda fans chunks back via `apigatewaymanagementapi:PostToConnection`.
+
+5. Cognito Configuration
+------------------------
+- User Pool with:
+  - MFA `ON` (TOTP + WebAuthn).
+  - Password policy: 14+ chars.
+  - Advanced security: audit + adaptive.
+  - Groups: `SentinelAuditors`, `SentinelOperators`, `SentinelBreakGlassInitiators`.
+- User Pool Domain (hosted UI) with a randomized prefix.
+- App Client with:
+  - Auth flows: `ALLOW_USER_SRP_AUTH`.
+  - OAuth scopes: `openid, email, profile`.
+  - Callback URLs: frontend domain(s).
+- Identity Pool (optional) if we need direct-AWS-credential exchange for privileged UI flows.
+
+6. Authorizers
+--------------
+- Cognito JWT authorizer on every path except `/health`.
+- IAM SigV4 auth accepted on the same paths for machine callers with an explicit tag `Purpose=SentinelMachineCaller`.
+- Custom Lambda authorizer for `/emergency/*` — additionally requires the `BreakGlass=IAMSentinel-Two-Signer` session tag.
+
+7. Throttling and WAF
+---------------------
+- Usage plans:
+  - `interactive`: 20 rps burst, 100 rps steady per API key.
+  - `machine`: 5 rps steady.
+- WAF Web ACL:
+  - AWSManagedRulesCommonRuleSet.
+  - AWSManagedRulesKnownBadInputsRuleSet.
+  - Rate-based rule: 500 requests per 5-min per IP.
+  - Custom rule blocking common prompt-injection payloads at HTTP layer (defense in depth).
+
+8. Logging
+----------
+- Execution logs: `INFO`, retention 14 d dev / 90 d prod.
+- Access logs: JSON, retention 30 d, streamed to `SentinelAccessLogs-{stage}` bucket.
+
+9. Test Plan
+------------
+- Snapshot.
+- Integration: hit every route with a curl + Cognito token; verify 200/401 shapes.
+- WebSocket: connect + send/receive one chunk.
+- WAF: send a payload matching a blocked pattern; expect 403.
+
+10. Acceptance Criteria
+-----------------------
+- [ ] All routes reachable with valid JWT.
+- [ ] `/emergency/kill-session` requires break-glass tag (unit + integration verified).
+- [ ] WebSocket streaming end-to-end works from the frontend.
+- [ ] WAF rule set attached and hit metrics visible.
+
+11. Risks & Mitigations
+-----------------------
+Risk: WebSocket idle disconnects during long Prime turns.
+  Mitigation: heartbeat every 45 s from backend; client-side reconnect on close.
+
+Risk: JWT expiry mid-session.
+  Mitigation: frontend refreshes silently; WebSocket accepts refreshed token via a `token.refresh` frame.
+
+Risk: WAF false positives on legitimate policy JSON.
+  Mitigation: exclude `application/json` bodies from string-match rules; policy JSON travels via POST body which is not matched by common rules by default.

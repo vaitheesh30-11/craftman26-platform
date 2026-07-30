@@ -1,0 +1,87 @@
+PHASE 00 — Backend Foundations
+==============================
+
+Owner assumption: one principal engineer. Duration: 2 days.
+
+1. Objective
+------------
+Stand up the FastAPI-on-Lambda substrate every other backend phase depends on: the app factory, auth middleware, adapter dependencies, error envelope, correlation-id propagation, and health check.
+
+2. Deliverables
+---------------
+- `src/iam_sentinel_backend/app.py` — `create_app()` factory + `Mangum` handler.
+- `src/iam_sentinel_backend/deps.py` — DI-style dependencies (auth, adapters, correlation).
+- `src/iam_sentinel_backend/auth/*` — Cognito JWT verifier + SigV4 verifier + BreakGlass tag check.
+- `src/iam_sentinel_backend/errors.py` — standard exception hierarchy + FastAPI exception handlers.
+- Health endpoint `GET /health` (no auth).
+
+3. Contract
+-----------
+Response envelope:
+```json
+{ "ok": true, "data": { ... } }
+{ "ok": false, "error": { "code": "...", "message": "...", "correlation_id": "..." } }
+```
+
+Correlation ID:
+- Extracted from `X-Correlation-Id` header if present; else generated (ULID) at the boundary.
+- Injected into Powertools `Logger.append_keys` and X-Ray annotation.
+- Written back on the response as `X-Correlation-Id`.
+
+Auth:
+- Cognito JWT: verified against JWKS (cached 15 min). `sub`, `email`, `cognito:groups` extracted → `principal` = `arn:aws:cognito-idp:<region>:<account>:userpool/<pool-id>/<sub>` (synthetic ARN).
+- IAM SigV4: `sts:GetCallerIdentity` invoked once per token; result cached 5 min; `principal` = IAM ARN.
+- BreakGlass: additional `X-BreakGlass-Session-Tag` header MUST match the caller's session tags (verified by `sts:GetSessionToken` reflected data OR by trusting API Gateway's IAM auth pass-through).
+
+4. Implementation Steps
+-----------------------
+Step 1 — App factory.
+  - Compose FastAPI app; include routers (chat, findings, decisions, approvals, reports, operations, router_bridge, ws).
+  - Add middleware: correlation, powertools tracer, timing.
+  - Register exception handlers per `errors.py`.
+
+Step 2 — Auth middleware.
+  - `Depends(get_principal)` returns a `Principal` with `arn`, `groups`, `auth_kind`.
+  - Cognito path: verify JWT using `python-jose` + JWKS caching (15-min TTL).
+  - SigV4 path: verify by calling `sts:GetCallerIdentity` on the presented credentials (only works when caller signs the actual request; API Gateway IAM auth handles this natively — Lambda receives verified caller ARN in `event.requestContext.identity.userArn`).
+
+Step 3 — Adapter deps.
+  - `Depends(get_bedrock)`, `Depends(get_ddb_findings)`, etc. Return singleton adapter clients constructed at cold start.
+  - `Depends(get_correlation_id)` returns the current correlation_id.
+
+Step 4 — Error envelopes.
+  - `SentinelHTTPException(code, message, http_status)` subclass of `HTTPException`.
+  - Handlers translate: `SanitizerRejection → 400`, `GuardrailInterventionError → 400`, `AccessDeniedError → 403`, `BudgetExceededError → 429`, `CircuitOpenError → 503`, `ZelkovaError → 500`, `ValidationError → 400`.
+  - Unhandled exception → 500 with correlation_id; body never contains stack traces in prod.
+
+Step 5 — Health.
+  - `GET /health` returns `{ "ok": true, "stage": "...", "commit": "..." }`. No auth.
+
+Step 6 — CI wiring.
+  - Ruff, mypy strict, pytest + coverage, OpenAPI schema exported and compared to a golden file on PR.
+
+5. Test Plan
+------------
+- Unit: correlation propagation across a handler chain.
+- Unit: JWT verifier accepts a valid token, rejects expired/tampered.
+- Unit: error handler maps each domain exception to the correct HTTP status.
+- Contract: OpenAPI schema round-trip; new endpoints must land in a spec diff-checked in PRs.
+- Injection: request headers containing `\r\n` and control chars are stripped.
+
+6. Acceptance Criteria
+----------------------
+- [ ] App boots inside a Lambda container in < 800 ms cold-start.
+- [ ] `/health` returns 200 with no auth.
+- [ ] Auth middleware rejects unauthenticated requests with 401 (no leak of resource existence).
+- [ ] All error handlers wired.
+
+7. Risks & Mitigations
+-----------------------
+Risk: Mangum + FastAPI + Powertools double-log request lines.
+  Mitigation: disable Uvicorn access logs; Powertools is authoritative.
+
+Risk: JWKS refresh latency starves auth on cold start.
+  Mitigation: JWKS fetched at cold start (single call) and cached; 15-min TTL.
+
+Risk: SigV4 auth increases per-request cost due to `GetCallerIdentity`.
+  Mitigation: rely on API Gateway IAM auth (verified upstream) whenever possible; SigV4 fallback path used only for WebSocket auth.

@@ -1,0 +1,70 @@
+PHASE 03 — Remediation Approval UI
+==================================
+
+Owner assumption: one principal engineer. Duration: 2 days.
+
+1. Objective
+------------
+A safe, deliberate UI for approving or rejecting a proposed remediation. Renders a diff of current-vs-proposed policy, the Zelkova pre-check result, an impact-summary panel, and requires an explicit typed confirmation. On approve, drives the backend approval state machine (phase-03 of backend) and streams progress.
+
+2. Deliverables
+---------------
+- Page `app/(dashboard)/decisions/[id]/page.tsx` with an `Approval Drawer`.
+- Components: `RemediationCard`, `PolicyDiff`, `ZelkovaWitness`, `ImpactSummary`, `ConfirmationBox`, `ApprovalProgress`.
+- Multi-step form with Zod validation.
+
+3. UX Flow
+----------
+1. On the DecisionRecord detail page, each remediation in `remediations_proposed` renders as a `RemediationCard`.
+2. Card summary: action kind (e.g., "attach_inline_policy"), target ARN, TTL if any, severity of the underlying finding.
+3. Card "Review" button opens the Approval Drawer:
+   - **Step 1: Diff.** Side-by-side JSON diff of `current policy` vs `proposed policy`. Toggle to view unified diff.
+   - **Step 2: Zelkova.** Displays the specialist's pre-check result if present. If missing, an inline call renders "Sentinel will run Zelkova CheckNoNewAccess before applying — witness will appear here if the check fails."
+   - **Step 3: Impact.** Reads from the linked Finding's payload:
+     - F4: blocked-role summary.
+     - F5: TerminationRecord list.
+     - F7: collision explanation.
+     - F8: safe_scp diff.
+   - **Step 4: Confirmation.** User types the target ARN's short form (e.g., last segment of the role) to confirm; a checkbox affirming "I have reviewed the diff, Zelkova result, and impact"; optional reason text (min 20 chars).
+   - **Step 5: Apply.** POST to `/decisions/{id}/approve` with `{ remediation_index, reason, dry_run: false }`. Show `ApprovalProgress` streaming state machine steps.
+4. On success: green banner + link to the applied evidence blob.
+5. On rollback: red banner + witness + link to runbook.
+
+4. Safety Rails
+---------------
+- Approve button disabled until all confirmation gates pass.
+- SCP updates: additional group-check — only `SentinelOperators` can approve; UI shows "Operator role required" for other users.
+- Emergency `session_kill` remediations: additional BreakGlass tag check (backend enforces; UI shows "Break-glass session required" if missing).
+- Reject flow: simpler; just a reason field + submit.
+
+5. Streaming State Machine Progress
+-----------------------------------
+- Backend approval endpoint returns the state machine execution ARN.
+- Frontend subscribes to progress via a short-poll on `GET /operations/execution/{arn}` (backend translates Step Functions events).
+- Steps rendered as a checklist: PreCheck → Apply → Wait 15s → PostCheck → Done.
+- On failure at any step, the checklist marks the failing step and shows the reason.
+
+6. Test Plan
+------------
+- Component: RemediationCard states (proposed, approved, rejected, applying, applied, rolled-back).
+- Playwright: full happy path with mocked backend + state-machine progress.
+- Property: approve button cannot enable when confirmation gates fail (10 fixture combinations).
+- axe-core clean.
+
+7. Acceptance Criteria
+----------------------
+- [ ] Approve path exercisable end-to-end in Playwright.
+- [ ] Rollback banner accurate on synthetic post-check failure.
+- [ ] Group-check UI messaging correct across 3 user personas (Auditor / Operator / BreakGlass).
+- [ ] Diff view renders correctly for policies up to 6 KB.
+
+8. Risks & Mitigations
+-----------------------
+Risk: operator approves a mass-scope SCP change without reading the diff.
+  Mitigation: typed-confirmation step is intentionally friction; audit logs every approval with reason.
+
+Risk: state-machine progress polling burns backend quota.
+  Mitigation: 2-second poll interval; stops as soon as state machine reaches terminal state.
+
+Risk: policy diff renderer becomes slow on 6 KB inputs.
+  Mitigation: pre-compute diff on the server (phase-04 of backend can offer a `/decisions/{id}/diff/{remediation_index}` endpoint); client renders pre-computed structure.

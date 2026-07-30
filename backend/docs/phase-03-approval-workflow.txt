@@ -1,0 +1,116 @@
+PHASE 03 — Approval Workflow
+============================
+
+Owner assumption: one principal engineer. Duration: 2 days.
+
+1. Objective
+------------
+Any specialist that produces a `RemediationPlan` proposes it — Sentinel does not auto-apply outside the emergency path (F5). This phase implements the approval flow: humans (or automation with the right group) approve or reject a proposed remediation; on approve, the backend runs Zelkova pre-check, applies the change, waits, runs post-check, and records the result.
+
+2. Deliverables
+---------------
+- `routers/approvals.py` with `POST /decisions/{id}/approve` and `POST /decisions/{id}/reject`.
+- `services/approval_service.py`.
+- Step Functions Standard state machine `SentinelApprovalApply` for the multi-step apply flow (pre-check → apply → wait 15 s → post-check → success/rollback).
+- Idempotency via `SentinelIdempotency`.
+
+3. Contract
+-----------
+Approve request body:
+```json
+{
+  "remediation_index": 0,
+  "reason": "reviewed and safe",
+  "dry_run": false
+}
+```
+
+Reject request body:
+```json
+{ "remediation_index": 0, "reason": "prefer manual review" }
+```
+
+Response:
+```json
+{
+  "decision_id": "...",
+  "remediation_applied": {...},   // full RemediationPlan with zelkova_pre + zelkova_post populated
+  "state_machine_execution_arn": "...",
+  "state": "SUCCEEDED" | "ROLLED_BACK" | "REJECTED"
+}
+```
+
+4. Implementation Steps
+-----------------------
+Step 1 — Load decision and remediation.
+  - `decisions.get(decision_id, principal)` (auth-scoped read).
+  - Fetch `remediation = decision.remediations_proposed[remediation_index]`.
+  - Validate remediation kind is one of the approvable actions (all except `enable_cloudtrail_data_events` — that one enables logging, not mutating policy; still approvable but with different guardrails).
+
+Step 2 — Idempotency key.
+  - `key = sha256(decision_id + remediation_index + principal_arn)`.
+  - Check `SentinelIdempotency`; if key exists and is still-running or completed with the same input hash, return the prior result.
+
+Step 3 — Start state machine.
+  - Input: `{ decision_id, remediation, principal_arn, correlation_id, dry_run }`.
+  - Wait for the state machine to complete via a synchronous `states:StartSyncExecution` (Standard workflows support sync mode up to 5 min).
+  - Return the state machine's output.
+
+Step 4 — State machine (Standard workflow ASL).
+  - State `ZelkovaPreCheck`:
+    - Invoke `zelkova:CheckNoNewAccess(existing=<current>, candidate=<proposed>)`.
+    - On `pass_=false`: transition to `RejectedPreCheck` state → return `state=REJECTED` with witness.
+  - State `Apply` (only if `dry_run=false`):
+    - Invoke the appropriate applier Lambda based on `remediation.action`:
+      - `attach_inline_policy` → `iam:PutRolePolicy`/`iam:PutUserPolicy`.
+      - `detach_inline_policy` → `iam:DeleteRolePolicy`/`iam:DeleteUserPolicy`.
+      - `update_scp` → `organizations:UpdatePolicy`.
+      - `archive_finding` → `access-analyzer:UpdateFindings`.
+      - `enable_cloudtrail_data_events` → `cloudtrail:PutEventSelectors`.
+      - `auto_generate_policy` → out-of-band artifact write; no AWS mutation.
+    - Assumes cross-account role where needed.
+  - State `Wait` (15 s).
+  - State `ZelkovaPostCheck`:
+    - Adapter's `post_check` with 3 polls at 5 s each.
+    - On pass: `SUCCEEDED`.
+    - On fail: `Rollback` state.
+  - State `Rollback`:
+    - Reverse the applied action (`DeleteRolePolicy` for a Put; restore the prior SCP version).
+    - Sends SNS `SentinelSecurity` alert.
+    - Returns `state=ROLLED_BACK`.
+  - Every step emits KMS-signed evidence blob (kind=`policy_mutation`) to Object Lock.
+
+Step 5 — Reject flow.
+  - `POST /decisions/{id}/reject` records the rejection in DDB `SentinelDecisions.remediations_rejected` and emits an evidence blob.
+  - No state machine invoked.
+
+5. IAM Requirements
+-------------------
+Approval Lambda role: `states:StartSyncExecution` on the state machine, `dynamodb:UpdateItem` on `SentinelDecisions` and `SentinelIdempotency`.
+
+State machine role: `iam:PutRolePolicy`, `iam:DeleteRolePolicy` (via cross-account role assume), `organizations:UpdatePolicy` (scoped to Sentinel-owned policies via tag), `access-analyzer:UpdateFindings`, `cloudtrail:PutEventSelectors`, `access-analyzer:CheckNoNewAccess`.
+
+6. Test Plan
+------------
+- Unit: approve happy path, Zelkova violation, apply failure with rollback.
+- Idempotency: same request twice returns same result without side effects.
+- Integration (Step Functions Local + moto): end-to-end apply + post-check.
+- Property: post-check always runs after every apply; verified by state-machine trace inspection.
+
+7. Acceptance Criteria
+----------------------
+- [ ] Zelkova pre-check gates every apply.
+- [ ] Rollback fires and succeeds on synthetic post-check failure.
+- [ ] Idempotent — repeated approvals do not double-apply.
+- [ ] Every step emits evidence.
+
+8. Risks & Mitigations
+-----------------------
+Risk: 5-minute sync execution limit exceeded on slow post-checks.
+  Mitigation: if `states:StartSyncExecution` would exceed 5 min, fall back to async `states:StartExecution` and expose a status endpoint.
+
+Risk: SCP updates take effect across the org with high blast radius.
+  Mitigation: SCP applies require additional group check (only `SentinelOperators`); UI confirms with a diff view; state machine writes a "canary account test" step before wide apply (future work).
+
+Risk: policy applied but rollback fails.
+  Mitigation: rollback failure emits P0 SNS to `SentinelSecurity` + PagerDuty; runbook `docs/runbooks/rollback-failed.md` walks operator through manual recovery.

@@ -1,0 +1,129 @@
+PHASE 05 — Bedrock Stack (Agents + KB)
+=======================================
+
+Owner assumption: one principal engineer. Duration: 3 days.
+
+1. Objective
+------------
+Provision Sentinel Prime (Supervisor) and the 8 specialist Bedrock Agents, plus the shared Knowledge Base, plus the collaborator associations that let Prime dispatch to specialists.
+
+2. Deliverables
+---------------
+- Bedrock Knowledge Base `SentinelKB` with 4 data sources (IAM UG, Org UG, IdC UG, SAR).
+- 9 Bedrock Agents (Prime + 8 specialists).
+- Action groups per specialist (OpenAPI YAML + Lambda ref).
+- Aliases `dev`, `staging`, `prod` on every agent.
+- Collaborator associations (Prime → 8 specialists).
+- Memory configuration (SESSION_SUMMARY, 30-day retention).
+- Guardrail attachment on every agent.
+- KB attachment on every agent.
+
+3. Knowledge Base
+-----------------
+- CDK: `aws_bedrock.CfnKnowledgeBase`.
+- Embedding model: `amazon.titan-embed-text-v2:0` (256-dim).
+- Storage: OpenSearch Serverless collection `sentinel-kb-vector` (separate from episodic OSS).
+- Data sources (one per corpus): source bucket `SentinelKbSource-{stage}` with prefix per corpus.
+- Chunking: FIXED_SIZE 512 tokens with 20% overlap.
+- Ingestion role with `s3:Get*/List*` on source and `aoss:APIAccessAll` on the collection.
+
+4. Sentinel Prime (Supervisor)
+------------------------------
+```python
+prime = SentinelBedrockAgent(
+    self, "SentinelPrime",
+    agent_name="SentinelPrime",
+    instruction=open("agents/src/iam_sentinel_agents/prompts/prime_supervisor.txt").read(),
+    foundation_model=stage.sonnet_model_id,
+    agent_collaboration="SUPERVISOR",
+    memory_configuration={"enabled_memory_types": ["SESSION_SUMMARY"], "storage_days": 30},
+    guardrail_id=guardrail.attr_id,
+    guardrail_version="LIVE",
+    knowledge_bases=[sentinel_kb],
+    idle_session_ttl_in_seconds=1800,
+    prompt_override=(
+        # ORCHESTRATION prompt override with parserMode=OVERRIDDEN
+    ),
+)
+```
+
+Alias `dev` → DRAFT; `staging` and `prod` bound to specific versions promoted via a workflow.
+
+5. Specialists (F1..F8)
+-----------------------
+For each specialist:
+```python
+specialist = SentinelBedrockAgent(
+    self, f"Specialist{feature_id}",
+    agent_name=name,
+    instruction=open(prompt_path).read(),
+    foundation_model=stage.haiku_model_id if is_haiku else stage.sonnet_model_id,
+    agent_collaboration="DISABLED",
+    action_groups=[
+        ActionGroupConfig(
+            name=f"{feature_id}Actions",
+            openapi_path=f"agents/src/iam_sentinel_agents/action_groups/{feature_id_lower}.yaml",
+            executor_lambda_arn=lambda_stack.for_feature(feature_id),
+        ),
+        # Shared MemoryActions
+        ActionGroupConfig(
+            name="MemoryActions",
+            openapi_path="agents/src/iam_sentinel_agents/action_groups/memory.yaml",
+            executor_lambda_arn=lambda_stack.memory,
+        ),
+    ],
+    knowledge_bases=[sentinel_kb],
+    guardrail_id=guardrail.attr_id,
+    guardrail_version="LIVE",
+)
+```
+
+6. Collaborator Associations
+----------------------------
+After all agents exist:
+```python
+for spec in specialists:
+    prime.add_collaborator(
+        collaborator=spec,
+        relay_conversation_history="TO_COLLABORATOR",
+        collaborator_instruction=(
+            f"Delegate to {spec.name} when the user query matches "
+            f"the routing heuristic for {spec.feature_id}."
+        ),
+    )
+```
+
+Implemented as CDK CustomResource wrapping `bedrock-agent:AssociateAgentCollaborator`.
+
+7. Alias Promotion Workflow
+---------------------------
+- `dev` alias always → DRAFT.
+- `staging` alias moves via a GH Actions workflow: prepare a new version, run eval harness, promote if pass.
+- `prod` alias moves via approval + eval-pass + 24-hour soak on `staging`.
+
+Alias ARNs published as SSM params `/sentinel/agents/{name}/alias/{stage}` for backend consumption.
+
+8. Test Plan
+------------
+- Snapshot: 9 agents + 1 KB present.
+- Integration: `bedrock-agent:PrepareAgent` succeeds for every agent (build fails otherwise).
+- Post-deploy: `InvokeAgent` on Prime dev alias with a canonical prompt; response returns.
+- Collaborator: multi-specialist prompt reaches ≥ 2 collaborators.
+
+9. Acceptance Criteria
+----------------------
+- [ ] All 9 agents PREPARED without warnings.
+- [ ] KB ingestion succeeds on first deploy.
+- [ ] Prime routes to correct specialist on 10 canonical prompts.
+- [ ] Alias promotion workflow executes end-to-end on staging.
+
+10. Risks & Mitigations
+-----------------------
+Risk: agent prepare fails silently when action-group Lambda invocation is misconfigured.
+  Mitigation: post-deploy sanity check invokes each action-group Lambda directly with a synthetic Bedrock envelope.
+
+Risk: Bedrock quotas per region.
+  Mitigation: request agent/quota increases at least 4 weeks before hackathon deadline; document runbook.
+
+Risk: Multi-agent collaboration API surface changes (GA feature; still evolving).
+  Mitigation: pin `aws-cdk-lib` version; keep collaborator association behind our CustomResource for portability.

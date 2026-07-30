@@ -1,0 +1,126 @@
+PHASE 05 — DynamoDB Adapter
+===========================
+
+Owner assumption: one principal engineer. Duration: 2 days.
+
+1. Objective
+------------
+Ship typed, retry-guarded DynamoDB helpers for every Sentinel table: findings, decisions, memory (episodic/semantic/procedural), budget, breakers, in-flight sessions, revocations, SLR catalogue, policy cache, faults, divergence.
+
+2. Deliverables
+---------------
+- One helper module per table under `ddb/`.
+- Base `DdbClient` with typed put/get/query/update semantics.
+- `memory/client.py` in the parent `adapters/` package exposing the shared recall/remember interface used by Prime and specialists.
+
+3. Table Inventory
+------------------
+Every table has: KMS CMK encryption, PITR ON, DeletionProtection ON, on-demand billing, `SENTINEL_STAGE` in the name (e.g., `SentinelFindings-dev`).
+
+| Table                        | PK                     | SK                    | GSIs                                                          | TTL          |
+|------------------------------|------------------------|-----------------------|---------------------------------------------------------------|--------------|
+| `SentinelFindings`           | `account_id#feature_id`| `finding_id#detected_at` | `severity#detected_at`; `feature_id#status#detected_at`     | `expires_at` |
+| `SentinelDecisions`          | `principal`            | `decided_at`          | `correlation_id#decided_at`                                    | –            |
+| `SentinelDecisionsInFlight`  | `correlation_id`       | –                     | –                                                             | 1 h          |
+| `SentinelMemoryEpisodic`     | `principal`            | `decided_at`          | `account_id#decided_at`; `feature_id#decided_at`; `subject_arn#detected_at` | 2 y |
+| `SentinelMemorySemantic`     | `entity_kind`          | `entity_key`          | `related_entity#entity_key`                                    | –            |
+| `SentinelMemoryProcedural`   | `pattern_kind`         | `pattern_hash`        | –                                                             | kind-specific |
+| `SentinelBudget`             | `correlation_id`       | `ULID`                | `principal#ymd`                                                | 30 d         |
+| `SentinelBreakers`           | `breaker_name`         | –                     | –                                                             | –            |
+| `SentinelPolicies`           | `org_id`               | `policy_arn`          | –                                                             | 15 min (cache) |
+| `SentinelSLRs`               | `service_principal`    | –                     | –                                                             | –            |
+| `SentinelRevocations`        | `account_id`           | `role_arn`            | `correlation_id#attached_at`                                   | `ttl_expires_at` |
+| `SentinelFaults`             | `correlation_id`       | `detected_at`         | `fault_class#detected_at`                                      | 90 d         |
+| `SentinelDivergence`         | `correlation_id`       | `detected_at`         | `feature_id#divergence_kind`                                   | 90 d         |
+| `SentinelIdempotency`        | `idempotency_key`      | –                     | –                                                             | 24 h         |
+
+4. Interface Pattern
+--------------------
+Every helper follows the same shape:
+
+```python
+class FindingsClient:
+    def put(self, finding: Finding) -> None: ...
+    def get(self, account_id: str, feature_id: FeatureID, finding_id: str) -> Finding: ...
+    def query_by_severity(self, severity: Severity, since: AwareDatetime, limit: int = 100) -> list[Finding]: ...
+    def update_status(self, account_id: str, feature_id: FeatureID, finding_id: str, status: str) -> None: ...
+```
+
+- Typed inputs; typed outputs.
+- `put` idempotent when the model has a natural id.
+- Retries via `Policy.AGGRESSIVE` on `ProvisionedThroughputExceededException` and `ThrottlingException`.
+- ConsistencyModel: `EventuallyConsistent` reads by default; specialists that need strong consistency pass `strong=True`.
+
+5. Memory Client
+----------------
+`memory/client.py` presents:
+
+```python
+class MemoryClient:
+    def remember_episodic(self, record: EpisodicMemory, correlation_id: str) -> None: ...
+    def recall_episodic(self, principal: str, query: str | None, top_k: int) -> list[EpisodicMemory]: ...
+    def upsert_semantic(self, entity: SemanticEntity) -> bool: ...   # returns True on change
+    def recall_semantic(self, kind: str, facet: dict) -> list[SemanticEntity]: ...
+    def procedural_get(self, pattern_kind: str, pattern_hash: str) -> ProceduralHit | None: ...
+    def procedural_put(self, pattern_kind: str, pattern_hash: str, result: dict, ttl_seconds: int) -> None: ...
+```
+
+Vector recall for episodic uses OpenSearch Serverless via `opensearchpy` with SigV4. The client abstracts DDB + OSS as one surface.
+
+6. Implementation Steps
+-----------------------
+Step 1 — Base client with a common `DynamoDbHelper` that:
+  - Marshals/unmarshals via `boto3.dynamodb.types.TypeSerializer`/`TypeDeserializer`.
+  - Applies retry decorator + circuit breaker.
+  - Emits `SentinelDdb{Reads,Writes}` metrics.
+  - Handles conditional writes for idempotency where relevant.
+
+Step 2 — Per-table modules. Each imports `Base` and adds typed CRUD.
+
+Step 3 — Memory adapter integrates DDB + OSS. Episodic write is transactional — write to DDB first, then queue an OSS index update via SQS (async). Read is hybrid: OSS k-NN on `query`, DDB lookup for full records.
+
+Step 4 — Vector index bootstrap. `scripts/bootstrap_oss_index.py` creates the `sentinel-episodic-vector` k-NN index with the correct field mappings at deploy time.
+
+Step 5 — Isolation. Every helper method requires `principal` (or `org_id`) and asserts scope on read/write.
+
+7. IAM Requirements
+-------------------
+Per Lambda, scope precisely to the tables it needs:
+```json
+{
+  "Sid": "SentinelDdbAccess",
+  "Effect": "Allow",
+  "Action": ["dynamodb:PutItem", "dynamodb:GetItem", "dynamodb:UpdateItem", "dynamodb:Query", "dynamodb:BatchWriteItem"],
+  "Resource": [
+    "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/SentinelFindings-${Stage}",
+    "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/SentinelFindings-${Stage}/index/*"
+  ]
+}
+```
+
+OSS access via a scoped data-access policy tied to the Lambda role.
+
+8. Test Plan
+------------
+- Unit (moto) per helper: put→get, query with pagination, update with condition, TTL expiry.
+- Property: idempotency of `put` under retries (Hypothesis-driven throttle injection).
+- Memory: episodic write reflects in recall within 200 ms (mocked OSS).
+- Isolation: cross-principal reads fail closed.
+
+9. Acceptance Criteria
+----------------------
+- [ ] All 13 tables covered with typed helpers.
+- [ ] p95 helper latency ≤ 20 ms (excluding OSS).
+- [ ] Cross-principal isolation property-tested to 10,000 examples.
+- [ ] Bootstrap script creates OSS index deterministically.
+
+10. Risks & Mitigations
+-----------------------
+Risk: OSS index drift as episodic schema evolves.
+  Mitigation: field mappings versioned; migration on schema-version bump.
+
+Risk: hot partition on `SentinelBudget` for a single-correlation burst.
+  Mitigation: SK is ULID (time-ordered but random within same-ms); write dispersal acceptable at expected TPS.
+
+Risk: PITR restore overwrites a legitimate concurrent change during DR.
+  Mitigation: DR runbook mandates freeze window before restore; two-signer break-glass required.

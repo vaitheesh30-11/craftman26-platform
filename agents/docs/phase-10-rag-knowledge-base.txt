@@ -1,0 +1,122 @@
+PHASE 10 — RAG Knowledge Base
+=============================
+
+Owner assumption: one principal engineer. Duration: 2 days.
+
+1. Objective
+------------
+Ground Sentinel Prime and every specialist in AWS's own documentation so that every citation resolves to a real, verifiable AWS quote. Build the Bedrock Knowledge Base `SentinelKB` on top of an S3 corpus containing the AWS IAM User Guide, AWS Organizations User Guide, IAM Identity Center User Guide, and AWS Service Authorization Reference. Nightly ingestion keeps the KB fresh. A quote-manifest generator emits a signed sha256 index that the contract layer uses to reject invented quotes at load time.
+
+2. Deliverables
+---------------
+- S3 buckets `SentinelKB-source-{stage}` and `SentinelKB-manifest-{stage}`.
+- OpenSearch Serverless collection `sentinel-kb` (managed by Bedrock KB).
+- Bedrock Knowledge Base `SentinelKB` with the four corpora as data sources.
+- Ingestion pipeline: nightly EventBridge → Lambda (`kb_ingest_trigger`) → `bedrock-agent:StartIngestionJob`.
+- Corpus fetch pipeline: weekly Lambda (`kb_corpus_fetch`) that pulls the AWS docs into the source bucket.
+- Quote-manifest generator: Lambda (`kb_manifest_generate`) that scans the source bucket, hashes every 1–3 sentence span, and writes a KMS-signed manifest to `SentinelKB-manifest-{stage}/manifest.json`.
+- CDK stack `SentinelKBStack` in `aws-infra/`.
+
+3. Interface Contracts
+----------------------
+```python
+class QuoteHash(Base):
+    quote_sha256: str
+    corpus: Literal["iam", "organizations", "identity_center", "service_auth_ref"]
+    document: str                          # source doc filename
+    span_start: int                        # byte offset
+    span_end: int
+    retrieved_on: str                      # ISO date
+
+class KbManifest(Base):
+    manifest_version: str
+    generated_at: AwareDatetime
+    total_quotes: int
+    quotes: list[QuoteHash]
+    manifest_sha256: str                   # sha256 over the sorted quotes list
+    signature: str                         # base64 KMS RSASSA_PSS_SHA_256 over manifest_sha256
+    kms_key_arn: str
+```
+
+The `Finding.aws_doc_citation.quote` validator in `contracts/finding.py` computes sha256 of the quote (after NFKC normalize + collapse whitespace) and requires the hash to be in the manifest.
+
+4. Implementation Steps
+-----------------------
+Step 1 — Corpus fetch.
+  - Sources:
+    - IAM UG: `https://docs.aws.amazon.com/IAM/latest/UserGuide/` (spidered from the toc.json).
+    - Organizations UG.
+    - Identity Center UG.
+    - Service Authorization Reference (page per service).
+  - Weekly Lambda scrapes the toc.json for each guide, downloads HTML pages, converts to Markdown via `markdownify`, strips nav/footers, writes to `s3://SentinelKB-source-{stage}/{corpus}/{path}.md`.
+  - Rate limit: 1 req/sec per AWS-hosted host; retry on 429 with exp backoff.
+  - Deduplicate: content-hash key to skip unchanged files.
+
+Step 2 — Manifest generation.
+  - Every markdown file scanned; sentence-tokenize (`nltk.sent_tokenize` fallback to a regex tokenizer if nltk not vendored).
+  - Produce three window sizes: 1-sentence, 2-sentence, 3-sentence spans.
+  - For each span: sha256 of `nfkc_normalize(collapse_whitespace(span))`.
+  - Emit `KbManifest`. Sort quotes by (corpus, document, span_start).
+  - Compute `manifest_sha256`, KMS-sign, PutObject to `SentinelKB-manifest-{stage}/manifest.json` and a versioned copy `manifest/{version}.json`.
+  - CloudWatch metric `SentinelKbManifestQuotes`.
+
+Step 3 — Bedrock KB creation.
+  - CDK `aws_bedrock.CfnKnowledgeBase` with:
+    - Role: `SentinelKBRole` with `s3:Get*, ListBucket` on the source bucket, `aoss:APIAccessAll` on the OpenSearch Serverless collection.
+    - Embedding: `amazon.titan-embed-text-v2:0` (256-dim, fast, cheap). Fallback: `cohere.embed-english-v3` if quality benchmarks warrant.
+    - Storage config: OSS collection with vector index.
+    - Data sources (one per corpus):
+      - `chunkingConfiguration: { chunkingStrategy: FIXED_SIZE, fixedSizeChunkingConfiguration: { maxTokens: 512, overlapPercentage: 20 }}`.
+      - Metadata: `source`, `corpus`, `document`, `retrieved_on`.
+  - Prime and every specialist agent has `knowledgeBases: [{ knowledgeBaseId: <SentinelKB>, description: "AWS IAM/Org/IdC/SAR" }]` in their configuration.
+
+Step 4 — Ingestion cadence.
+  - EventBridge scheduled expression `cron(0 3 * * ? *)` (03:00 UTC daily).
+  - Target: `kb_ingest_trigger` Lambda → `bedrock-agent:StartIngestionJob` for each data source.
+  - Poll job status; alarm on failure.
+
+Step 5 — Grounding threshold.
+  - Bedrock Guardrail contextual-grounding: relevance ≥ 0.8, grounding ≥ 0.9 (set in phase-11).
+
+Step 6 — Freshness contract.
+  - Every KB retrieval returns metadata including `retrieved_on`. If a specialist observes `retrieved_on` > 30 days old, it emits an INFO metric `SentinelKbStaleRetrieval`.
+
+5. Prompt Templates
+-------------------
+Not applicable — this phase provisions no new agent. KB is attached by phases 01–09.
+
+6. IAM Policy
+-------------
+`kb_corpus_fetch` role: `s3:PutObject` on `SentinelKB-source-{stage}/*`, outbound HTTPS via Lambda VPC-less (no additional AWS perms). Egress domain allowlist `docs.aws.amazon.com` enforced by a checked-in URL prefix.
+`kb_manifest_generate` role: `s3:ListBucket` + `s3:GetObject` on source bucket, `s3:PutObject` on manifest bucket, `kms:Sign` on evidence CMK.
+`kb_ingest_trigger` role: `bedrock-agent:StartIngestionJob`, `bedrock-agent:GetIngestionJob`, `bedrock-agent:ListIngestionJobs` on the KB and data sources.
+`SentinelKBRole` (assumed by Bedrock KB service): `s3:GetObject/ListBucket` on source, `aoss:APIAccessAll` on OSS collection.
+
+7. Test Plan
+------------
+- Unit: sentence tokenizer determinism; sha256 stability under NFKC normalization; manifest signing verifies with KMS Verify.
+- Corpus fetch: fixture HTTP server returning canned pages; verify Markdown conversion, dedup, rate limit.
+- KB ingestion: moto-mocked Bedrock KB with an assertion that ingestion is triggered per data source once per day.
+- Contract: `Finding.aws_doc_citation.quote` accepts a known-valid quote; rejects an unknown quote; rejects a valid quote with drifted whitespace (post-normalize should still match — property test with 50 whitespace mutations).
+- Freshness: fixture manifest with `retrieved_on=60 days ago`; verify INFO metric emission.
+
+8. Acceptance Criteria
+----------------------
+- [ ] Manifest KMS signature verifies on every read.
+- [ ] Quote validator round-trip: every canonical AWS quote in `docs/AWS_GAPS.md` passes.
+- [ ] Ingestion job succeeds nightly on dev for two consecutive weeks with zero failures.
+- [ ] Bedrock KB Retrieve returns ≥ 3 relevant chunks for each of 10 golden probe queries.
+
+9. Risks & Mitigations
+-----------------------
+Risk: AWS doc HTML structure changes; scraper breaks silently.
+  Mitigation: canary probes — 5 known URLs are asserted to yield known headings; scraper failure alarm fires.
+
+Risk: OSS costs on the vector store.
+  Mitigation: single collection shared across all corpora; OCU sizing starts at 2/2 (indexing/search) and scales via CloudWatch alarms.
+
+Risk: KB retrieval hallucinates on ambiguous queries.
+  Mitigation: contextual-grounding threshold on Guardrail; specialists' prompts instruct them to prefer INCONCLUSIVE over "I think I know".
+
+Risk: legal considerations of caching AWS docs.
+  Mitigation: cached content served only to internal agents inside the customer's AWS account; no redistribution; retention scoped to 90 days rolling.

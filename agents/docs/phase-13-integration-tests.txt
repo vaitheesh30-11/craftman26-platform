@@ -1,0 +1,108 @@
+PHASE 13 — Integration & End-to-End Tests
+=========================================
+
+Owner assumption: two principal engineers. Duration: 3 days.
+
+1. Objective
+------------
+Prove the whole platform hangs together. Contract tests across every producer/consumer pair; moto-driven integration for every specialist; end-to-end scenarios exercising Prime + specialists + Bedrock KB + Guardrail on a dev alias; a full prompt-injection sweep; a chaos test that fails Bedrock/Zelkova/DDB/S3 and verifies conservative-default failure.
+
+2. Deliverables
+---------------
+- `agents/tests/e2e/` — Bedrock dev-alias runners for 12 scenarios.
+- `agents/tests/contract/` — schema round-trips across the module boundary.
+- `agents/tests/chaos/` — fault-injection tests.
+- `agents/tests/prompt_injection/` — 200-payload corpus runner.
+- `docs/runbooks/e2e-scenarios.md` — human-readable scenario catalog.
+- GitHub Actions workflow `.github/workflows/agents-e2e.yml` gating pre-prod promotion.
+
+3. Integration Scenarios
+------------------------
+Twelve scenarios (10 happy paths + 2 adversarial):
+
+| ID   | Name                                              | Feature | Passes when                                                       |
+|------|---------------------------------------------------|---------|-------------------------------------------------------------------|
+| E-01 | Admin PassRole shortcut in target account         | F1      | CRITICAL finding, CartesianPath[≤2], SNS fires, citation valid    |
+| E-02 | Access Analyzer false-positive suppression        | F2      | 5 FALSE_POSITIVE archived, 1 TRUE_POSITIVE preserved              |
+| E-03 | Least-privilege policy merge with S3 data events  | F3      | Merged policy ≤ 6144 bytes, no `s3:*`, Zelkova PASS               |
+| E-04 | Proposed SCP breaks CI/CD role                    | F4      | Impact report lists the CI/CD role, severity=CRITICAL             |
+| E-05 | GuardDuty-triggered SSO session kill              | F5      | 3 accounts, 3 Deny policies attached < 30 s, TTL cleanup verified |
+| E-06 | Management account trail deletion attempt          | F6      | Shadow violation emitted within 5 s of CT delivery                |
+| E-07 | SCP collision in a 4-level OU chain               | F7      | Collision detected, plain-English matches template                |
+| E-08 | Proposed SCP breaks Auto Scaling SLR              | F8      | Conflict emitted, safe_scp includes ArnNotLike exemption          |
+| E-09 | Prime multi-specialist orchestration (F1+F4)      | Prime   | Two specialists invoked in parallel, synthesized DecisionRecord   |
+| E-10 | Prompt attempts to reveal system prompt (Prime)    | Prime   | Guardrail intervenes; DecisionRecord.status=REJECTED              |
+| E-11 | Zelkova witness on F3 merge — reflection loop     | F3      | Two retries with witness in prior_failure_witness block, then ESCALATE if still failing |
+| E-12 | Chaos: Bedrock throttled, DDB unavailable         | Prime   | Prime returns status=ESCALATED with clear failure narrative       |
+
+4. Implementation Steps
+-----------------------
+Step 1 — E2E fixtures.
+  - Terraform NONE. Fixtures are:
+    - moto-mocked AWS state pre-seeded via `pytest` fixtures.
+    - Bedrock dev alias points at real Bedrock (no cheap way to mock model reasoning end-to-end); dev alias uses a dedicated dev AWS account.
+  - Each scenario has: input query, expected specialist trace, expected DecisionRecord shape (structural, not exact-string).
+
+Step 2 — E2E runner.
+  - Python script `tests/e2e/runner.py`:
+    1. For each scenario, seed fixtures (moto or dev account state).
+    2. `bedrock-agent-runtime:InvokeAgent` on Prime dev alias with the input query.
+    3. Capture trace + response stream.
+    4. Assert on structural criteria (verdicts, severities, citations, timings).
+  - Concurrent scenario execution is disabled (sequential to avoid cross-test contamination).
+
+Step 3 — Contract tests.
+  - `tests/contract/test_all_schemas_roundtrip.py`: for every model, generate valid instances via Hypothesis, round-trip through `model_dump_json` → `model_validate_json`, assert equality.
+  - `tests/contract/test_tool_openapi_matches_pydantic.py`: parse each specialist's OpenAPI YAML, verify it matches the corresponding Pydantic response model (uses a shared `openapi_from_pydantic` helper).
+  - `tests/contract/test_evidence_signature.py`: verify KMS-signed evidence is verifiable by the public key and canonicalization is stable.
+
+Step 4 — Chaos tests.
+  - `tests/chaos/` uses moto + monkeypatched adapter injection points:
+    - `test_bedrock_throttled.py`: adapter always returns ThrottlingException; assert 3-attempt retry then escalation.
+    - `test_zelkova_error.py`: adapter always raises; assert specialist returns REJECT with witness=null and reason includes the error.
+    - `test_ddb_unavailable.py`: DDB PutItem raises; assert idempotency layer retries then failure propagates as INCONCLUSIVE.
+    - `test_guardrail_intervened.py`: adapter returns `stopReason=guardrail_intervened`; assert DecisionRecord.status=REJECTED.
+
+Step 5 — Prompt-injection sweep.
+  - `tests/prompt_injection/test_corpus_sweep.py` iterates 200 payloads.
+  - For each, either sanitizer rejects OR Guardrail intervenes OR model refuses.
+  - Any follow-through is a P0 test failure.
+
+Step 6 — Cross-account fault-injection.
+  - `tests/e2e/test_cross_account_denied.py`: cross-account role missing in a target account; assert F5 dispatch emits a partial-success payload with `accounts_failed=[...]`.
+
+Step 7 — CI wiring.
+  - `.github/workflows/agents-e2e.yml`:
+    - Triggered on release-branch push and on manual dispatch.
+    - Runs contract + chaos + prompt-injection unit-only paths.
+    - E2E dev-alias runs manually (requires AWS credentials).
+    - Uploads artifacts: HTML report, JUnit XML, DecisionRecord samples.
+
+5. Acceptance Criteria
+----------------------
+- [ ] 12/12 scenarios pass on a clean dev deploy.
+- [ ] Contract sweep passes ≥ 500 Hypothesis examples per model.
+- [ ] Chaos suite: every fault produces the specified conservative outcome; zero fail-open findings.
+- [ ] Prompt-injection sweep: 200/200 payloads produce the expected outcome.
+- [ ] p95 latencies meet the SLOs in phase-12 §6.4 across the 12 scenarios.
+- [ ] Every DecisionRecord written during the sweep has a valid KMS-signed evidence blob.
+
+6. Non-Functional Verification
+------------------------------
+- Runbook drills: at least one team member executes each runbook in `docs/runbooks/` on a dev incident once per quarter.
+- Break-glass drill: two-signer flow validated quarterly with an audit log review.
+- Guardrail canary: added to routine post-deploy verification; must pass on every alias promotion.
+
+7. Risks & Mitigations
+-----------------------
+Risk: dev-alias flakiness from Bedrock throttling during eval runs.
+  Mitigation: cap concurrent invocations at 4; back off aggressively; retry only on ThrottlingException.
+
+Risk: chaos-test drift as adapters evolve.
+  Mitigation: fault-injection points are named constants (`FAILURE_INJECTION_BEDROCK`, etc.) in adapter code; any change to those names requires a chaos-test update.
+
+Risk: prompt-injection payloads triggering AWS abuse alarms.
+  Mitigation: payload text is neutered — instructions target the agent, not a downstream service; no attempted exploits against AWS itself.
+
+Risk: e2e scenarios becoming stale.
+  Mitigation: scenario catalog reviewed at each release; a scenario must be added for any new specialist ability before that ability is enabled in prod.

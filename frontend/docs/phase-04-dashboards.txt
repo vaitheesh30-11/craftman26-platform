@@ -1,0 +1,82 @@
+PHASE 04 — Dashboards
+======================
+
+Owner assumption: one principal engineer. Duration: 2 days.
+
+1. Objective
+------------
+Operator-facing dashboards summarizing platform health, findings trend, cost, and drift. Backed by CloudWatch dashboards embedded via iframe for authoritative visualization, plus custom in-app tiles for numbers that need a click-through experience.
+
+2. Deliverables
+---------------
+- Page `app/(dashboard)/operations/page.tsx`.
+- Page `app/(dashboard)/reports/page.tsx`.
+- Tiles: findings-by-severity, findings-by-feature, cost-this-week, top-principals-by-findings, breaker states, DLQ depths, fault counts.
+- Embedded CloudWatch dashboards where authoritative.
+
+3. Tiles
+--------
+### Findings Tile
+- Count of open findings (severity ≥ MEDIUM) in the last 7 days.
+- Sparkline (severity-weighted) via `Recharts`.
+- Click-through: `/findings?severity=CRITICAL,HIGH,MEDIUM&since=7d`.
+
+### Cost Tile
+- Weekly Bedrock $ + Athena $ + Lambda $ for the current week.
+- Trend arrow vs previous week.
+- Click-through: `/reports/cost/weekly/latest`.
+
+### Health Tile
+- Breaker states (bedrock, athena, platform) — green/amber/red.
+- SessionKill DLQ depth.
+- KB freshness (`SentinelKbStaleRetrieval` last-hour count).
+- Faults last-24h split by class.
+
+### Top Principals Tile
+- Top 5 principals by finding count (last 7 days).
+- Click-through: filters findings by that principal.
+
+### Emergency Revocations Tile
+- Active revocations count.
+- Deep-link to F5 table page (from `/findings?feature=F5&status=active`).
+
+4. Embedded CloudWatch
+----------------------
+- Prime overview dashboard (from `aws-infra/dashboards/prime_overview.json`) embedded via `<iframe>` on a "Deep telemetry" tab.
+- Uses CloudWatch shared-dashboard URL with pre-signed credentials from the backend (`GET /operations/dashboards/{name}/share-url`).
+
+5. Reports Page
+---------------
+- List of available reports (per `GET /reports/*`).
+- Filter by kind: cost, F2 suppression, F6 shadow, F8 SLR.
+- Preview JSON with a "Download" button; long reports render summary tiles.
+
+6. Refresh
+----------
+- Tiles auto-refresh every 60 s (TanStack Query stale-time 30 s, refetch-interval 60 s).
+- Manual refresh button per tile.
+
+7. Test Plan
+------------
+- Component: each tile with fixture data.
+- Playwright: dashboard loads within 2 s p95 in a warm browser.
+- axe-core clean.
+- Contract: report kinds enumerated in a single place; drift caught by a snapshot test.
+
+8. Acceptance Criteria
+----------------------
+- [ ] All 5 tiles present with correct data.
+- [ ] Embedded CloudWatch dashboard renders auth'd.
+- [ ] Reports page lists ≥ 4 report kinds.
+- [ ] Refresh does not double-fetch under rapid navigation.
+
+9. Risks & Mitigations
+-----------------------
+Risk: CloudWatch cross-origin iframe restrictions.
+  Mitigation: use shared-dashboard URLs (public with signed URL) OR render CloudWatch data via `GetMetricData` in the backend and draw with Recharts client-side. Ship whichever ships first; fall back to the second option if the first has security review friction.
+
+Risk: cost tile lag (weekly cadence).
+  Mitigation: also show an "MTD" figure computed from CloudWatch metric data (near-real-time).
+
+Risk: dashboard cost from over-fetching.
+  Mitigation: TanStack Query global cache; explicit stale-time; user preference toggle for auto-refresh.

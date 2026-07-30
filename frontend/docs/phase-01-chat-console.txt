@@ -1,0 +1,74 @@
+PHASE 01 — Chat Console
+========================
+
+Owner assumption: one principal engineer. Duration: 2 days.
+
+1. Objective
+------------
+The primary human interface: a chat pane where operators talk to Sentinel Prime. Streams PROGRESS lines and renders the final RESULT (DecisionRecord) with clickable findings and remediations.
+
+2. Deliverables
+---------------
+- Page `app/(dashboard)/chat/page.tsx`.
+- Components: `ChatConsole`, `MessageList`, `PromptComposer`, `ProgressLine`, `ResultBlock`, `FindingChip`, `CitationInline`.
+- WebSocket client `lib/websocket-client.ts`.
+- Cancel button + reconnect logic.
+
+3. UX
+-----
+- Left rail: previous sessions (from `GET /decisions`, filtered to caller).
+- Center: chat transcript. User bubbles right, Prime bubbles left with a distinct "PROGRESS" style vs "RESULT" style.
+- Composer: multi-line input with:
+  - Suggested prompts (per feature).
+  - "Include ARNs in output" toggle (sets `SentinelQuery.include_arns_in_output`).
+  - "Consent to elevated action" toggle for F3 (`consent_enable_data_events`) and F5 (`confirm_kill`).
+- Result block:
+  - `status` badge (ANSWERED / ESCALATED / AUTO_REMEDIATED / REJECTED).
+  - Narrative rendered as prose.
+  - Findings list with severity color-coding; each finding expands to show `aws_doc_citation.quote` and a link to the source URL.
+  - Remediations list with an "Approve" button (deep-links to phase-03 flow).
+
+4. Streaming Protocol
+---------------------
+- WebSocket connects on chat page mount if token present.
+- On send: `{ action: "chat", query: SentinelQuery }`.
+- Client renders `event: progress` lines as they arrive.
+- On `event: result`, parses JSON and swaps the placeholder with `<ResultBlock>`.
+- On `event: error`, shows a toast with correlation_id for support.
+- Cancel button: sends `{ action: "cancel", correlation_id }`; UI marks the message as canceled.
+
+5. State Management
+-------------------
+- `useChatSession` hook (Zustand) tracks: current WebSocket state, active correlation_id, transcript.
+- Transcript is ephemeral (session only); durable history comes from `GET /decisions/{id}` on request.
+- TanStack Query for `GET /decisions` list on the left rail.
+
+6. Accessibility
+----------------
+- Composer has `aria-label`; progress region has `aria-live="polite"`.
+- Result block uses proper heading hierarchy.
+- All interactive elements keyboard-navigable.
+
+7. Test Plan
+------------
+- Component: `ProgressLine` renders text with animated dots; `ResultBlock` renders a canonical DecisionRecord fixture.
+- Vitest: WebSocket client with a mock `WebSocket`; verify reconnect within 2 s on close.
+- Playwright: full chat flow with a mocked backend streaming 5 progress lines + a result.
+
+8. Acceptance Criteria
+----------------------
+- [ ] Time-to-first-progress-line ≤ 800 ms after send.
+- [ ] Cancel takes ≤ 500 ms to visually confirm.
+- [ ] Result block deep-links to `/decisions/{id}` and `/findings/{id}` correctly.
+- [ ] axe-core clean.
+
+9. Risks & Mitigations
+-----------------------
+Risk: browser WebSocket implementation quirks (Safari).
+  Mitigation: `partysocket` or a small wrapper with reconnect + heartbeat; tested on Safari + Chromium + Firefox in Playwright.
+
+Risk: long transcript exceeds render performance.
+  Mitigation: virtualize the message list via `@tanstack/react-virtual` when > 50 messages.
+
+Risk: user pastes a large JSON payload as `query_text`.
+  Mitigation: composer clamps at 4,096 chars with a visible counter; excess opens the "Structured input" side panel that maps to `SentinelQuery.hints`.

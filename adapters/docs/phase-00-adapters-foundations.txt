@@ -1,0 +1,128 @@
+PHASE 00 — Adapters Foundations
+================================
+
+Owner assumption: one principal engineer. Duration: 2 days.
+
+1. Objective
+------------
+Stand up the Python package that every downstream adapter (bedrock, zelkova, prompts, evidence, ddb) inherits from. Ships `settings.py`, `errors.py`, `retry.py`, `circuit_breaker.py`, `cost_meter.py`, and the test scaffolding.
+
+2. Deliverables
+---------------
+- `adapters/pyproject.toml` with pinned dependencies.
+- `src/iam_sentinel_adapters/settings.py` — `AdapterSettings(pydantic-settings)` reading env + SSM.
+- `src/iam_sentinel_adapters/errors.py` — exception hierarchy.
+- `src/iam_sentinel_adapters/retry.py` — `@retry(policy=Policy.X)` decorator wrapping `tenacity`.
+- `src/iam_sentinel_adapters/circuit_breaker.py` — DDB-backed breaker state accessor.
+- `src/iam_sentinel_adapters/cost_meter.py` — EMF metric emitter + DDB spend sample writer.
+- `tests/` scaffolding with fixtures for KMS, S3, DDB, IAM, Bedrock (moto + botocore stubs).
+
+3. Exception Hierarchy
+----------------------
+```python
+class SentinelAdapterError(Exception): ...
+class TransientError(SentinelAdapterError): ...
+class ThrottlingError(TransientError): ...
+class NetworkError(TransientError): ...
+class NonRetryableError(SentinelAdapterError): ...
+class AccessDeniedError(NonRetryableError): ...
+class ValidationError(NonRetryableError): ...
+class GuardrailInterventionError(NonRetryableError): ...
+class ZelkovaError(SentinelAdapterError): ...
+class ZelkovaViolationError(ZelkovaError): ...
+class BudgetExceededError(SentinelAdapterError): ...
+class CircuitOpenError(SentinelAdapterError): ...
+class SanitizerRejection(SentinelAdapterError): ...
+```
+
+Every adapter surface method translates boto3 exceptions to one of the above at the boundary. Callers never see raw `botocore.exceptions.ClientError`.
+
+4. Retry Policies
+-----------------
+Policies encoded in `retry.py`:
+
+```python
+class Policy(Enum):
+    AGGRESSIVE = ("aggressive", 5, 0.2, 2.0, 5.0, 0.25)
+    CAUTIOUS   = ("cautious",   3, 0.5, 3.0, 10.0, 0.20)
+    SINGLE     = ("single",     1, 0.2, 1.0, 0.2, 0.0)
+    NONE       = ("none",       0, 0.0, 1.0, 0.0, 0.0)
+
+def retry(*, policy: Policy, retry_on: tuple[type[Exception], ...] = (TransientError,)):
+    """Decorator wrapping tenacity with jitter and total-time cap."""
+```
+
+Hard rules:
+- Every policy has a total-time cap enforced via `stop_after_delay`.
+- `NONE` executes zero retries.
+- Any `AccessDeniedError`, `ValidationError`, `GuardrailInterventionError`, `SanitizerRejection` short-circuits retries regardless of policy.
+
+5. Cost Meter
+-------------
+```python
+class CostMeter:
+    def record(self, correlation_id: str, kind: SpendKind, amount: float) -> None: ...
+    def projected(self, correlation_id: str) -> float: ...
+    def check_budget(self, correlation_id: str, kind: SpendKind, delta: float) -> None: ...
+    # raises BudgetExceededError if delta would push over cap
+```
+
+Implementation:
+- `record` emits an EMF metric (`SentinelSpend[kind]`) with dimensions `feature_id, principal, mode`.
+- Also appends a `SpendSample` to DDB `SentinelBudget` (PK=correlation_id, SK=ULID).
+- `projected` sums same-correlation samples from DDB (cached 5 seconds in-process).
+- `check_budget` reads caps from SSM `/sentinel/budget/*`, refreshed 5 minutes.
+
+6. Circuit Breaker Accessor
+---------------------------
+```python
+class BreakerAccessor:
+    def state(self, breaker_name: str) -> Literal["closed","half_open","open"]: ...
+    def record_success(self, breaker_name: str) -> None: ...
+    def record_failure(self, breaker_name: str) -> None: ...
+    def trip(self, breaker_name: str, reason: str) -> None: ...
+```
+
+Implementation: DDB `SentinelBreakers` (PK=breaker_name). Transitions: 3 failures in 60 s → open (5 min) → half_open (1 probe) → closed on success.
+
+7. Settings
+-----------
+`AdapterSettings` reads from env vars:
+- `SENTINEL_STAGE`
+- `SENTINEL_REGION`
+- `SENTINEL_GUARDRAIL_ID` (from SSM)
+- `SENTINEL_GUARDRAIL_VERSION`
+- `SENTINEL_EVIDENCE_BUCKET`
+- `SENTINEL_EVIDENCE_KMS_KEY_ARN`
+- `SENTINEL_FINDINGS_TABLE`, `SENTINEL_DECISIONS_TABLE`, `SENTINEL_MEMORY_*_TABLE`, `SENTINEL_BUDGET_TABLE`, `SENTINEL_BREAKERS_TABLE`
+- `SENTINEL_LOG_LEVEL`
+- `SENTINEL_MODEL_HAIKU_ID`, `SENTINEL_MODEL_SONNET_ID`
+
+Loaded once at module import; cached.
+
+8. Test Plan
+------------
+- Unit: retry decorator against a stubbed function that fails N times then succeeds.
+- Property: retry policy total wait time within jitter bounds over 1,000 trials.
+- Unit: cost meter accumulates correctly across concurrent records.
+- Unit: circuit breaker transitions on injected failure sequences.
+- Unit: settings load from `.env` fixture; missing required raises.
+
+9. Acceptance Criteria
+----------------------
+- [ ] `uv sync` clean, `ruff` clean, `mypy --strict` clean on empty adapter modules.
+- [ ] Retry decorator: `SINGLE` runs exactly 2 attempts (initial + 1 retry).
+- [ ] Cost meter: 100 concurrent `record` calls yield accurate total.
+- [ ] Circuit breaker: 3-failure trip verified.
+- [ ] Zero live AWS calls in unit tests (moto only).
+
+10. Risks & Mitigations
+-----------------------
+Risk: SSM refresh latency starves fast-path.
+  Mitigation: 5-min in-process cache; SSM param fetch runs on background timer, not per-call.
+
+Risk: DDB budget writes throttle under load.
+  Mitigation: write via best-effort (background thread); metric emission is authoritative for real-time accounting.
+
+Risk: tenacity behavior surprises on nested decorators.
+  Mitigation: retry decorator applied at exactly one layer per method; unit tests cover nested-invocation regressions.

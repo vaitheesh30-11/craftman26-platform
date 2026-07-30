@@ -1,0 +1,135 @@
+PHASE 00 — Foundations
+======================
+
+Owner assumption: two principal engineers. Duration: 3 days.
+
+1. Objective
+------------
+Stand up the agents module's Python package, contract layer, shared runtime, and tooling so every subsequent phase has a stable substrate. Nothing in this phase invokes a model or writes to AWS. This phase closes zero AWS gaps by itself; it exists so the other 13 phases can move in parallel without stepping on each other.
+
+2. Deliverables
+---------------
+- `agents/pyproject.toml` with the pinned dependency set.
+- `agents/src/iam_sentinel_agents/contracts/*.py` — Pydantic v2 models that mirror `docs/DATA_CONTRACTS.md` verbatim.
+- `agents/src/iam_sentinel_agents/tools/common/runtime.py` — shared Lambda entrypoint helpers.
+- `agents/src/iam_sentinel_agents/tools/common/cross_account.py` — STS AssumeRole with caching + retry.
+- `agents/src/iam_sentinel_agents/tools/common/event_parser.py` — Bedrock action-group envelope parser.
+- `agents/tests/contract/` — round-trip tests for every schema.
+- `.ruff.toml`, `mypy.ini`, `pytest.ini` at the agents/ root.
+- CI workflow file `.github/workflows/agents-ci.yml`.
+
+3. Interface Contracts
+----------------------
+3.1 Contract module layout (each file exports the classes named below):
+
+- `contracts/common.py` → `Base`, `FeatureID`, `Severity`, `Verdict`
+- `contracts/query.py` → `SentinelQuery`
+- `contracts/task.py` → `SpecialistTask`, `UntrustedContextBlock`
+- `contracts/verdict.py` → `SpecialistVerdict`, `ToolInvocation`
+- `contracts/finding.py` → `Finding`, `AwsDocCitation`
+- `contracts/remediation.py` → `RemediationPlan`, `ZelkovaCheck`
+- `contracts/evidence.py` → `EvidenceRecord`, `EvidenceRef`
+- `contracts/decision.py` → `DecisionRecord`
+
+Every model MUST set `model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True, validate_assignment=True)` and inherit from `Base` in `common.py`.
+
+3.2 Bedrock action-group envelope (input to every tool Lambda):
+
+```json
+{
+  "messageVersion": "1.0",
+  "agent": { "name": "...", "id": "...", "alias": "...", "version": "..." },
+  "sessionId": "01JBP...",
+  "sessionAttributes": { "correlation_id": "01JBP..." },
+  "actionGroup": "F1PassRoleActions",
+  "apiPath": "/scan",
+  "httpMethod": "POST",
+  "requestBody": {
+    "content": {
+      "application/json": {
+        "properties": [
+          { "name": "account_id", "type": "string", "value": "111122223333" }
+        ]
+      }
+    }
+  }
+}
+```
+
+`event_parser.parse_action_group(event)` returns a Pydantic model with `session_id`, `correlation_id`, `api_path`, `http_method`, `parameters: dict[str, Any]`.
+
+3.3 Environment variables (every Lambda expects these at cold start):
+
+- `SENTINEL_STAGE` — `dev` | `staging` | `prod`.
+- `SENTINEL_FINDINGS_TABLE` — DDB table name.
+- `SENTINEL_EVIDENCE_BUCKET` — S3 Object Lock bucket.
+- `SENTINEL_KMS_KEY_ARN` — CMK for signing evidence.
+- `SENTINEL_CROSS_ACCOUNT_ROLE_NAME` — always `SentinelCrossAccountRole`.
+- `SENTINEL_LOG_LEVEL` — default `INFO`.
+- `SENTINEL_METRIC_NAMESPACE` — default `IAMSentinel`.
+
+Resolved once at module import via `pydantic-settings`. Never re-read per invocation.
+
+4. Implementation Steps
+-----------------------
+Step 1 — pyproject and tooling.
+  - Adopt `uv` for dependency resolution and lockfile management.
+  - Pin `aws-lambda-powertools[all]==2.42.0`, `pydantic==2.9.2`, `pydantic-settings==2.5.2`, `boto3==1.35.36`, `networkx==3.3`, `pandas==2.2.3`, `pyarrow==17.0.0`.
+  - Dev deps: `pytest==8.3.3`, `moto[all]==5.0.16`, `hypothesis==6.112`, `ruff==0.6.9`, `mypy==1.11.2`.
+  - Acceptance: `uv sync` clean, `uv run ruff check src` clean, `uv run mypy --strict src` clean on empty package.
+
+Step 2 — contracts package.
+  - Implement one file per model as listed in §3.1. Use `Annotated[str, StringConstraints(pattern=…)]` for regex-constrained fields. ULIDs validated with a shared `ULID_PATTERN` constant.
+  - For `Finding.aws_doc_citation.quote` implement a shared validator `quote_must_be_in_manifest(v: str, info: ValidationInfo) -> str` that reads `SENTINEL_KB_MANIFEST_PATH` (S3 object with sha256 hashes) and rejects unknown quotes at load time. In unit tests provide a fixture manifest.
+  - Every contract must round-trip via `.model_dump(mode="json")` → `.model_validate(json)` in a test.
+
+Step 3 — shared runtime.
+  - `runtime.py` exposes `def sentinel_handler(feature_id: FeatureID)` decorator that: initializes Powertools Logger/Tracer/Metrics with `service=f"iam-sentinel-{feature_id.lower()}"`, wraps `lambda_handler(event, context)`, injects correlation_id from `event.sessionAttributes.correlation_id`, catches every exception, records a `SentinelInvocation` metric, and returns the Bedrock action-group response envelope. Handlers never see raw `event` — they receive a parsed model.
+  - The decorator ALSO computes `input_hash` (canonicalized JSON sha256) and `output_hash` on the way out; both are stitched into the returned `ToolInvocation`.
+
+Step 4 — cross-account.
+  - `cross_account.assume(account_id: str) -> boto3.Session` caches STS credentials in the Lambda execution env for their lifetime minus 5 minutes. Uses `RegionalEndpoint=regional` STS. `RoleSessionName=f"sentinel-{feature_id}-{correlation_id[:8]}"`.
+  - Retry: exponential backoff 200/500/2000ms on `ThrottlingException` and `ExpiredToken`. Never retry on `AccessDenied`.
+
+Step 5 — event parser.
+  - Handles both action-group and native tool-use envelopes (Bedrock has two shapes). Contract: caller passes `event: dict`, receives typed `ParsedInvocation`. Missing parameters raise `ContractError` (subclass of `ValueError`) which the runtime decorator maps to a 400-style tool response.
+
+Step 6 — CI workflow.
+  - Matrix: Python 3.12 on ubuntu-latest.
+  - Jobs: `lint` (ruff), `type` (mypy strict), `test` (pytest + coverage gate 90%), `security` (pip-audit).
+  - On main branch push, upload coverage to CodeCov.
+
+5. Prompt Templates
+-------------------
+Not applicable — this phase has no agent.
+
+6. IAM Policy
+-------------
+Not applicable — this phase provisions no runtime resources. Contract validation happens off-AWS.
+
+7. Test Plan
+------------
+- Unit: `tests/unit/test_common_runtime.py` verifies the decorator emits correct powertools calls (patched), correctly parses envelopes, correctly emits metrics.
+- Contract: `tests/contract/test_roundtrip.py` uses Hypothesis strategies to generate valid instances of every model and verifies `model_dump` + `model_validate` are lossless.
+- Contract negative: `tests/contract/test_reject_unknown_fields.py` verifies `extra="forbid"` on every model.
+- Contract citation: `tests/contract/test_finding_citation.py` verifies unknown quotes raise `ValidationError`.
+- Cross-account: `tests/unit/test_cross_account.py` uses `moto` for STS.
+
+8. Acceptance Criteria
+----------------------
+- [ ] `uv sync` produces a clean lockfile.
+- [ ] `ruff check` and `mypy --strict` clean.
+- [ ] Contract round-trip tests pass with ≥ 500 Hypothesis examples per model.
+- [ ] `sentinel_handler` decorator smoke test on a stub Lambda returns a valid Bedrock envelope.
+- [ ] CI workflow green on the PR that lands this phase.
+
+9. Risks & Mitigations
+----------------------
+Risk: pydantic v2 upgrade friction with powertools' built-in models.
+  Mitigation: use `powertools.utilities.parser` only for event parsing; contracts live in our own module and never leak into powertools' model surface.
+
+Risk: Hypothesis strategies for regex fields produce values slower than desired.
+  Mitigation: constrain strategies to a hand-authored valid alphabet per field type; measure and cap at 5 s per model in CI.
+
+Risk: KB-manifest validator becomes a startup bottleneck.
+  Mitigation: cache manifest bytes in-process; refresh only on manifest ETag change; expose `SENTINEL_KB_MANIFEST_REFRESH_SECONDS` env (default 3600).

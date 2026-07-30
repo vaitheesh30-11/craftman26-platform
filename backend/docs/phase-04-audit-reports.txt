@@ -1,0 +1,77 @@
+PHASE 04 — Audit & Reports
+==========================
+
+Owner assumption: one principal engineer. Duration: 1 day.
+
+1. Objective
+------------
+Read-only endpoints that let humans and CI audit what Sentinel has done: DecisionRecords, Findings, weekly reports (F6, cost, F2 suppression), FaultRecords, and evidence blobs (with signature verification).
+
+2. Deliverables
+---------------
+- `routers/reports.py` and `routers/operations.py` implementations.
+- Evidence-blob retrieval endpoint `GET /evidence/{ref}` returning canonicalized body only on signature-valid.
+- Aggregate views: last-N-days findings by feature, cost trend, top principals.
+
+3. Endpoint Contracts
+---------------------
+| Endpoint                                | Purpose                                          |
+|-----------------------------------------|--------------------------------------------------|
+| `GET /reports/weekly/{report_kind}`     | Latest weekly report of a given kind (f6, cost, f2). |
+| `GET /reports/{key:path}`               | Fetch a specific report by S3 key.               |
+| `GET /operations/faults`                | Recent FaultRecords (filter by `fault_class`).   |
+| `GET /operations/divergence`            | Recent DivergenceRecords (phase-15).             |
+| `GET /operations/health`                | Composite health: breaker states, DLQ depths.    |
+| `GET /evidence/{ref}`                   | Fetch and verify an evidence blob.               |
+
+4. Implementation Steps
+-----------------------
+Step 1 — Reports service.
+  - `s3:GetObject` on `SentinelReports/<kind>/*`.
+  - Latest resolved via `s3:ListObjectsV2` with `MaxKeys=1` and reverse sort (naming convention YYYY-Www).
+  - Response includes `retrieved_from_s3_key` metadata.
+
+Step 2 — Operations service.
+  - Faults: DDB `SentinelFaults` GSI on `fault_class` + `detected_at`. Paginated.
+  - Divergence: DDB `SentinelDivergence` GSI on `feature_id#divergence_kind`.
+  - Health: read `SentinelBreakers` for every known breaker; `sqs:GetQueueAttributes` for DLQs; compose a snapshot.
+
+Step 3 — Evidence retrieval.
+  - Input: `ref = <bucket>/<key>@<version_id>` (URL-safe encoding).
+  - Fetch object; extract signature from S3 metadata.
+  - Canonicalize body; recompute sha256; `kms:Verify`.
+  - Return body only on valid; else 502.
+  - Every retrieval emits a `SentinelEvidenceReads` metric and a signed access-log entry.
+
+5. Access Control
+-----------------
+- All endpoints require Cognito JWT.
+- `SentinelAuditors` group: full read to all evidence + faults + reports.
+- `SentinelOperators` group: full read.
+- All other groups: findings/decisions scoped to their own principal_arn; no evidence access.
+- Cross-tenant reads structurally impossible (single-org platform).
+
+6. Test Plan
+------------
+- Unit: latest-report resolution.
+- Signature: tampered evidence blob returns 502.
+- Contract: OpenAPI diff on all endpoints.
+- Group ACL: property test — non-Auditor cannot list arbitrary evidence.
+
+7. Acceptance Criteria
+----------------------
+- [ ] All read endpoints return in ≤ 300 ms p95.
+- [ ] Tampered evidence detected 100% (property test).
+- [ ] ACL boundaries enforced.
+- [ ] `GET /operations/health` reflects real breaker + DLQ state.
+
+8. Risks & Mitigations
+-----------------------
+Risk: expensive S3 ListObjectsV2 on a large reports prefix.
+  Mitigation: separate prefix per `report_kind` + year-week key naming keeps list results small (≤ 4 per week).
+
+Risk: evidence fetches spike KMS Verify TPS.
+  Mitigation: public-key cache (1h TTL in-process); local verification via cached pubkey when possible.
+
+Risk: fault log noise obscures signal.
+  Mitigation: filter parameter defaults to non-transient fault_class only; explicit `include_transient=true` for deep investigation.

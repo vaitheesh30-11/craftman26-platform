@@ -1,0 +1,168 @@
+PHASE 12 — Observability & Evals
+================================
+
+Owner assumption: one principal engineer. Duration: 2 days.
+
+1. Objective
+------------
+Make every agent turn, every tool call, and every Zelkova invocation observable and evaluable. Powertools (Logger + Tracer + Metrics), X-Ray active tracing, a CloudWatch dashboard per specialist, and a nightly eval harness that scores Prime and every specialist against golden inputs.
+
+2. Deliverables
+---------------
+- Powertools configuration baked into `tools/common/runtime.py`.
+- CloudWatch dashboards (one per specialist + one Prime overview).
+- Metric filter rules translating structured logs into CloudWatch alarms.
+- Eval harness at `agents/src/iam_sentinel_agents/evals/runner.py`.
+- Golden datasets `agents/evals/{f1..f8,prime}/golden.jsonl` (25 each; prime has 25 orchestration cases).
+- LLM-as-judge prompt at `agents/src/iam_sentinel_agents/evals/judges.py`.
+- Nightly GitHub Actions workflow `.github/workflows/agents-evals.yml`.
+
+3. Metric Catalog
+-----------------
+Namespace: `IAMSentinel`.
+
+Per-Lambda (dimensions: `Service`, `Stage`, `FeatureId`):
+- `Invocations` — count of tool calls.
+- `Errors` — count.
+- `Duration` — histogram.
+- `ColdStarts` — count.
+- `ThrottleCount` — count.
+
+Business metrics (dimensions: `FeatureId`, `Severity`):
+- `SentinelFindings` — count.
+- `SentinelZelkovaViolations` — count (post-check failures).
+- `SentinelGuardrailInterventions` — count.
+- `SentinelPromptInjectionRejections` — count.
+- `SentinelEmergencyRevocations` — count (F5).
+- `SentinelSlrDbSize` — gauge.
+- `SentinelKbStaleRetrieval` — count (KB freshness).
+- `SentinelDecisionsAnswered` / `Escalated` / `AutoRemediated` / `Rejected` — count.
+
+Alarms:
+- `Errors > 5 in 5 minutes` → SNS `SentinelOps`.
+- `SentinelZelkovaViolations > 0` → SNS `SentinelSecurity`.
+- `SentinelGuardrailInterventions > 20 / hour` → SNS `SentinelOps` (possible over-blocking).
+- Anomaly detection on `Duration` p95 for every Lambda.
+
+4. Structured Logging Contract
+------------------------------
+Every Lambda emits a single JSON log line per invocation shape via powertools Logger:
+```json
+{
+  "level": "INFO",
+  "timestamp": "2026-07-30T10:00:00.000Z",
+  "service": "iam-sentinel-f1",
+  "correlation_id": "01JBP…",
+  "feature_id": "F1",
+  "tool_name": "passrole_scan",
+  "input_hash": "sha256:…",
+  "output_hash": "sha256:…",
+  "duration_ms": 1234,
+  "zelkova": null,
+  "message": "tool_completed",
+  "cold_start": false,
+  "aws_request_id": "…"
+}
+```
+
+`log_level` from env `SENTINEL_LOG_LEVEL`. DEBUG in dev, INFO in staging, WARNING in prod (INFO gated by a per-Lambda `LOG_LEVEL_OVERRIDE` env at incident time).
+
+5. Tracing
+----------
+Powertools Tracer with `service` = `iam-sentinel-{feature_id.lower()}`. X-Ray active tracing on every Lambda, every Bedrock InvokeAgent call, every STS AssumeRole (subsegment), every Athena StartQueryExecution + GetQueryResults (subsegment), every Zelkova CheckNoNewAccess (subsegment).
+
+The correlation_id is set as an X-Ray annotation on the root segment; every subsegment inherits.
+
+6. Eval Harness
+---------------
+6.1 Runner.
+- `evals/runner.py` iterates a golden dataset, invokes the target agent alias via `bedrock-agent-runtime:InvokeAgent`, captures the trace, and scores per §6.3.
+- Runs on GitHub Actions (`agents-evals.yml`) nightly against `dev` alias; also runs pre-promotion on `staging` before it moves to `prod`.
+
+6.2 Golden dataset shape.
+Each line in `evals/{feature}/golden.jsonl`:
+```json
+{
+  "eval_id": "F1-001",
+  "input": { "query_text": "who can pass any role in 111122223333", "hints": { "account_id": "111122223333" } },
+  "expected": {
+    "specialist": "passrole-cartographer",
+    "verdict": "CONFIRM",
+    "min_findings": 1,
+    "citation_required": true,
+    "must_mention_actions": ["iam:PassRole"]
+  },
+  "fixtures": { "account_state": "s3://sentinel-fixtures/f1/admin_shortcut.json" }
+}
+```
+
+6.3 Scoring.
+Four dimensions, each 0/1:
+- Routing correctness: `specialist` field of trace matches expected.
+- Verdict correctness: matches expected.
+- Citation validity: `aws_doc_citation.quote_sha256` in KB manifest (mandatory 1.0).
+- Content grounding: LLM-as-judge on whether the narrative addresses `must_mention_actions`.
+
+Aggregate accuracy = weighted mean (routing 0.2, verdict 0.4, citation 0.2, grounding 0.2).
+
+6.4 Latency SLOs.
+- Prime: p95 ≤ 25 s single-specialist, ≤ 45 s multi-specialist.
+- F1/F2/F6/F7/F8: p95 ≤ 20 s.
+- F3/F4: p95 ≤ 90 s.
+- F5: p95 ≤ 30 s end-to-end (dispatch to first Deny attached across all accounts).
+
+6.5 Judge prompt.
+```
+You are an eval judge for IAM Sentinel. You receive the agent's transcript
+and the expected criteria. Return JSON:
+{
+  "routing_ok": boolean,
+  "verdict_ok": boolean,
+  "citation_ok": boolean,
+  "grounding_ok": boolean,
+  "notes": "one-sentence rationale"
+}
+Do not be lenient. If a citation is missing, citation_ok=false. If the
+verdict differs from expected, verdict_ok=false.
+```
+
+7. Dashboards
+-------------
+- Prime overview: DecisionRecord status pie, p95 latency, active sessions, guardrail interventions.
+- Per specialist: invocations, errors, duration, findings emitted by severity, zelkova outcomes.
+- Ops: cross-account STS assume failures, throttling counts by service, DLQ depth, SQS backlog.
+- Cost: per-Lambda invocation cost proxy, Athena data scanned per query.
+
+8. Alarms → Runbooks
+--------------------
+Each alarm points to a runbook in `docs/runbooks/`:
+- `zelkova-post-check-failed.md`
+- `guardrail-over-blocking.md`
+- `athena-cost-spike.md`
+- `session-terminator-dlq.md`
+
+9. Test Plan
+------------
+- Unit: metrics emission (Powertools test harness).
+- Trace: verify X-Ray subsegments are named per §5.
+- Eval runner: dry-run against a fixture agent that always returns the same trace; verify scoring is deterministic.
+- Judge: temperature 0 or Bedrock `topP=0.1`; run judge 3× on the same input; verify identical output.
+
+10. Acceptance Criteria
+-----------------------
+- [ ] Every Lambda emits the structured log line for every invocation.
+- [ ] X-Ray shows a subsegment for every AWS API call.
+- [ ] Nightly eval workflow green for 7 consecutive nights before prod promotion.
+- [ ] Weighted eval score ≥ 0.9 on every specialist's golden set.
+- [ ] Prime routing accuracy ≥ 0.95 on the 25-turn orchestration set.
+
+11. Risks & Mitigations
+-----------------------
+Risk: eval flakiness from LLM nondeterminism.
+  Mitigation: judge at temperature 0, retry-3-and-vote for judge scoring; investigate any single-flake trend.
+
+Risk: eval cost dominates non-prod spending.
+  Mitigation: golden set capped at 25 per specialist; nightly not per-commit; per-commit CI runs a 5-turn subset only.
+
+Risk: dashboard sprawl.
+  Mitigation: one file per dashboard checked into repo (`aws-infra/dashboards/*.json`), CDK-managed; PR review gates changes.

@@ -1,0 +1,108 @@
+PHASE 02 — WebSocket Streaming
+==============================
+
+Owner assumption: one principal engineer. Duration: 2 days.
+
+1. Objective
+------------
+Deliver Prime's PROGRESS and RESULT chunks to authenticated clients in near-real time over API Gateway WebSocket. Manages connection lifecycle, per-connection auth binding, backpressure, and reconnect.
+
+2. Deliverables
+---------------
+- `$connect` Lambda: `src/iam_sentinel_backend/ws/connect.py`.
+- `$default` Lambda: `src/iam_sentinel_backend/ws/default.py`.
+- `$disconnect` Lambda: `src/iam_sentinel_backend/ws/disconnect.py`.
+- Stream fan-out service that forwards Bedrock streaming chunks to `apigatewaymanagementapi:PostToConnection`.
+- DDB table `SentinelConnections` (PK=`connectionId`, TTL=1h, attributes: `principal`, `session_id`, `connected_at`).
+
+3. Protocol
+-----------
+Client sends over WebSocket:
+```json
+{ "action": "chat", "query": { ...SentinelQuery... } }
+```
+
+Server sends:
+```
+event: progress
+data: <one short human sentence>
+
+event: result
+data: <DecisionRecord JSON>
+
+event: error
+data: { "code": "...", "message": "...", "correlation_id": "..." }
+
+event: ping
+data: {}   # every 30s
+```
+
+Client may send:
+```json
+{ "action": "cancel", "correlation_id": "..." }
+```
+Server on cancel: stops forwarding and sends `event: error, data: { "code": "CANCELED" }`.
+
+4. Implementation Steps
+-----------------------
+Step 1 — `$connect`.
+  - Validate JWT from `queryStringParameters.token` (WebSocket handshake).
+  - Persist `SentinelConnections` record with `principal`, `session_id` (random ULID), `connected_at`.
+  - Return `statusCode=200`.
+
+Step 2 — `$default`.
+  - Parse frame. If `action=="chat"`:
+    - Validate `SentinelQuery`.
+    - Invoke Bedrock `InvokeAgentWithResponseStream` for Prime `prod` alias with `sessionId=<connectionId>::<session_id>`.
+    - Iterate chunks. For each PROGRESS line, `PostToConnection` with `event: progress`.
+    - When RESULT block arrives, `PostToConnection` `event: result` with the full JSON.
+    - On terminal, remove `SentinelConnections` record (or leave for reconnect).
+  - If `action=="cancel"`, mark the correlation as canceled in DDB `SentinelDecisionsInFlight`; adapter respects and stops streaming.
+  - If `action=="ping"`, respond with `event: pong`.
+
+Step 3 — `$disconnect`.
+  - Remove `SentinelConnections` record.
+  - No message-level cleanup — pending Prime turns complete but their output is discarded.
+
+Step 4 — Backpressure.
+  - `PostToConnection` may return `GoneException` if the client disconnected mid-stream; catch, abort streaming, cleanup.
+  - Rate limit outbound at ~50 msgs/s per connection to avoid API GW throttling.
+  - Message size cap 128 KB per WebSocket frame.
+
+Step 5 — Heartbeat.
+  - `$default` handler also runs a background timer for the connection's session sending `ping` every 30 s. In Lambda this requires a separate scheduled worker per connection — simpler: client sends `ping` every 30 s; server responds `pong`. Server sends nothing if idle.
+
+Step 6 — Reconnect.
+  - Client on socket close attempts a fresh `$connect` with the same auth. Server does NOT resume in-flight Prime turns across reconnects — the client polls `GET /decisions/{correlation_id}` if they care about the result.
+
+5. IAM Requirements
+-------------------
+- `execute-api:ManageConnections` on the WebSocket API's connection resource.
+- `dynamodb:PutItem/GetItem/DeleteItem` on `SentinelConnections`.
+- `bedrock:InvokeAgentWithResponseStream` on Prime.
+- `dynamodb:UpdateItem` on `SentinelDecisionsInFlight` for cancel handling.
+
+6. Test Plan
+------------
+- Unit (moto + botocore stubs): $default handler forwards N chunks to `PostToConnection`.
+- Integration (LocalStack API Gateway): live WebSocket connection round-trip.
+- Cancel: mid-stream cancel signal terminates fan-out within 500 ms.
+- Reconnect: repeated connect/disconnect at 10 Hz — no leaked connections in DDB.
+
+7. Acceptance Criteria
+----------------------
+- [ ] Bedrock progress chunks reach the client in < 300 ms after emission.
+- [ ] Cancel path works end-to-end.
+- [ ] No `SentinelConnections` records survive beyond TTL after test load.
+- [ ] `GoneException` on `PostToConnection` cleanly cleans up state.
+
+8. Risks & Mitigations
+-----------------------
+Risk: API Gateway WebSocket 10-minute idle timeout.
+  Mitigation: client-side ping every 30 s; server-side reconnect logic documented.
+
+Risk: cross-connection principal leakage.
+  Mitigation: `$default` handler asserts that `SentinelConnections[connectionId].principal` matches the invoking Bedrock session; refuse otherwise.
+
+Risk: connection storm from a misbehaving client.
+  Mitigation: rate-based WAF rule on `wss://` domain; API Gateway usage plan throttling.

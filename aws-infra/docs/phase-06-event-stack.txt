@@ -1,0 +1,103 @@
+PHASE 06 — Event Stack
+=======================
+
+Owner assumption: one principal engineer. Duration: 2 days.
+
+1. Objective
+------------
+Wire all event-driven paths: GuardDuty → F5, Identity Center `DeleteAccountAssignment` → F5, mgmt-account CloudTrail → F6 ingest, scheduled expressions for weekly reports and SLR refresh and semantic syncer, EventBridge on Bedrock trace events for Prime post-turn. Plus all CloudWatch alarms and composite alarms.
+
+2. Deliverables
+---------------
+- EventBridge rules for every event source.
+- CloudWatch subscription filter on mgmt-account trail log group → F6 ingest.
+- Scheduled expressions for cron jobs.
+- Composite alarms for platform health.
+- SNS topic subscriptions.
+
+3. EventBridge Rules
+--------------------
+### F5 Triggers
+```python
+guardduty_rule = events.Rule(
+    self, "GuardDutyF5Trigger",
+    event_pattern=events.EventPattern(
+        source=["aws.guardduty"],
+        detail_type=["GuardDuty Finding"],
+        detail={
+            "type": [
+                {"prefix": "UnauthorizedAccess:"},
+                {"prefix": "CredentialAccess:"},
+                {"prefix": "Persistence:IAMUser/"},
+            ]
+        },
+    ),
+    targets=[targets.LambdaFunction(lambda_stack.session_kill_dispatch)],
+)
+
+idc_revoke_rule = events.Rule(
+    self, "IdCRevokeF5Trigger",
+    event_pattern=events.EventPattern(
+        source=["aws.sso"],
+        detail_type=["AWS API Call via CloudTrail"],
+        detail={"eventName": ["DeleteAccountAssignment"]},
+    ),
+    targets=[targets.LambdaFunction(lambda_stack.session_kill_dispatch)],
+)
+```
+
+### F6 Ingest
+```python
+logs.SubscriptionFilter(
+    self, "MgmtTrailSubscription",
+    log_group=logs.LogGroup.from_log_group_arn(self, "MgmtTrailLog", stage.mgmt_trail_log_arn),
+    destination=destinations.LambdaDestination(lambda_stack.shadow_guard_ingest),
+    filter_pattern=logs.FilterPattern.exists("$.eventName"),
+    # Note: real filter must exclude Read verbs; use LogsInsights-style JSON pattern.
+)
+```
+
+### Scheduled Expressions
+- SLR DB refresh: `cron(0 4 ? * MON *)` UTC → `slr_db_refresh`.
+- Weekly F6 report: `cron(0 9 ? * MON *)` UTC → `shadow_guard_report`.
+- Weekly cost report: `cron(0 10 ? * MON *)` UTC → `cost_report_weekly`.
+- Semantic syncer: `rate(1 hour)` → `memory_semantic_syncer`.
+- SCP cache refresh (F6): `rate(15 minutes)` → `shadow_guard_scp_refresh`.
+- Watchdog: `rate(1 minute)` → `watchdog`.
+- Drift detector: `cron(0 6 * * ? *)` UTC → `drift_detector`.
+- KB ingestion: `cron(0 3 * * ? *)` UTC → `kb_ingest_trigger`.
+- KB corpus fetch: `cron(0 2 ? * SUN *)` UTC → `kb_corpus_fetch`.
+- KB manifest: after corpus fetch, chained via SNS-triggered → `kb_manifest_generate`.
+
+4. Alarms
+---------
+Per Lambda:
+- `Errors > 5 / 5 min` → SNS `SentinelOps`.
+- Duration p95 anomaly (CloudWatch Anomaly Detection) → SNS `SentinelOps`.
+
+Composite (all mandatory):
+- `SentinelZelkovaViolations > 0 / 1min` → SNS `SentinelSecurity`.
+- `SentinelGuardrailInterventions > 20 / hour` → SNS `SentinelOps`.
+- `SentinelBreakGlassAssumption > 0` → SNS `SentinelSecurity`.
+- `SessionKillQueueDLQ depth > 0` → SNS `SentinelOps`.
+- `SentinelBedrockDollars anomaly` → SNS `SentinelCostAnomaly`.
+
+5. Test Plan
+------------
+- Snapshot: all rules + subscriptions synth cleanly.
+- Integration: emit a synthetic GuardDuty event; verify `session_kill_dispatch` invoked.
+- Alarm: force a metric to breach; verify SNS delivery.
+
+6. Acceptance Criteria
+----------------------
+- [ ] Every event source wired to the correct Lambda.
+- [ ] All schedules fire on time within ±60 s.
+- [ ] Alarms deliver to SNS in test.
+
+7. Risks & Mitigations
+-----------------------
+Risk: CloudTrail subscription filter throughput limits.
+  Mitigation: subscription filter attached to org trail's Log Group in the mgmt account; scoped filter pattern reduces volume.
+
+Risk: schedule storm on Lambda concurrency.
+  Mitigation: schedules staggered by minute offset; concurrency reserved per Lambda already.

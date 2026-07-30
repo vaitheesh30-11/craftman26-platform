@@ -1,0 +1,255 @@
+PHASE 14 — Memory Fabric
+========================
+
+Owner assumption: one principal engineer. Duration: 3 days.
+
+1. Objective
+------------
+Give Prime and every specialist a purpose-built, four-tier memory so decisions today ride on knowledge from every prior investigation. Working memory holds the current turn. Episodic memory records every DecisionRecord and every Finding for recall by principal, account, and time. Semantic memory holds durable facts about the customer's org (accounts, OUs, tags, permission sets, roles) refreshed continuously from AWS. Procedural memory caches learned tool sequences and cached SCP evaluations so common patterns skip the LLM entirely.
+
+This phase is what turns Sentinel from "a stateless Q&A bot on top of AWS APIs" into an agent that gets smarter every week.
+
+2. Deliverables
+---------------
+- Four memory implementations: `working` (Bedrock SESSION_SUMMARY), `episodic` (DDB + OpenSearch vector), `semantic` (DDB + graph), `procedural` (DDB pattern cache).
+- Prime + specialist tool: `recall(query, kind, top_k)`; write path: `remember(record, kind)`.
+- Continuous org-fact syncer (`memory_semantic_syncer` Lambda, hourly).
+- Cross-session isolation contract enforced at the memory adapter layer.
+- Feature payload additions and one new Bedrock action group `MemoryActions` shared by every specialist.
+
+3. Memory Tiers
+---------------
+### 3.1 Working Memory
+- Backed by Bedrock Agent `memoryConfiguration=SESSION_SUMMARY`, 30-day retention.
+- Scope: single `session_id`.
+- Written by: Bedrock (automatic summarization each turn).
+- Read by: the agent's own next turn only.
+- No API surface — this is Bedrock-managed.
+
+### 3.2 Episodic Memory
+- DDB table `SentinelMemoryEpisodic`.
+  - PK: `principal` (invoking human)
+  - SK: `decided_at`
+  - Attributes: `decision_id`, `correlation_id`, `feature_ids_involved`, `finding_summary` (top-3 by severity), `narrative_excerpt` (first 512 chars), `evidence_ref`, `tags`.
+  - GSI1 PK: `account_id`, SK: `decided_at` — "everything Sentinel has said about this account".
+  - GSI2 PK: `feature_id`, SK: `decided_at` — "every F5 revocation this year".
+  - GSI3 PK: `principal_arn` (subject, not invoker), SK: `detected_at` — "every finding ever about this role".
+- OpenSearch Serverless collection `sentinel-episodic-vector` with `titan-embed-text-v2` embeddings over `narrative_excerpt + finding_summary`. k-NN index for semantic similarity recall.
+- Writer: Prime post-turn Lambda (phase-01 §Step 3) — writes to both DDB and OSS.
+- Reader: `recall(kind="episodic", query, top_k)` — hybrid search (DDB filter + OSS k-NN), returns top_k `EpisodicMemory` records.
+- TTL: 2 years.
+
+### 3.3 Semantic Memory (Org Topology)
+- DDB table `SentinelMemorySemantic`.
+  - PK: `entity_kind` (one of: `account`, `ou`, `role`, `permission_set`, `slr`, `policy`, `service_principal`, `tag`)
+  - SK: `entity_key` (ARN or id)
+  - Attributes: `body` (compact JSON — the entity's normalized facts), `synced_at`, `source_of_truth` (which AWS API), `related_entities` (list of `entity_kind#entity_key` refs).
+- Continuous syncer `memory_semantic_syncer` (EventBridge hourly + on-demand triggered by relevant CloudTrail events):
+  - Accounts: `organizations:ListAccounts` + `ListTagsForResource`.
+  - OUs: `organizations:ListRoots` + recursive `ListOrganizationalUnitsForParent`.
+  - Roles: enumerated during F1 scans; refreshed opportunistically.
+  - Permission sets: `sso-admin:ListPermissionSets`.
+  - Service principals: seeded from F8's SLR DB.
+  - Policies: cached during F4/F7 walks; refreshed on `organizations:UpdatePolicy` CT event.
+- Reader: `recall(kind="semantic", query, top_k)` supports exact-key lookup or a small facet query (e.g., `{entity_kind: "role", tag: {env: prod}}`).
+- Change detection: syncer computes sha256 over `body`; only writes on change. On change, emits an `EntityChanged` EventBridge event so downstream memory-consumers can invalidate.
+
+### 3.4 Procedural Memory (Pattern Cache)
+- DDB table `SentinelMemoryProcedural`.
+  - PK: `pattern_kind` (e.g., `scp_effective_policy`, `passrole_edges`, `athena_result`, `zelkova_check`)
+  - SK: `pattern_hash` (canonicalized-input sha256)
+  - Attributes: `result` (JSON), `hit_count`, `first_computed_at`, `last_hit_at`, `input_summary`, `ttl` (kind-specific, e.g., 15 min for SCPs, 24 h for Athena results, 1 h for Zelkova checks).
+- Writer: every deterministic tool wraps its computation in a memoize-decorator that populates this table.
+- Reader: `recall(kind="procedural", pattern_kind, pattern_hash)` — used at the top of every deterministic tool to short-circuit the compute when the same input has been seen recently.
+
+### 3.5 Isolation & Privacy
+- Every memory read/write goes through `adapters/memory/client.py` which asserts the invoking principal has access to the target scope.
+- `SentinelMemoryEpisodic` and `SentinelMemorySemantic` are keyed by `principal` (episodic) or scoped to org (semantic — one org, one Sentinel deployment).
+- Cross-org contamination is structurally impossible — Sentinel is deployed once per Organization; there is no shared multi-tenant plane.
+- KMS CMK encryption at rest on every table; PITR enabled.
+- OpenSearch collection with private endpoint; encrypted with customer-managed KMS.
+
+4. Interface Contracts
+----------------------
+```python
+class EpisodicMemory(Base):
+    principal: str
+    decision_id: str
+    correlation_id: str
+    feature_ids_involved: list[FeatureID]
+    finding_summary: str = Field(max_length=1024)
+    narrative_excerpt: str = Field(max_length=2048)
+    evidence_ref: EvidenceRef
+    tags: dict[str, str] = Field(default_factory=dict)
+    decided_at: AwareDatetime
+
+class SemanticEntity(Base):
+    entity_kind: Literal["account","ou","role","permission_set","slr","policy","service_principal","tag"]
+    entity_key: str
+    body: dict[str, object]
+    synced_at: AwareDatetime
+    source_of_truth: str
+    related_entities: list[str] = Field(default_factory=list)
+    body_sha256: str
+
+class ProceduralHit(Base):
+    pattern_kind: str
+    pattern_hash: str
+    result: dict[str, object]
+    ttl: int
+    first_computed_at: AwareDatetime
+    last_hit_at: AwareDatetime
+    hit_count: int = Field(ge=1)
+
+class RecallResult(Base):
+    kind: Literal["episodic","semantic","procedural"]
+    hits: list[dict[str, object]]
+    latency_ms: int
+    total_scanned: int
+```
+
+Tool contracts (all exposed on the shared `MemoryActions` action group attached to Prime and every specialist):
+
+```yaml
+paths:
+  /recall:
+    post:
+      operationId: memory_recall
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kind]
+              properties:
+                kind: { type: string, enum: [episodic, semantic, procedural] }
+                query: { type: string, maxLength: 1024 }
+                facet: { type: object }
+                top_k: { type: integer, minimum: 1, maximum: 50, default: 5 }
+                pattern_kind: { type: string }
+                pattern_hash: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RecallResult" }
+  /remember:
+    post:
+      operationId: memory_remember
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kind, record]
+              properties:
+                kind: { type: string, enum: [episodic, semantic, procedural] }
+                record: { type: object }
+      responses:
+        "200": { description: Written }
+```
+
+The `remember` action is restricted at the IAM policy layer — only Prime's post-turn Lambda writes episodic; only the syncer writes semantic; only individual tool Lambdas write procedural. Agents cannot write memory directly.
+
+5. Implementation Steps
+-----------------------
+Step 1 — Provision tables and vector store.
+  - CDK constructs in `aws-infra/lib/stacks/sentinel_foundation_stack.py` (added in phase-02 of aws-infra).
+  - All tables: KMS CMK encryption, PITR on, on-demand billing, TTL enabled where applicable.
+
+Step 2 — Adapter (`adapters/memory/client.py`).
+  - Thin wrapper over boto3 DDB and OSS clients.
+  - Enforces scope invariants: the invoking principal (from Powertools context) MUST match the `principal` field on any episodic read/write.
+  - Emits `SentinelMemoryReads` and `SentinelMemoryWrites` metrics per kind.
+
+Step 3 — Prime post-turn write path.
+  - Extend phase-01 §Step 3 to also compose an `EpisodicMemory` record and write via `memory_remember(kind="episodic", record)`.
+  - Compute `narrative_excerpt` = first 2048 chars of Prime's `narrative`.
+  - Compute `finding_summary` = top-3 findings by severity, `title` + `severity` per line.
+
+Step 4 — Semantic syncer.
+  - EventBridge scheduled expression `rate(1 hour)` triggers `memory_semantic_syncer` Lambda.
+  - Concurrent syncers for accounts / OUs / roles / permission sets / SLRs / policies.
+  - Change-detection: sha256 the canonicalized `body`; write only on delta.
+  - On write, emit `EntityChanged` event; Prime's next turn against that entity will use the fresh version.
+  - Idempotent on repeat runs; safe to over-invoke.
+
+Step 5 — Procedural memoize decorator.
+  - `@memoize_procedural(kind: str, ttl_seconds: int)` decorator in `tools/common/memoize.py`.
+  - Wraps a deterministic function. Computes `pattern_hash = sha256(canonicalize(args, kwargs))`.
+  - `recall(kind="procedural", pattern_kind=kind, pattern_hash=hash)` — on hit, return result; on miss, compute + `memory_remember` with the result and TTL.
+  - Applied to: `scp_engine.compute_effective_policy`, `scp_engine.evaluate_action`, `athena` result cursors, Zelkova check results (short TTL).
+
+Step 6 — Prime prompt update.
+  - Add to `prime_supervisor.txt`:
+    ```
+    MEMORY USE
+    - Before dispatching to a specialist, call recall(kind="episodic",
+      query=<user question>, top_k=3) to check whether a prior decision
+      already covers this. If a prior decision is directly relevant and
+      < 24 hours old, offer it and ask the user whether to re-run.
+    - For questions about the org's topology (account list, OU tree,
+      permission sets), call recall(kind="semantic", facet=...) first.
+    - Never write memory yourself. The platform writes memory
+      automatically after your turn.
+    ```
+
+Step 7 — Specialist prompt update.
+  - Every specialist prompt gets a section:
+    ```
+    MEMORY USE
+    - When you receive a task whose subject (account, role, permission
+      set) is well-known, you MAY call recall(kind="semantic", ...) to
+      enrich your context. Do NOT depend on memory for facts you can
+      fetch fresh from AWS.
+    ```
+
+Step 8 — Retention and hygiene.
+  - Episodic: TTL 2 years; nightly job that also archives to Glacier after 90 days for cost.
+  - Semantic: no TTL; overwritten by syncer. Deleted entities marked `deleted_at` and cleaned up after 30 days.
+  - Procedural: kind-specific TTLs enforced by DDB TTL.
+
+6. IAM Policy
+-------------
+Memory adapter role (Prime + specialists share the underlying execution roles, but each role has scoped memory perms):
+
+Prime post-turn Lambda: `dynamodb:PutItem` on `SentinelMemoryEpisodic`; `aoss:APIAccessAll` on collection `sentinel-episodic-vector` (limited to write-only index ops via a scoped data-access policy).
+
+Semantic syncer: `dynamodb:PutItem`, `dynamodb:UpdateItem`, `dynamodb:Query` on `SentinelMemorySemantic`; the underlying `organizations:*`, `iam:List*`, `sso-admin:List*` from cross-account roles.
+
+Specialist Lambdas: `dynamodb:GetItem`, `dynamodb:Query` on all three tables + `aoss:APIAccessAll` (read-only data policy on the OSS collection).
+
+7. Test Plan
+------------
+- Contract round-trip on `EpisodicMemory`, `SemanticEntity`, `ProceduralHit`.
+- Unit: memoize decorator hit/miss/TTL-expire paths.
+- Unit: syncer change-detection — no write on unchanged body.
+- Isolation: property test — attempt to recall episodic memory for principal A while invoking as principal B; must fail closed.
+- Integration (moto): full round-trip Prime turn → episodic write → recall in next turn returns the prior record.
+- Latency: `recall(kind="procedural")` cold path < 100 ms; hit path < 20 ms.
+- Vector: 20 curated similar-query pairs; k-NN top-1 must be the intended prior record for ≥ 18/20 pairs.
+
+8. Acceptance Criteria
+----------------------
+- [ ] Four tiers deployed and observable via `SentinelMemoryReads/Writes` metrics.
+- [ ] Prime demonstrably reuses a prior decision when the user re-asks within 24 h.
+- [ ] Procedural cache hit rate ≥ 40% on the F4/F7 SCP evaluation workload after warm-up.
+- [ ] Semantic syncer drift < 1 hour on org entity changes.
+- [ ] Cross-principal recall attempts fail closed with an alarm.
+
+9. Risks & Mitigations
+-----------------------
+Risk: episodic memory grows unbounded and inflates DDB / OSS costs.
+  Mitigation: TTL 2 years, Glacier archive at 90 days, size-based alarms.
+
+Risk: stale semantic memory triggers wrong decisions.
+  Mitigation: every semantic record carries `synced_at`; specialists that consume it emit `SentinelStaleSemanticUsed` metric if synced_at > 6 hours old; Prime prompt instructs to prefer fresh AWS calls when stakes are high.
+
+Risk: procedural cache poisoning from a bad prior computation.
+  Mitigation: `pattern_hash` includes the code version + engine version, so a code change invalidates the cache.
+
+Risk: vector recall returning misleading similar-but-different past decisions.
+  Mitigation: top-k results always shown to Prime with cosine distance; Prime prompt says "if the closest match has distance > 0.35, treat it as unrelated."

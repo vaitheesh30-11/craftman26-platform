@@ -1,0 +1,95 @@
+PHASE 01 — REST API
+====================
+
+Owner assumption: one principal engineer. Duration: 3 days.
+
+1. Objective
+------------
+Implement all 16 REST endpoints from `aws-infra/docs/phase-07-api-stack.txt §3`. Every endpoint delegates to a service that in turn talks to Bedrock (for `/agent/chat`) or a fast-path Lambda (for the `/analyze/*`, `/enrich/*`, `/resolve/*`, `/scan/*` endpoints) or DDB (for read endpoints).
+
+2. Deliverables
+---------------
+- Routers in `src/iam_sentinel_backend/routers/` (chat, findings, decisions, approvals, reports, operations, router_bridge).
+- Services in `src/iam_sentinel_backend/services/`.
+- Request/response models per `docs/DATA_CONTRACTS.md`.
+- Router policy compliance: fast-path routes are handled by `router_bridge`; `/agent/chat` uses `chat_service`.
+
+3. Route Table
+--------------
+| Method | Path                              | Router           | Service                              | Auth        |
+|--------|-----------------------------------|------------------|--------------------------------------|-------------|
+| POST   | `/agent/chat`                     | `chat`           | `chat_service.ask_prime`             | Cognito     |
+| POST   | `/analyze/passrole`               | `router_bridge`  | fast-path F1                         | Cognito+IAM |
+| POST   | `/analyze/org-context`            | `router_bridge`  | fast-path F2                         | Cognito+IAM |
+| POST   | `/enrich/policy`                  | `router_bridge`  | fast-path F3                         | Cognito+IAM |
+| POST   | `/analyze/scp-impact`             | `router_bridge`  | fast-path F4                         | Cognito+IAM |
+| POST   | `/emergency/kill-session`         | `router_bridge`  | F5 dispatch                          | BreakGlass  |
+| GET    | `/monitor/shadow-violations`      | `router_bridge`  | fast-path F6 (read)                  | Cognito     |
+| POST   | `/resolve/scp-collisions`         | `router_bridge`  | fast-path F7                         | Cognito+IAM |
+| POST   | `/scan/slr-breakage`              | `router_bridge`  | fast-path F8                         | Cognito+IAM |
+| GET    | `/findings`                       | `findings`       | list findings with filters           | Cognito     |
+| GET    | `/findings/{id}`                  | `findings`       | one finding                          | Cognito     |
+| GET    | `/decisions`                      | `decisions`      | list decisions for caller            | Cognito     |
+| GET    | `/decisions/{id}`                 | `decisions`      | one decision                         | Cognito     |
+| POST   | `/decisions/{id}/approve`         | `approvals`      | see phase-03                         | Cognito     |
+| POST   | `/decisions/{id}/reject`          | `approvals`      | see phase-03                         | Cognito     |
+| GET    | `/operations/faults`              | `operations`     | recent FaultRecords                  | Cognito     |
+| GET    | `/operations/cost/weekly`         | `operations`     | latest cost report                   | Cognito     |
+
+4. Chat Service Contract
+------------------------
+```python
+class ChatService:
+    async def ask_prime(
+        self, *, query: SentinelQuery, principal: Principal,
+    ) -> DecisionRecord: ...
+```
+
+Steps:
+1. Sanitize `query.query_text` at the boundary.
+2. Choose route: if `include_streaming=true` in the request, redirect to WebSocket (phase-02); this REST endpoint runs non-streaming.
+3. Invoke `bedrock_agent.invoke_agent` for Prime `prod` alias.
+4. Await the terminal RESULT block; parse.
+5. Wait ≤ 25 s for the post-turn Lambda to write the `DecisionRecord` to DDB (async, out-of-band); poll `decisions.get(...)` with exp backoff up to that budget.
+6. Return the DecisionRecord.
+
+On budget exhaustion: return the partial narrative + status=ESCALATED.
+
+5. Router Bridge Contract
+-------------------------
+Fast-path routes call `router.execute(mode="fast", target=<Fx>, payload=<request body>)`. Router lives in `aws-infra/functions/router` (owned by agents phase-15). Backend invokes it via `lambda:InvokeFunction` (through an adapter).
+
+6. Findings + Decisions Read Contracts
+--------------------------------------
+Filters supported on `GET /findings`:
+- `severity`, `feature_id`, `account_id`, `principal_arn`, `since`, `limit` (max 100).
+- Pagination via `next_token` (opaque; base64 DDB LastEvaluatedKey).
+- Response respects `Principal.groups` — non-Auditor callers see only their own principal_arn's findings.
+
+7. Operations Read Contracts
+----------------------------
+`GET /operations/faults` supports filter `fault_class`, `since`.
+`GET /operations/cost/weekly` returns the latest `SentinelReports/cost/{year}-W{week}.json` blob.
+
+8. Test Plan
+------------
+- Unit: each router with mocked service; verify request→response shapes.
+- Integration (moto + LocalStack): full request cycle for `/findings` and `/decisions`.
+- Auth: 401 for unauthenticated, 403 for cross-principal reads.
+- Contract: OpenAPI diff-check on PRs.
+- Golden: 10 canonical requests exercised in CI.
+
+9. Acceptance Criteria
+----------------------
+- [ ] All 16 endpoints implemented and tested.
+- [ ] p95 latency ≤ 500 ms for read paths.
+- [ ] Cross-principal read leakage impossible (property-tested).
+- [ ] `/emergency/kill-session` refuses without BreakGlass tag.
+
+10. Risks & Mitigations
+-----------------------
+Risk: chat endpoint blocks a Lambda invocation for 25 s.
+  Mitigation: prefer WebSocket streaming for interactive users; REST chat is a batch/synchronous fallback for CI callers.
+
+Risk: DDB pagination consistency under concurrent writes.
+  Mitigation: read-eventually-consistent by default; specialists' `SentinelFindings` writes are strongly consistent internally but list views can be eventually consistent.

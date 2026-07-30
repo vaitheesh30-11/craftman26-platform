@@ -1,0 +1,89 @@
+PHASE 04 — Lambda Stack
+=======================
+
+Owner assumption: one principal engineer. Duration: 3 days.
+
+1. Objective
+------------
+Provision every Lambda in Sentinel with least-privilege IAM roles, powertools + boto3 layers, X-Ray tracing, reserved concurrency, DLQs, and per-Lambda alarms.
+
+2. Deliverables
+---------------
+- ~25 Lambda functions covering: 8 specialists × 2-3 tools each, Prime post-turn, router, watchdog, repair Lambdas, KB ingest/scraper/manifest, memory syncer, cost report, drift detector, Athena curate.
+- Powertools Lambda layer built once, referenced by all.
+- boto3 layer (latest patched version) built once.
+- Per-Lambda alarms: `Errors > 5 / 5min`, anomaly-detected `Duration p95`.
+- DLQ per Lambda with 14-day retention.
+
+3. Naming and Standards
+-----------------------
+- Runtime: `python3.12`.
+- Architecture: `arm64`.
+- Memory: `1024` MB default; `3008` MB for F2/F3/F5/F6 (heavy pagination).
+- Timeout: `900` s (max) for F3/F4 pollers; `300` s for typical specialists; `30` s for real-time (F6 ingest).
+- Reserved concurrency: `10` per function default; `2` for scheduled maintenance functions.
+- Environment: standard vars per `agents/docs/phase-00-foundations.txt` §3.3 plus per-Lambda specifics.
+- Tracing: `ACTIVE` X-Ray.
+- Log retention: 14 days (dev) / 90 days (prod).
+- Deployment: `PythonFunction` construct (from `aws_cdk.aws_lambda_python_alpha` if available; otherwise `aws_cdk.aws_lambda.Function` + `PythonPackage` asset).
+
+4. Function Registry
+--------------------
+| Family              | Names                                                          | Owned by phase                     |
+|---------------------|----------------------------------------------------------------|------------------------------------|
+| passrole            | `passrole_scan`, `passrole_graph`                              | agents phase-02                    |
+| org_context         | `org_context_scan`, `org_context_suppress`                     | agents phase-03                    |
+| data_event          | `data_event_ensure_logging`, `data_event_query`, `data_event_merge` | agents phase-04              |
+| scp_impact          | `scp_impact_walk_ou`, `scp_impact_replay_history`, `scp_impact_simulate` | agents phase-05          |
+| session_kill        | `session_kill_dispatch`, `session_kill_worker`, `session_kill_cleanup`   | agents phase-06         |
+| shadow_guard        | `shadow_guard_ingest`, `shadow_guard_report`, `shadow_guard_scp_refresh` | agents phase-07          |
+| collision           | `collision_resolve`                                            | agents phase-08                    |
+| slr_guardian        | `slr_scan`, `slr_db_refresh`                                   | agents phase-09                    |
+| prime               | `prime_post_turn`                                              | agents phase-01                    |
+| router              | `router`                                                       | agents phase-15                    |
+| watchdog + repair   | `watchdog`, `repair_corrupted_memory`, `repair_kb_manifest_drift`, `repair_scp_cache_stale` | agents phase-17 |
+| kb                  | `kb_ingest_trigger`, `kb_corpus_fetch`, `kb_manifest_generate` | agents phase-10                    |
+| memory              | `memory_semantic_syncer`, `memory_episodic_indexer`            | agents phase-14                    |
+| cost                | `cost_report_weekly`                                           | agents phase-16                    |
+| athena              | `athena_curate_writes`                                         | aws-infra phase-03                 |
+| drift               | `drift_detector`                                               | agents phase-17                    |
+
+5. IAM Roles
+------------
+Every Lambda has its own IAM role. No role reuse — makes least privilege easier to audit.
+
+Each role:
+- Inherits `SentinelPermissionBoundary`.
+- Has an inline policy scoped to the API surface documented in the corresponding agents phase file.
+- Has `AWSLambdaBasicExecutionRole` for CloudWatch Logs.
+
+6. Layers
+---------
+- `SentinelPowertoolsLayer`: Powertools + Pydantic v2 + dependencies. Built via CodeBuild at CI time.
+- `SentinelBoto3Layer`: latest boto3 (Lambda's built-in tends to lag). Rebuilt monthly.
+
+Layers versioned; Lambdas pin the version by ARN at deploy time.
+
+7. Test Plan
+------------
+- Snapshot: stack synthesizes with all functions listed above.
+- cdk-nag: clean (no `*` in Action or Resource without suppression + reason).
+- Integration: deploy dev; invoke each Lambda's health-check path; assert 200.
+
+8. Acceptance Criteria
+----------------------
+- [ ] Every listed Lambda deployed with correct memory/timeout/concurrency.
+- [ ] Every role scoped without unresolved `*` (audit script).
+- [ ] Cold start p95 ≤ 1.5 s across the fleet.
+- [ ] DLQs empty after 24-hour synthetic load.
+
+9. Risks & Mitigations
+-----------------------
+Risk: reserved concurrency exhaustion under Prime multi-specialist fan-out.
+  Mitigation: monitor `ClaimedAccountConcurrency`; alarm at 75% of account limit; adjust reservations.
+
+Risk: X-Ray sampling cost.
+  Mitigation: adopt centralized X-Ray sampling rules with high sample rate on error, low sample rate on success.
+
+Risk: layer bloat causing cold-start regression.
+  Mitigation: Powertools layer includes only needed submodules; boto3 layer stays lean.

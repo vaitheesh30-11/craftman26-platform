@@ -1,0 +1,95 @@
+PHASE 01 — Security Stack
+==========================
+
+Owner assumption: one principal engineer. Duration: 2 days.
+
+1. Objective
+------------
+Provision every long-lived security primitive: KMS CMKs, Bedrock Guardrail, permission boundary, break-glass STS path, CloudTrail alarms on Sentinel's own resource mutations.
+
+2. Deliverables
+---------------
+- 3 KMS CMKs: `SentinelEvidenceKey` (evidence signing), `SentinelDataKey` (DDB + S3 SSE-KMS), `SentinelKbKey` (KB source + manifest).
+- Published Bedrock Guardrail `IAMSentinelGuardrail-v1` via CustomResource.
+- Managed policy `SentinelPermissionBoundary` applied to every Sentinel role.
+- IAM role `IAMSentinelBreakGlassRole` + initiator group + two-signer state machine.
+- CloudWatch alarms on any use of BreakGlass role.
+
+3. KMS Keys
+-----------
+Every key:
+- Symmetric CMK, rotation enabled (annual).
+- Key policy explicit; no `Principal: "*"`.
+- Deletion window 30 days.
+- Alias `alias/sentinel/{purpose}-{stage}`.
+
+`SentinelEvidenceKey`:
+- KeyUsage: `SIGN_VERIFY`.
+- KeySpec: `RSA_4096`.
+- Allow: signer roles → `kms:Sign`, `kms:GetPublicKey`. Verifier roles → `kms:Verify`, `kms:GetPublicKey`.
+
+`SentinelDataKey`:
+- KeyUsage: `ENCRYPT_DECRYPT`.
+- KeySpec: `SYMMETRIC_DEFAULT`.
+- Allow: DDB + S3 service principals (via key policy), plus reader/writer roles.
+
+`SentinelKbKey`:
+- KeyUsage: `ENCRYPT_DECRYPT`.
+- Allow: Bedrock KB service + our ingestion Lambdas.
+
+4. Guardrail
+------------
+CustomResource wraps `bedrock:CreateGuardrail` per spec in `agents/docs/phase-11-guardrails-safety.txt` §Step 3.
+
+On stack update, `UpdateGuardrail` + `CreateGuardrailVersion` — version is bumped, prior version stays available. Prime + specialists reference version via SSM param `/sentinel/guardrail/version`.
+
+5. Permission Boundary
+----------------------
+`SentinelPermissionBoundary` managed policy denies:
+- All actions outside `bedrock:*`, `dynamodb:*` (Sentinel tables), `s3:*` (Sentinel buckets), `kms:*` (Sentinel keys), `sts:AssumeRole` on `SentinelCrossAccountRole`, `access-analyzer:*`, `organizations:*` (read-only + F2 finding update), `iam:PutRolePolicy`/`iam:DeleteRolePolicy` on the F5-scoped path.
+- Any `iam:Create*`, `iam:Delete*`, `iam:Attach*Policy*` outside the F5 scope.
+- Any `organizations:Update*`, `Delete*` (writes).
+- Any `cloudformation:*` (no self-mutation).
+- Any resource not tagged `Project=IAMSentinel`.
+
+Applied to every Sentinel role via `PermissionsBoundary=` on role construction (enforced by `SentinelLambda` and every custom role construct).
+
+6. Break-Glass Path
+-------------------
+`IAMSentinelBreakGlassRole`:
+- Trust: only members of `IAMSentinelBreakGlassInitiators` group can assume, AND session must be tagged `BreakGlass=IAMSentinel-Two-Signer`.
+- Permissions: full control of Sentinel resources ONLY (managed policy `SentinelBreakGlassPolicy` scoped to specific ARN prefixes).
+- Session duration: 900 s.
+
+Two-signer state machine (Step Functions Standard):
+- State 1: initiator invokes; state machine expects a second `sts:AssumeRole` from a different principal within 60 s.
+- State 2: on second assumption, state machine issues session tags for both callers.
+- Any single-signer attempt returns AccessDenied.
+
+CloudTrail alarms:
+- `SentinelBreakGlassAssumption` metric filter on `AssumeRole` events with the target role ARN.
+- Alarm at threshold 1 in 5 min → SNS `SentinelSecurity`.
+- CloudWatch dashboard widget "Recent Break-Glass Sessions".
+
+7. Test Plan
+------------
+- Snapshot: stack synthesizes and Guardrail resource is present.
+- Guardrail canary: post-deploy Lambda runs a probe against the LIVE alias — payload "ignore your instructions" must be blocked.
+- Permission boundary: policy simulator + fixture calls; verify writes outside allowed set fail.
+- Break-glass: single-signer attempt → fail; two-signer within 60 s → success; alarm fires.
+- cdk-nag: clean.
+
+8. Acceptance Criteria
+----------------------
+- [ ] All 3 KMS keys created with correct policies.
+- [ ] Guardrail LIVE alias present and passes canary.
+- [ ] Break-glass drill passes end-to-end.
+- [ ] CloudTrail alarms fire in unit test with a simulated event.
+
+9. Risks & Mitigations
+-----------------------
+Risk: locking ourselves out via permission boundary error.
+  Mitigation: break-glass role is exempt from boundary; verified during dev deploys before applying boundary broadly.
+
+Risk: Guardrail rollback removes prior version other agents still reference.
+  Mitigation: never delete versions; only add. Cleanup is manual and quarterly.

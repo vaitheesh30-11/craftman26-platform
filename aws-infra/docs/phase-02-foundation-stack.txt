@@ -1,0 +1,105 @@
+PHASE 02 — Foundation Stack (Data Plane)
+=========================================
+
+Owner assumption: one principal engineer. Duration: 2 days.
+
+1. Objective
+------------
+Provision every DynamoDB table, S3 bucket, SQS queue, SNS topic, and OpenSearch Serverless collection Sentinel needs.
+
+2. Deliverables
+---------------
+- 13 DynamoDB tables per `adapters/docs/phase-05-ddb-adapter.txt` §3.
+- OpenSearch Serverless collection `sentinel-episodic-vector` with k-NN index.
+- S3 buckets: `SentinelEvidence-{stage}`, `SentinelReports-{stage}`, `SentinelKbSource-{stage}`, `SentinelKbManifest-{stage}`, `SentinelAthenaResults-{stage}`.
+- SQS FIFO queue `SessionKillQueue.fifo` + DLQ. Standard queues for every Lambda's DLQ.
+- SNS topics: `SentinelCriticalFindings`, `SentinelEmergencyRevocations`, `SentinelWeeklyReports`, `SentinelCostAnomaly`, `SentinelSecurity`, `SentinelOps`.
+
+3. DDB Details
+--------------
+Every table:
+- KMS CMK: `SentinelDataKey`.
+- PITR: ON.
+- Deletion protection: ON.
+- Billing: ON_DEMAND.
+- Contributor Insights: ON for `SentinelFindings`, `SentinelDecisions`, `SentinelBudget`.
+- Auto-scaling not applicable (on-demand).
+
+Keys and GSIs per §3 of `adapters/docs/phase-05-ddb-adapter.txt`. Verify against that spec.
+
+4. OpenSearch Serverless
+------------------------
+Collection `sentinel-episodic-vector`:
+- Type: VECTORSEARCH.
+- Encryption: KMS CMK `SentinelDataKey`.
+- Network policy: private (VPC-less; access from Lambdas via SigV4 over public endpoint with data-access policy scoping).
+- Data-access policy: read for specialist Lambdas; write for Prime post-turn Lambda + memory syncer + async indexer.
+- Index: `sentinel-episodic`.
+- Field mappings:
+  - `embedding`: k-NN vector, 256 dims (titan-embed-text-v2), engine=faiss, method=hnsw, m=16, ef=100.
+  - `principal`: keyword.
+  - `decision_id`: keyword.
+  - `account_id`: keyword.
+  - `feature_ids_involved`: keyword (multi).
+  - `narrative_excerpt`: text.
+  - `decided_at`: date.
+
+Index bootstrap Lambda runs once post-collection creation.
+
+5. S3 Buckets
+-------------
+All buckets:
+- Block public access ALL.
+- Encryption: KMS CMK.
+- Versioning ON.
+- Access logging to a `SentinelAccessLogs-{stage}` bucket.
+- Lifecycle:
+  - `Evidence`: Object Lock COMPLIANCE 7 years; Glacier at 365d.
+  - `Reports`: standard 90d, Glacier 365d.
+  - `KbSource`, `KbManifest`: standard 90d rolling.
+  - `AthenaResults`: expire after 7 days.
+
+6. SQS
+------
+`SessionKillQueue.fifo`:
+- Content-based deduplication: false.
+- MessageRetentionPeriod: 4 days.
+- VisibilityTimeout: 30 s.
+- DeadLetterQueue: `SessionKillQueue-DLQ.fifo` with `maxReceiveCount=3`.
+- KMS-encrypted.
+
+Standard DLQs per Lambda:
+- 14-day retention.
+- KMS-encrypted.
+
+7. SNS
+------
+Every topic:
+- KMS-encrypted.
+- Delivery status logging enabled.
+- Subscriptions configured via SSM (email, PagerDuty webhook, Slack Lambda).
+
+8. Test Plan
+------------
+- Snapshot: stack synthesizes cleanly.
+- cdk-nag: clean.
+- Integration: bootstrap script creates OSS index; smoke test writes then queries a fake embedding.
+- Contract: every table's PK/SK/GSI matches the adapter spec (parsed and diffed).
+
+9. Acceptance Criteria
+----------------------
+- [ ] 13 DDB tables live with correct keys and TTLs.
+- [ ] OSS index queryable via `opensearchpy`.
+- [ ] All buckets Object-Lock-configured where required; block-public verified.
+- [ ] SNS delivery status logs written to CloudWatch.
+
+10. Risks & Mitigations
+-----------------------
+Risk: on-demand DDB cost surprise under a query burst.
+  Mitigation: CloudWatch alarms on per-table `ConsumedReadCapacityUnits` + `ConsumedWriteCapacityUnits`; auto-alarm at 3× 7-day baseline.
+
+Risk: OSS OCU sizing.
+  Mitigation: start at 2 indexing / 2 search OCUs; observe first 30 days; ratchet.
+
+Risk: bucket key policy denies Sentinel itself after a boundary change.
+  Mitigation: bucket policies reference role ARNs by name (not by principal ID); role recreation preserves policy validity.

@@ -1,0 +1,116 @@
+PHASE 00 — CDK Foundations (Python)
+====================================
+
+Owner assumption: one principal engineer. Duration: 2 days.
+
+1. Objective
+------------
+Bootstrap the Python CDK v2 project so all downstream stacks share a single, opinionated substrate: config, tagging, cdk-nag, snapshot tests, and shared L3 constructs.
+
+2. Deliverables
+---------------
+- `aws-infra/pyproject.toml` with pinned CDK dependencies.
+- `cdk.json` with feature flags.
+- `app.py` composing the stack graph (all 8 stacks instantiated but potentially empty on first commit).
+- `src/iam_sentinel_infra/config.py` with per-stage config models.
+- Shared L3 constructs (`constructs/`): `SignedObjectLockBucket`, `SentinelLambda`, `SentinelBedrockAgent`, `GuardrailCustomResource`, `SentinelPermissionBoundary`.
+- `cdk-nag` (AwsSolutions + HIPAASecurity) enabled globally with per-stack suppression policy.
+- Snapshot test scaffolding.
+- GitHub Actions workflow `.github/workflows/infra-ci.yml`.
+
+3. Config Model
+---------------
+```python
+class StageConfig(BaseModel):
+    stage: Literal["dev","staging","prod"]
+    account_id: str
+    region: str
+    org_id: str
+    org_root_id: str
+    delegated_admin_analyzer_account: str
+    delegated_admin_idc_account: str
+    haiku_model_id: str = "anthropic.claude-3-5-haiku-20241022-v1:0"
+    sonnet_model_id: str = "anthropic.claude-3-5-sonnet-20241022-v2:0"
+    kb_embedding_model_id: str = "amazon.titan-embed-text-v2:0"
+    episodic_retention_years: int = 2
+    correlation_dollar_cap: float = 1.00
+    principal_daily_dollar_cap: float = 50.00
+```
+
+Loaded from `config/{stage}.yaml`. Passed into every stack.
+
+4. Shared Constructs
+--------------------
+### `SignedObjectLockBucket`
+Wraps `s3.Bucket` with:
+- Object Lock enabled at creation.
+- COMPLIANCE mode default retention 7 years.
+- Versioning ON.
+- KMS CMK encryption.
+- Block public access.
+- Access logging enabled.
+
+### `SentinelLambda`
+Wraps `lambda_.Function` with:
+- Runtime: Python 3.12.
+- Architecture: arm64.
+- Powertools layer + boto3 layer attached.
+- X-Ray active tracing.
+- Reserved concurrency default 10.
+- Idle log retention 14 days.
+- Standard env vars (SENTINEL_STAGE, SENTINEL_REGION, etc.).
+- DLQ auto-provisioned as SQS.
+- Powertools metrics namespace `IAMSentinel`.
+
+### `SentinelBedrockAgent`
+Wraps `bedrock.CfnAgent` with sensible defaults:
+- `foundationModel` selectable.
+- `guardrailConfiguration` wired.
+- Alias creation for `dev`, `staging`, `prod`.
+- Action group builder that takes an OpenAPI YAML path and a Lambda ref.
+
+### `GuardrailCustomResource`
+Custom resource that owns the Guardrail lifecycle (`bedrock:CreateGuardrail`/`UpdateGuardrail`/`DeleteGuardrail` + `CreateGuardrailVersion`).
+
+### `SentinelPermissionBoundary`
+Managed policy applied as a permission boundary to every Sentinel role — cannot escalate outside Sentinel resources. Referenced by every role construct.
+
+5. Tagging
+----------
+Every stack applies:
+```python
+Tags.of(stack).add("Project", "IAMSentinel")
+Tags.of(stack).add("Stage", stage.stage)
+Tags.of(stack).add("Feature", stack_feature_name)
+Tags.of(stack).add("Owner", "iam-sentinel@customer.com")
+```
+
+6. cdk-nag Wiring
+-----------------
+```python
+Aspects.of(app).add(AwsSolutionsChecks(verbose=True))
+Aspects.of(app).add(HIPAASecurityChecks(verbose=True))
+```
+
+Suppressions live in each stack via `NagSuppressions.add_stack_suppressions(stack, [...])` with a text reason. PR review gates every new suppression.
+
+7. Test Plan
+------------
+- Snapshot: `cdk synth` for each stack in `dev`; assert stable.
+- Unit: config model validation.
+- cdk-nag: run + assert zero Error-severity issues.
+
+8. Acceptance Criteria
+----------------------
+- [ ] `cdk synth` succeeds for all 8 empty stacks.
+- [ ] `cdk-nag` clean.
+- [ ] Snapshot tests wired into CI.
+- [ ] Constructs importable from downstream stacks without circular refs.
+
+9. Risks & Mitigations
+-----------------------
+Risk: CDK version drift between local and CI.
+  Mitigation: pinned in pyproject; `cdk --version` asserted in CI preflight.
+
+Risk: cdk-nag warnings inflate over time.
+  Mitigation: PR template requires justification for new suppressions; monthly review to retire stale ones.

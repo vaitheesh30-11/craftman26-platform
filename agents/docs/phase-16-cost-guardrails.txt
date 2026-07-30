@@ -1,0 +1,165 @@
+PHASE 16 — Cost Guardrails
+==========================
+
+Owner assumption: one principal engineer. Duration: 2 days.
+
+1. Objective
+------------
+Make every dollar Sentinel spends predictable. Impose per-correlation-id budgets, per-tenant daily caps, Athena scan-cost limits, and circuit breakers on Bedrock spend. Anomaly-detect cost spikes and page an operator before a runaway agent burns the month's budget. Report cost per feature, per invoking principal, and per finding produced.
+
+The one-line design: "no agent can spend more than its budget; the platform observes cost in real time and cuts the request before overshoot."
+
+2. Deliverables
+---------------
+- `tools/common/cost_meter.py` — in-process spend accounting emitted as EMF metrics.
+- `tools/common/budget_gate.py` — pre-invocation and mid-invocation budget checks.
+- DDB table `SentinelBudget` for per-correlation-id and per-day-per-principal accounting.
+- CloudWatch composite alarms + AWS Budgets integration.
+- Weekly cost report Lambda (`cost_report_weekly`) producing per-feature and per-principal breakdowns.
+- SSM parameters for tunable caps (no redeploy).
+
+3. Budget Layers
+----------------
+Three layered budgets. Any layer breach halts execution.
+
+### 3.1 Per-correlation-id budget (hard cap per request).
+- Token cap: 50,000 input + 25,000 output tokens across all Bedrock calls in the correlation.
+- Bedrock spend cap: $1.00 default (Sonnet+Haiku mix).
+- Athena scan cap: 100 GB.
+- Wall-clock cap: 180 s (slow-path multi-specialist).
+- Tool-invocation cap: 30 Bedrock action-group calls.
+
+### 3.2 Per-principal per-day budget.
+- Bedrock spend cap: $50/day default.
+- Athena scan cap: 2 TB/day.
+- Correlation cap: 500/day.
+
+### 3.3 Platform-wide monthly ceiling.
+- AWS Budget action with an SNS action at 80% and a manual-review requirement at 100% (no auto-throttle at platform level — a full stop is a business decision).
+
+All limits are SSM parameters (`/sentinel/budget/*`) hot-swappable.
+
+4. Interface Contracts
+----------------------
+```python
+class SpendSample(Base):
+    correlation_id: str
+    kind: Literal[
+        "bedrock_input_tokens",
+        "bedrock_output_tokens",
+        "bedrock_dollars",
+        "athena_bytes_scanned",
+        "athena_dollars",
+        "lambda_milliseconds",
+        "tool_invocations",
+    ]
+    amount: float                          # tokens/bytes/millidollars/ms/count
+    at: AwareDatetime
+
+class BudgetSnapshot(Base):
+    correlation_id: str
+    started_at: AwareDatetime
+    samples: list[SpendSample]
+    caps: dict[str, float]                 # active caps for this correlation
+    breached_cap: Optional[str] = None
+    projected_dollars: float
+
+class CircuitBreakerState(Base):
+    breaker_name: Literal["bedrock", "athena", "platform"]
+    state: Literal["closed", "half_open", "open"]
+    opened_at: Optional[AwareDatetime]
+    open_reason: Optional[str]
+    next_probe_at: Optional[AwareDatetime]
+```
+
+5. Implementation Steps
+-----------------------
+Step 1 — Cost meter primitives.
+  - `cost_meter.record(kind, amount, correlation_id)` — writes an EMF metric AND appends to DDB `SentinelBudget` (PK=`correlation_id`, SK=`ULID`).
+  - Bedrock adapter emits `bedrock_input_tokens` and `bedrock_output_tokens` from the response's `usage` block, then multiplies by the current model's per-token price (loaded from `pricing.yaml`).
+  - Athena adapter emits `athena_bytes_scanned` after every `GetQueryExecution` completes; multiplies by $5/TB.
+
+Step 2 — Pre-invocation gate.
+  - At the router entry point, before dispatch, `budget_gate.check_startable(correlation_id, principal, estimated_cost)`:
+    - Fetch per-principal today's spend from DDB.
+    - If today's spend + estimated ≥ per-principal cap, reject with `BudgetExceeded` (HTTP 429).
+    - If circuit breaker is `open`, reject with `CircuitOpen` (HTTP 503, Retry-After).
+  - Estimated cost heuristic: fast path $0.001, slow path single-specialist $0.10, multi-specialist $0.30.
+
+Step 3 — Mid-invocation gate (Bedrock adapter).
+  - Every `bedrock:InvokeAgent` / `InvokeModel` call goes through the adapter.
+  - Adapter queries `cost_meter.projected(correlation_id)` before calling.
+  - If projected + this-call-estimate ≥ per-correlation cap, adapter refuses with `BudgetExceededError`.
+  - Prime and specialists catch `BudgetExceededError` and return `verdict=INCONCLUSIVE, reason="request budget exceeded"`.
+
+Step 4 — Athena gate (Athena adapter).
+  - Before `StartQueryExecution`, adapter estimates scan cost using `EXPLAIN` (Athena has `explain` — but cost estimate is rough; alternative: query with `LIMIT 0` on the same partition to get partition size).
+  - If estimate > 5 GB, requires `<trusted_input>.consent_large_scan=true`.
+  - Post-query: hard-check actual `bytes_scanned`; alarm if > estimate * 2.
+
+Step 5 — Circuit breakers.
+  - Per-service breakers: `bedrock`, `athena`, `platform`.
+  - Trigger: 3 consecutive throttles OR error rate > 5%/1min OR spend rate > 3x the 7-day baseline.
+  - State stored in DDB `SentinelBreakers` (PK=`breaker_name`).
+  - `open` → all invocations rejected for 5 minutes → `half_open` (allow 1 probe) → `closed` on success or back to `open`.
+  - Prime informed via a shared `sentinel_health(check="breakers")` tool.
+
+Step 6 — Cost anomaly detection.
+  - CloudWatch metric anomaly detection on:
+    - `SentinelBedrockDollars` per feature per hour.
+    - `SentinelAthenaBytes` per feature per hour.
+    - `SentinelLambdaGBSeconds` per Lambda.
+  - Anomaly alarm → SNS `SentinelCostAnomaly` → PagerDuty rotation.
+
+Step 7 — Attribution + reporting.
+  - Every SpendSample tagged with `feature_id`, `principal`, `mode` (fast/slow/shadow).
+  - Weekly report Lambda queries CloudWatch Metrics + DDB `SentinelBudget` and produces:
+    - Top 10 costliest principals.
+    - Cost per feature (absolute + trend).
+    - Cost per finding (dollars / finding count).
+    - Fast vs slow spend split.
+    - Shadow overhead (extra spend from shadow-mode).
+  - Report to `SentinelReports/cost/{year}-W{week}.json` and SNS summary.
+
+Step 8 — Cost-aware model router.
+  - `adapters/bedrock/model_router.py` gains a cost-aware mode:
+    - If projected correlation spend is < 25% of cap: allow Sonnet where the specialist requests it.
+    - If projected 25–70%: downgrade Sonnet requests to Haiku when the specialist has flagged the task as "downgrade_ok" in its metadata.
+    - If projected > 70%: force Haiku everywhere; long-tail truncation.
+
+6. IAM Policy
+-------------
+Cost meter role: `cloudwatch:PutMetricData`, `dynamodb:PutItem`, `UpdateItem`, `Query` on `SentinelBudget` and `SentinelBreakers`. `ssm:GetParameter` on `/sentinel/budget/*` and `/sentinel/pricing/*`.
+
+Report Lambda: read access to CloudWatch Metrics, DDB `SentinelBudget`; `s3:PutObject` on `SentinelReports/cost/*`; `sns:Publish` on `SentinelWeeklyReports`.
+
+7. Test Plan
+------------
+- Unit: budget gate accepts under-cap, rejects over-cap with correct HTTP code.
+- Unit: circuit breaker transitions closed → open → half_open → closed on a stubbed clock.
+- Property (Hypothesis): budget accounting is monotonic; recorded spend can never decrease within a correlation.
+- Cost meter: Bedrock adapter emits `bedrock_input_tokens` matching the response's `usage.inputTokens`.
+- Anomaly: fixture-driven CloudWatch anomaly alarm test.
+- Integration: 50 synthetic requests exercising all three budget layers; verify caps enforced.
+
+8. Acceptance Criteria
+----------------------
+- [ ] Every Bedrock call is metered before and after.
+- [ ] Every Athena query is estimated before start and hard-checked after.
+- [ ] Runaway simulation: an agent tries to make 100 Bedrock calls; halted at cap 30.
+- [ ] Weekly cost report generated on schedule for 4 consecutive weeks.
+- [ ] Cost anomaly alarm fires within 15 minutes of a 3× baseline spike.
+
+9. Risks & Mitigations
+-----------------------
+Risk: pre-invocation cost estimate is wrong; some legitimate requests get rejected.
+  Mitigation: soft-reject via warning + confirmation path for `10%–100%` of cap; hard-reject only at cap; retune quarterly using observed data.
+
+Risk: circuit breaker cascade — a bedrock throttle breaks everything.
+  Mitigation: breakers are per-model + per-region, not global; Prime can still respond with cached DecisionRecords from episodic memory while a breaker is open.
+
+Risk: shadow mode inflates cost overhead unpredictably.
+  Mitigation: shadow sample rate is an SSM param; ratchet down if weekly report shows shadow spend > 15%.
+
+Risk: hidden costs (RDS Aurora Serverless, OSS OCUs) not captured.
+  Mitigation: AWS Cost Categories set up with Sentinel-tagged resources; Cost Explorer view added to weekly report.

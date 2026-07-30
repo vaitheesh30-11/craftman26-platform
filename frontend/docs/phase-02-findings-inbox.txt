@@ -1,0 +1,81 @@
+PHASE 02 — Findings Inbox
+=========================
+
+Owner assumption: one principal engineer. Duration: 2 days.
+
+1. Objective
+------------
+An operations-grade findings inbox. Table view over all findings the caller can see, with fast filters (severity, feature, account, principal, time window). A finding-detail page renders the full `Finding`, its `aws_doc_citation`, its evidence blob (verified), and any linked DecisionRecord.
+
+2. Deliverables
+---------------
+- Page `app/(dashboard)/findings/page.tsx` and `app/(dashboard)/findings/[id]/page.tsx`.
+- Components: `FindingsTable`, `FindingsFilters`, `FindingDetail`, `SeverityBadge`, `EvidenceViewer`, `PolicyPrettyPrint`.
+- URL-synced filter state (deep-linkable).
+
+3. Table Columns
+----------------
+- Severity (color-coded badge).
+- Feature (F1..F8 chip with plain-English label on hover).
+- Account (12-digit; masked to last-4 unless the row is expanded).
+- Subject (principal_arn or resource_arn short form).
+- Title.
+- Detected at (relative time, absolute on hover).
+- Row actions: "Open detail", "Open decision", "Copy correlation_id".
+
+Sorting: severity desc default; detected_at desc secondary.
+Pagination: cursor-based (`next_token`); default page size 25.
+
+4. Filters
+----------
+- Severity multi-select.
+- Feature multi-select (F1..F8).
+- Account: 12-digit input with validation.
+- Since: 24h / 7d / 30d / custom.
+- Search: free-text over `title` and `detail` (client-side match after fetching a page — or server-side once backend supports).
+
+5. Finding Detail Page
+----------------------
+- Header: title + severity + feature.
+- `aws_doc_citation`: quote in a callout with source badge and a link to the AWS doc URL. This is the platform's most important UX element — the citation must be prominent.
+- Body: rendered `detail` markdown.
+- Payload: feature-specific (per phase-02..09 of agents). Renderers:
+  - F1: blast-path graph (D3 or a simple ordered list of hops).
+  - F2: classification + real OU paths.
+  - F3: merged policy pretty-printer with size counter.
+  - F4: impact report with role/action table.
+  - F5: TerminationRecord grid.
+  - F6: ShadowViolation card.
+  - F7: collision explanation + minimal_fix diff.
+  - F8: conflicts + safe_scp diff.
+- Evidence: `EvidenceViewer` component fetches `GET /evidence/{ref}`, shows verified body, badge "Signature verified" or "TAMPERED" (never renders body if invalid).
+- Related: link to the DecisionRecord that produced the finding.
+
+6. State Management
+-------------------
+- TanStack Query with URL-synced filter params.
+- Prefetch neighbors on hover for smooth pagination.
+
+7. Test Plan
+------------
+- Component: table renders 25-row fixture; filter changes update query.
+- Playwright: navigate to a finding detail, verify citation prominent, verify evidence signature banner.
+- axe-core clean.
+
+8. Acceptance Criteria
+----------------------
+- [ ] Deep-linkable filters (share URL → same view).
+- [ ] Time-to-detail-content ≤ 700 ms p95 (cached).
+- [ ] Evidence verification badge accurate on 3 fixture scenarios (valid, invalid, missing).
+- [ ] Feature-specific payload renderers implemented for all 8 features.
+
+9. Risks & Mitigations
+-----------------------
+Risk: large evidence bodies exceed a reasonable render budget.
+  Mitigation: viewer truncates at 128 KB and offers a "Download signed blob" button.
+
+Risk: masked account IDs interfere with search.
+  Mitigation: search matches on canonical form; masking is display-only.
+
+Risk: filter combinations produce empty results the user misreads as "no findings anywhere."
+  Mitigation: empty state distinguishes "no findings match filters" from "no findings at all" with different copy.

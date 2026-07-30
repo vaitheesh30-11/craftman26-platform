@@ -1,0 +1,68 @@
+PHASE 03 — Athena Stack
+========================
+
+Owner assumption: one principal engineer. Duration: 1 day.
+
+1. Objective
+------------
+Provision the Glue Data Catalog table over the org CloudTrail bucket and the Athena workgroup that F3 (Data Event Enricher), F4 (SCP Impact Analyst), and F6 (Shadow Guard, offline aggregation only) query against.
+
+2. Deliverables
+---------------
+- Glue Database `sentinel_cloudtrail`.
+- Glue Table `cloudtrail_logs` with partition projection (per phase-04 of agents).
+- Athena Workgroup `sentinel` with per-query result cap and encryption.
+- Athena Result S3 bucket (already provisioned in foundation).
+- Optional: Iceberg tables for a canonical, curated write-events view (`sentinel_cloudtrail.writes_curated`) refreshed hourly.
+
+3. Glue Table Specification
+---------------------------
+Table matches the CloudTrail schema exactly. Partition projection on `account_id`, `region`, `year`, `month`, `day` so partitions are inferred rather than crawled. Table properties per `agents/docs/phase-04-data-event-enricher.txt` §Step 2.
+
+4. Workgroup
+------------
+- `sentinel` workgroup with:
+  - `EnforceWorkGroupConfiguration=true`.
+  - `PublishCloudWatchMetricsEnabled=true`.
+  - `BytesScannedCutoffPerQuery=107374182400` (100 GB hard cap per query).
+  - Result config: encryption `SSE_KMS` with `SentinelDataKey`, `EncryptionOption=SSE_KMS`.
+  - Engine version: latest v3.
+
+5. Iceberg Curated View (Optional but Recommended)
+--------------------------------------------------
+Hourly Lambda `athena_curate_writes`:
+- Runs a CTAS query over the last 1 h of `cloudtrail_logs` filtered to write events.
+- Appends into `sentinel_cloudtrail.writes_curated` (Iceberg table on S3).
+- Partitioned by `event_date`, `account_id`, `event_source`.
+
+Rationale: F4 and F6 read the curated table with substantially less scan volume than raw CT logs. Cost-saver.
+
+6. IAM
+------
+Workgroup accessible only by:
+- F3 Lambda (execution role).
+- F4 Lambda.
+- F6 offline aggregation Lambda.
+- Athena curate Lambda (write).
+
+Reads to the org trail bucket require the bucket policy in the org CloudTrail account to allow Sentinel's account principals — verify at deploy time or fail early.
+
+7. Test Plan
+------------
+- Snapshot: workgroup + Glue table + database created.
+- Integration: run a smoke query counting events in a fixture prefix; expect success.
+- Contract: table columns match CloudTrail schema (fixture-verified against a known schema JSON).
+
+8. Acceptance Criteria
+----------------------
+- [ ] Sample query returns rows for a known account+day partition.
+- [ ] 100 GB BytesScannedCutoff enforced (verified with a deliberately over-broad query).
+- [ ] Curate Lambda writes to Iceberg table successfully.
+
+9. Risks & Mitigations
+-----------------------
+Risk: org CloudTrail bucket policy doesn't allow Sentinel account.
+  Mitigation: pre-flight check Lambda at deploy time; deploy fails if the trail bucket is unreadable.
+
+Risk: Iceberg feature drift.
+  Mitigation: pin engine v3; assert engine version in workgroup config.
