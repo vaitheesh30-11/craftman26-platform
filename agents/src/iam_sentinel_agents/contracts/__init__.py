@@ -15,6 +15,7 @@ from iam_sentinel_agents.contracts.common import (
 from iam_sentinel_agents.contracts.decision import DecisionRecord
 from iam_sentinel_agents.contracts.evidence import EvidenceKind, EvidenceRecord, EvidenceRef
 from iam_sentinel_agents.contracts.finding import AwsDocCitation, Finding
+from iam_sentinel_agents.contracts.knowledge_base import Corpus, KbManifest, QuoteHash
 from iam_sentinel_agents.contracts.query import SentinelQuery
 from iam_sentinel_agents.contracts.remediation import (
     RemediationAction,
@@ -30,12 +31,15 @@ __all__ = [
     "ULID_PATTERN",
     "AwsDocCitation",
     "Base",
+    "Corpus",
     "DecisionRecord",
     "EvidenceKind",
     "EvidenceRecord",
     "EvidenceRef",
     "FeatureID",
     "Finding",
+    "KbManifest",
+    "QuoteHash",
     "RemediationAction",
     "RemediationPlan",
     "SentinelQuery",

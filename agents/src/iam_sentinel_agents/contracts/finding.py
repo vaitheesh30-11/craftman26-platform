@@ -8,8 +8,6 @@ phase-10).
 
 from __future__ import annotations
 
-import hashlib
-import unicodedata
 from typing import Any, Protocol, TYPE_CHECKING
 
 from pydantic import AwareDatetime, Field, field_validator, model_validator
@@ -24,6 +22,12 @@ from iam_sentinel_agents.contracts.common import (
     ULID_PATTERN,
 )
 from iam_sentinel_agents.contracts.evidence import EvidenceRef
+from iam_sentinel_agents.contracts.quote_hash import canonical_quote_hash
+
+# Plain assignment, not `import ... as` -- mypy --strict's no_implicit_reexport
+# treats an aliased import as private to this module, but tests still import
+# this name from here (pre-dating the phase-10 extraction into quote_hash.py).
+_canonical_quote_hash = canonical_quote_hash
 
 if TYPE_CHECKING:
     # `_MANIFEST_PROVIDER`'s annotation and `set_quote_manifest_provider`'s
@@ -36,12 +40,6 @@ if TYPE_CHECKING:
 
 class QuoteManifest(Protocol):
     def contains(self, quote_sha256: str) -> bool: ...
-
-
-def _canonical_quote_hash(quote: str) -> str:
-    normalized = unicodedata.normalize("NFKC", quote)
-    collapsed = " ".join(normalized.split())
-    return hashlib.sha256(collapsed.encode("utf-8")).hexdigest()
 
 
 def _no_manifest_configured() -> QuoteManifest | None:

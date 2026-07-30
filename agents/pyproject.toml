@@ -16,7 +16,15 @@ dependencies = [
     "pandas==2.2.3",
     "pyarrow==17.0.0",
     "orjson==3.10.7",
+    "iam-sentinel-adapters",
 ]
+
+[tool.uv.sources]
+# First cross-module import from agents/ into adapters/ (agents phase-10:
+# manifest KMS verify + Bedrock KB retrieve both live in adapters per the
+# boto3-only-through-adapters module boundary). Path dependency, not a
+# published package -- this is a monorepo, not a package registry.
+iam-sentinel-adapters = { path = "../adapters", editable = true }
 
 [dependency-groups]
 dev = [

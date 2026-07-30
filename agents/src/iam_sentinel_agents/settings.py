@@ -31,6 +31,7 @@ class AgentSettings(BaseSettings):
     metric_namespace: str = "IAMSentinel"
     kb_manifest_path: str = ""
     kb_manifest_refresh_seconds: int = Field(default=3600, ge=60)
+    kb_knowledge_base_id: str = ""
     region: str = "us-east-1"
 
 
