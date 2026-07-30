@@ -1,14 +1,20 @@
-"""Custom resource owning the Bedrock Guardrail lifecycle (phase-00 §4).
+"""Custom resource owning the Bedrock Guardrail lifecycle (phase-00 §4,
+agents phase-11 §3).
 
 CloudFormation has no native `AWS::Bedrock::Guardrail` resource as of this
 writing, so create/update/delete is driven by a Lambda-backed custom
 resource calling `bedrock:CreateGuardrail` / `UpdateGuardrail` /
-`DeleteGuardrail` / `CreateGuardrailVersion` directly.
+`DeleteGuardrail` / `CreateGuardrailVersion` directly. `policy_config`
+carries the topic/content/PII/grounding policy content (agents phase-11
+§3) straight through to those calls as a JSON-serializable dict — see
+ADR 0004 for why that content lives in `aws-infra/config/guardrail_v1.json`
+rather than in the agents package.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from aws_cdk import CustomResource, Duration
 from aws_cdk import aws_iam as iam
@@ -28,6 +34,7 @@ class GuardrailCustomResource(Construct):
         guardrail_name: str,
         blocked_input_messaging: str,
         blocked_outputs_messaging: str,
+        policy_config: dict[str, Any] | None = None,
     ) -> None:
         super().__init__(scope, construct_id)
 
@@ -53,18 +60,20 @@ class GuardrailCustomResource(Construct):
                     "bedrock:DeleteGuardrail",
                     "bedrock:CreateGuardrailVersion",
                     "bedrock:GetGuardrail",
+                    "bedrock:ListGuardrails",
                 ],
                 resources=["*"],  # Guardrail ARN is not known before creation.
             )
         )
 
+        properties: dict[str, Any] = {
+            "GuardrailName": guardrail_name,
+            "BlockedInputMessaging": blocked_input_messaging,
+            "BlockedOutputsMessaging": blocked_outputs_messaging,
+        }
+        if policy_config is not None:
+            properties["PolicyConfig"] = policy_config
+
         self.resource = CustomResource(
-            self,
-            "Resource",
-            service_token=self.handler.function_arn,
-            properties={
-                "GuardrailName": guardrail_name,
-                "BlockedInputMessaging": blocked_input_messaging,
-                "BlockedOutputsMessaging": blocked_outputs_messaging,
-            },
+            self, "Resource", service_token=self.handler.function_arn, properties=properties
         )

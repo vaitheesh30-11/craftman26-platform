@@ -7,6 +7,7 @@ break-glass alarm is EventBridge-based rather than a new CloudTrail Trail.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -37,6 +38,7 @@ if TYPE_CHECKING:
     from iam_sentinel_infra.config import StageConfig
 
 _FUNCTIONS_DIR = Path(__file__).resolve().parents[3] / "functions"
+_CONFIG_DIR = Path(__file__).resolve().parents[3] / "config"
 _KEY_DELETION_WINDOW = Duration.days(30)
 
 
@@ -56,12 +58,16 @@ class SecurityStack(Stack):
         self.data_key = self._encryption_key("data", stage_config.stage)
         self.kb_key = self._encryption_key("kb", stage_config.stage)
 
+        guardrail_policy_config = json.loads(
+            (_CONFIG_DIR / "guardrail_v1.json").read_text(encoding="utf-8")
+        )
         self.guardrail = GuardrailCustomResource(
             self,
             "Guardrail",
             guardrail_name=f"IAMSentinelGuardrail-{stage_config.stage}",
-            blocked_input_messaging="This request was blocked by IAM Sentinel's safety guardrails.",
-            blocked_outputs_messaging="This response was blocked by IAM Sentinel's safety guardrails.",
+            blocked_input_messaging=guardrail_policy_config.pop("blockedInputMessaging"),
+            blocked_outputs_messaging=guardrail_policy_config.pop("blockedOutputsMessaging"),
+            policy_config=guardrail_policy_config,
         )
         ssm.StringParameter(
             self,

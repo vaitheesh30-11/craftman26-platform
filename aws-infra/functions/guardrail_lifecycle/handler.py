@@ -1,8 +1,8 @@
 """CloudFormation custom-resource Lambda owning the Bedrock Guardrail
-lifecycle (aws-infra phase-01 §4). CloudFormation has no native
-`AWS::Bedrock::Guardrail` resource, so Create/Update/Delete map directly to
-`bedrock:CreateGuardrail` / `UpdateGuardrail` / `DeleteGuardrail` +
-`CreateGuardrailVersion`.
+lifecycle (aws-infra phase-01 §4, agents phase-11 §3). CloudFormation has
+no native `AWS::Bedrock::Guardrail` resource, so Create/Update/Delete map
+directly to `bedrock:CreateGuardrail` / `UpdateGuardrail` /
+`DeleteGuardrail` + `CreateGuardrailVersion`.
 """
 
 from __future__ import annotations
@@ -14,6 +14,21 @@ from typing import Any
 import boto3
 
 _bedrock = boto3.client("bedrock")
+
+# CFN CustomResource property names are PascalCase; Bedrock's API wants
+# camelCase. This is the one-to-one mapping between the two for every
+# optional policy-config field agents phase-11 §3 lists.
+_OPTIONAL_POLICY_FIELDS = (
+    "topicPolicyConfig",
+    "contentPolicyConfig",
+    "sensitiveInformationPolicyConfig",
+    "contextualGroundingPolicyConfig",
+)
+
+
+def _policy_kwargs(properties: dict[str, Any]) -> dict[str, Any]:
+    policy_config = properties.get("PolicyConfig", {})
+    return {field: policy_config[field] for field in _OPTIONAL_POLICY_FIELDS if field in policy_config}
 
 
 def route_request(
@@ -30,6 +45,7 @@ def route_request(
             name=properties["GuardrailName"],
             blockedInputMessaging=properties["BlockedInputMessaging"],
             blockedOutputsMessaging=properties["BlockedOutputsMessaging"],
+            **_policy_kwargs(properties),
         )
         version = _bedrock.create_guardrail_version(guardrailIdentifier=created["guardrailId"])
         return {
@@ -45,6 +61,7 @@ def route_request(
             name=properties["GuardrailName"],
             blockedInputMessaging=properties["BlockedInputMessaging"],
             blockedOutputsMessaging=properties["BlockedOutputsMessaging"],
+            **_policy_kwargs(properties),
         )
         version = _bedrock.create_guardrail_version(guardrailIdentifier=physical_id)
         return {"PhysicalResourceId": physical_id, "Data": {"GuardrailVersion": version["version"]}}

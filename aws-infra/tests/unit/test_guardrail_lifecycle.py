@@ -51,6 +51,33 @@ def test_update_bumps_a_new_version_without_deleting_the_prior_one(_mock_bedrock
     _mock_bedrock.delete_guardrail.assert_not_called()
 
 
+def test_create_forwards_optional_policy_config_fields(_mock_bedrock: MagicMock) -> None:
+    _mock_bedrock.create_guardrail.return_value = {
+        "guardrailId": "gr-123",
+        "guardrailArn": "arn:aws:bedrock:us-east-1:111111111111:guardrail/gr-123",
+    }
+    _mock_bedrock.create_guardrail_version.return_value = {"version": "1"}
+    topic_config = {"topicsConfig": [{"name": "PromptInjection", "type": "DENY"}]}
+
+    guardrail_handler.route_request(
+        "Create",
+        {
+            "GuardrailName": "IAMSentinelGuardrail-dev",
+            "BlockedInputMessaging": "blocked-in",
+            "BlockedOutputsMessaging": "blocked-out",
+            "PolicyConfig": {"topicPolicyConfig": topic_config, "unrelatedField": "ignored"},
+        },
+        physical_id=None,
+    )
+
+    _mock_bedrock.create_guardrail.assert_called_once_with(
+        name="IAMSentinelGuardrail-dev",
+        blockedInputMessaging="blocked-in",
+        blockedOutputsMessaging="blocked-out",
+        topicPolicyConfig=topic_config,
+    )
+
+
 def test_update_without_physical_id_raises(_mock_bedrock: MagicMock) -> None:
     with pytest.raises(ValueError, match="physical resource id"):
         guardrail_handler.route_request("Update", {}, physical_id=None)
