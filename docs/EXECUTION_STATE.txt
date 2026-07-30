@@ -1,0 +1,108 @@
+IAM SENTINEL — EXECUTION STATE
+==============================
+
+This file is the durable checkpoint the assistant reads on "start" and
+updates on "stop". Format is human-readable so you can inspect and edit
+it directly. Fields are key: value. Lists are indented with "- ".
+
+Contract: see docs/EXECUTION_PLAN.txt §8. The assistant mirrors the cursor
+to its persistent memory (`project-execution-cursor` entry); if that memory
+and this file disagree, this file wins.
+
+------------------------------------------------------------------
+CURSOR
+------------------------------------------------------------------
+CURRENT_PHASE: (none)
+STATUS: not_started
+BRANCH: main
+STARTED_AT: (unset)
+LAST_STEP: baseline canon committed; plan authored; awaiting first "start".
+NEXT_STEP: begin sprint step 01 — adapters phase-00 on feat/adapters-foundation.
+PREVIOUS_PHASE: (unset)
+
+------------------------------------------------------------------
+SPRINT PROGRESS (see EXECUTION_PLAN §6 for the ordered list)
+------------------------------------------------------------------
+Wave 1 — Substrate:
+  [ ] 01. adapters phase-00       feat/adapters-foundation
+  [ ] 02. agents phase-00         feat/agents-foundation
+  [ ] 03. aws-infra phase-00      feat/aws-infra-foundation
+  [ ] 04. aws-infra phase-01      feat/aws-infra-security
+  [ ] 05. adapters phase-03       feat/adapters-prompts
+  [ ] 06. adapters phase-04       feat/adapters-evidence
+  [ ] 07. agents phase-11         feat/agents-guardrails
+  ---- checkpoint-1-substrate ----
+Wave 2 — Data plane + LLM adapters:
+  [ ] 08. aws-infra phase-02      feat/aws-infra-foundation-stack
+  [ ] 09. adapters phase-05       feat/adapters-ddb
+  [ ] 10. adapters phase-01       feat/adapters-bedrock         (Grok + Bedrock providers)
+  [ ] 11. adapters phase-02       feat/adapters-zelkova
+  [ ] 12. aws-infra phase-03      feat/aws-infra-athena
+  [ ] 13. agents phase-10         feat/agents-rag
+  ---- checkpoint-2-data-plane ----
+Wave 3 — Supervisor + first specialist + first demo:
+  [ ] 14. aws-infra phase-04      feat/aws-infra-lambda
+  [ ] 15. aws-infra phase-05      feat/aws-infra-bedrock
+  [ ] 16. agents phase-01         feat/agents-supervisor
+  [ ] 17. aws-infra phase-08      feat/aws-infra-crossaccount
+  [ ] 18. agents phase-02         feat/agents-passrole
+  ---- checkpoint-3-first-demo ----
+Wave 4 — Backend + API:
+  [ ] 19. backend phase-00        feat/backend-foundation
+  [ ] 20. aws-infra phase-07      feat/aws-infra-api
+  [ ] 21. backend phase-01        feat/backend-rest
+  [ ] 22. backend phase-02        feat/backend-websocket
+  [ ] 23. aws-infra phase-06      feat/aws-infra-event
+  ---- checkpoint-4-api-live ----
+Wave 5 — Frontend demo path:
+  [ ] 24. frontend phase-00       feat/frontend-foundation
+  [ ] 25. frontend phase-01       feat/frontend-chat
+  [ ] 26. frontend phase-02       feat/frontend-findings
+  ---- checkpoint-5-frontend-alpha ----
+Wave 6 — Remaining specialists:
+  [ ] 27. agents phase-07         feat/agents-shadow-guard
+  [ ] 28. agents phase-05         feat/agents-scp-impact
+  [ ] 29. agents phase-08         feat/agents-collision-resolver
+  [ ] 30. agents phase-09         feat/agents-slr-guardian
+  [ ] 31. agents phase-03         feat/agents-org-context
+  [ ] 32. agents phase-04         feat/agents-data-events
+  [ ] 33. agents phase-06         feat/agents-session-terminator
+  ---- checkpoint-6-all-specialists ----
+Wave 7 — Approval + polish:
+  [ ] 34. backend phase-03        feat/backend-approval
+  [ ] 35. backend phase-04        feat/backend-audit
+  [ ] 36. frontend phase-03       feat/frontend-approval
+  [ ] 37. frontend phase-04       feat/frontend-dashboards
+  ---- checkpoint-7-approval-polish ----
+Wave 8 — Cross-cutting maturity:
+  [ ] 38. agents phase-14         feat/agents-memory
+  [ ] 39. agents phase-16         feat/agents-cost-guardrails
+  [ ] 40. agents phase-15         feat/agents-dual-mode
+  [ ] 41. agents phase-17         feat/agents-self-healing
+  [ ] 42. agents phase-12         feat/agents-observability
+  [ ] 43. agents phase-13         feat/agents-integration
+  ---- checkpoint-8-hardened (release/v1.0-submission) ----
+
+------------------------------------------------------------------
+CHECKPOINT TAGS ON MAIN (git tag, updated on merge of each wave-final PR)
+------------------------------------------------------------------
+- (none yet)
+
+------------------------------------------------------------------
+NOTES + BLOCKERS
+------------------------------------------------------------------
+- xAI API key not yet provisioned locally. Required before running evals
+  during adapters phase-01. User must set `XAI_API_KEY` in .env.local
+  before sprint step 10.
+- AWS account provisioning: dev account required before sprint step 03
+  (aws-infra phase-00). Break-glass initiator group must be seeded with
+  two identities before sprint step 04.
+- All 43 feature branches exist on origin at the baseline commit
+  `Establish IAM Sentinel canon` (3a3e255). Do not delete after merge.
+
+------------------------------------------------------------------
+HISTORY (append-only)
+------------------------------------------------------------------
+2026-07-30 baseline canon committed to main (commit 3a3e255).
+2026-07-30 43 feat/* branches pushed to origin.
+2026-07-30 EXECUTION_PLAN.txt and EXECUTION_STATE.txt authored.

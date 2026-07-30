@@ -1,0 +1,399 @@
+IAM SENTINEL — EXECUTION PLAN
+=============================
+
+Master plan for building IAM Sentinel one phase at a time. This file is the
+single source of truth for what to build next, in what order, how to test it,
+and how to promote it toward production.
+
+The companion file `docs/EXECUTION_STATE.txt` records the current cursor
+(which phase is in flight, what step within it) so any assistant session can
+resume without losing context.
+
+
+0. HOW TO USE THIS FILE
+-----------------------
+
+- The user types "start" — the assistant reads EXECUTION_STATE.txt, resumes
+  from the recorded cursor, and continues until they type "stop" or the
+  current phase finishes.
+- The user types "stop" — the assistant saves progress to EXECUTION_STATE.txt
+  and prints where it stopped. Nothing is left half-committed to a shared
+  branch; any partial work is committed to the feature branch with a WIP
+  marker in the commit message.
+- The user may specify a phase directly ("start agents phase-04"); the
+  assistant follows the same protocol but overrides the cursor.
+- Memory: the assistant also mirrors the cursor to its persistent memory
+  system (`project-execution-cursor` entry). If memory and this file
+  disagree, this file wins.
+
+Order of execution is defined in §6. Do not skip phases without an explicit
+user override recorded in EXECUTION_STATE.txt.
+
+
+1. GLOBAL ENGINEERING BAR
+-------------------------
+
+Every phase, no exception:
+
+- Code style: Python 3.12, ruff clean, mypy --strict clean.
+- Tests: unit + contract at minimum. Coverage ≥ 88% on new code.
+- Evals: any phase that touches an agent's behavior (agents phase-01..09,
+  phase-14..17) MUST write at least 5 golden eval cases and run them before
+  the phase is marked done.
+- Observability: every Lambda uses aws_lambda_powertools Logger + Tracer +
+  Metrics; every log line carries `correlation_id`.
+- Security: no `*` in IAM Action or Resource unless documented with an
+  inline comment; no secrets committed; sanitize every untrusted input.
+- Docs: any deviation from the phase spec goes into `docs/decisions/`
+  as an ADR before the code lands.
+- Branches: NEVER delete a completed feat/* branch. All branches are
+  preserved for evaluation review. Merged branches stay on origin.
+- Commits: conventional-commit prefix on every commit:
+  `feat(<module>-<phase>): <one-line summary>`.
+
+
+2. LLM PROVIDER ROUTING (LOCAL vs AWS)
+--------------------------------------
+
+Two providers behind one interface, chosen by env var `SENTINEL_LLM_PROVIDER`:
+
+- `grok` — local development and pytest. Uses xAI Grok API
+  (`grok-4-latest`, `grok-code-fast-1`, or successor).
+- `bedrock` — AWS deployments (dev, staging, prod). Uses Amazon Bedrock
+  (Claude Haiku 3.5 default, Sonnet 3.5 on request).
+
+Contract for the adapter at `adapters/src/iam_sentinel_adapters/llm/`:
+
+```python
+class LLMProvider(Protocol):
+    def invoke_agent(self, *, agent_id, input_text, session_id, ...) -> LLMResponse: ...
+    def invoke_model(self, *, model_id, messages, response_schema, ...) -> BaseModel: ...
+    def retrieve(self, *, kb_id, query, top_k) -> list[Chunk]: ...
+```
+
+Two implementations:
+- `BedrockProvider` — real Bedrock calls.
+- `GrokProvider` — Grok chat-completions calls with Bedrock-compatible I/O
+  translation. Multi-agent collaboration is emulated in-process (no real
+  Supervisor→Collaborator hop; the router picks the specialist directly).
+
+Guardrails: on Grok, use a local structural validator (schema + forbidden-
+pattern regex) as a stand-in — enough for eval correctness. Real Bedrock
+Guardrails only enforce in AWS.
+
+Adapters phase-01 spec is updated to reflect this split; when phase-01
+executes, the coder MUST build both providers and route via
+`SENTINEL_LLM_PROVIDER`.
+
+xAI API key:
+- Local: `XAI_API_KEY` env var, sourced from `.env.local` (gitignored).
+- CI: repo secret `XAI_API_KEY`.
+- AWS: never used; provider is always `bedrock`.
+
+
+3. FRONTEND POLISH BAR
+----------------------
+
+The console is a judged artifact. Frontend phases MUST meet:
+
+- Visual: shadcn/ui + Tailwind + Framer Motion for entrance and state
+  transitions. Recharts for all charts (not d3 direct). Consistent 8-pt
+  spacing grid.
+- Interaction: every click has immediate feedback (skeleton, spinner, or
+  optimistic update). Zero dead buttons. Every mutation shows a toast.
+- Chat: PROGRESS lines animate in with a typewriter effect; RESULT block
+  expands with a smooth height transition; citations open in a side sheet
+  with the AWS doc quote pinned.
+- Accessibility: axe-core zero violations at `serious`; keyboard-navigable
+  everything; visible focus rings; prefers-reduced-motion respected.
+- Performance: LCP ≤ 2.0 s on 4G (tighter than the phase file's 2.5 s
+  baseline); TTI ≤ 3.0 s.
+- Theme: dark by default, light toggleable; persisted preference.
+
+
+4. TESTING GATES
+----------------
+
+Per phase, the assistant WILL run these locally before committing:
+
+- `uv run ruff check <module>/src` — must be clean.
+- `uv run mypy --strict <module>/src` — must be clean.
+- `uv run pytest <module>/tests -x -q` — must pass.
+- Coverage delta reported in the commit body.
+
+For agents phases (phase-01..09, 14..17):
+- `uv run python -m iam_sentinel_agents.evals.runner --phase <id>` — MUST
+  score ≥ 0.9 on the phase's golden set (routing + verdict + citation +
+  grounding weighted mean).
+- Evals run against Grok locally; the same evals will re-run against
+  Bedrock during CI on merges to main (nightly workflow).
+
+For frontend phases:
+- `pnpm test` (Vitest + RTL) — must pass.
+- `pnpm test:e2e` (Playwright) — must pass on the phase's golden flow.
+- `pnpm axe` — zero `serious` violations.
+- `pnpm build` — must produce a static output.
+
+For aws-infra phases:
+- `uv run pytest aws-infra/tests/snapshot -x` — snapshots stable.
+- `cdk synth` — clean for every stack.
+- `cdk-nag` — zero AwsSolutions violations at Error severity.
+
+
+5. MERGE + PROMOTION CADENCE
+----------------------------
+
+Working state:
+- main = canonical baseline (currently at commit `Establish IAM Sentinel
+  canon`).
+- staging = last-known-good phased build. Auto-updated when a phase merges
+  with green CI.
+- prod = manual promote. Requires a passing 24-hour soak on staging AND a
+  passing eval-harness run.
+- feat/<module>-<phase> = one branch per phase (43 branches). Preserved
+  forever for evaluation review — NEVER delete.
+
+Per-phase lifecycle:
+1. Checkout feat/<phase> from current main.
+2. Implement per the phase file + universal prompt (§7).
+3. Test locally (§4).
+4. Commit to feat branch with conventional-commit message.
+5. Rebase onto latest main (no merge commits).
+6. Push feat branch.
+7. Open PR to main; CI runs (pytest, ruff, mypy, cdk-nag, evals, playwright
+   as applicable).
+8. On green: fast-forward merge to main. Tag `phase/<module>-<name>-done`.
+9. Auto-promote main to staging (CI job).
+10. Update EXECUTION_STATE.txt cursor to the next phase.
+11. If phase touches AWS resources: `cdk deploy` to dev after merge to
+    verify smoke tests before advancing.
+12. Feat branch remains on origin.
+
+Checkpoint tags:
+- `checkpoint-1-substrate` — after wave 1 done (phases 1..7 below).
+- `checkpoint-2-data-plane` — after wave 2 done.
+- `checkpoint-3-first-demo` — after wave 3 done. First end-to-end demo.
+- `checkpoint-4-api-live` — after wave 4 done.
+- `checkpoint-5-frontend-alpha` — after wave 5 done.
+- `checkpoint-6-all-specialists` — after wave 6 done.
+- `checkpoint-7-approval-polish` — after wave 7 done.
+- `checkpoint-8-hardened` — after wave 8 done. Submission-ready.
+
+`git tag` runs after each checkpoint on main.
+
+
+6. THE 43-PHASE LINEAR SPRINT
+-----------------------------
+
+Phase IDs used below are (module, phase-number-in-module). The absolute
+order accounts for cross-module dependencies. Feat branch name is on the
+right.
+
+WAVE 1 — SUBSTRATE (no runtime AWS yet, everything else needs this).
+  01. adapters phase-00    (adapters foundations)           feat/adapters-foundation
+  02. agents phase-00      (agents foundations, contracts)  feat/agents-foundation
+  03. aws-infra phase-00   (CDK Python bootstrap)           feat/aws-infra-foundation
+  04. aws-infra phase-01   (security stack: KMS, boundary,  feat/aws-infra-security
+                           break-glass STS, Guardrail CR)
+  05. adapters phase-03    (XML fencer + sanitizer)         feat/adapters-prompts
+  06. adapters phase-04    (evidence + KMS + ASFF)          feat/adapters-evidence
+  07. agents phase-11      (Guardrails config content)      feat/agents-guardrails
+  [checkpoint-1-substrate]
+
+WAVE 2 — DATA PLANE + LLM ADAPTERS.
+  08. aws-infra phase-02   (foundation: DDB, S3, SQS, SNS,  feat/aws-infra-foundation-stack
+                           OpenSearch Serverless)
+  09. adapters phase-05    (DDB + memory client)            feat/adapters-ddb
+  10. adapters phase-01    (LLM adapter — Grok + Bedrock)   feat/adapters-bedrock
+  11. adapters phase-02    (Zelkova adapter)                feat/adapters-zelkova
+  12. aws-infra phase-03   (Athena stack)                   feat/aws-infra-athena
+  13. agents phase-10      (RAG KB ingestion + manifest)    feat/agents-rag
+  [checkpoint-2-data-plane]
+
+WAVE 3 — SUPERVISOR + FIRST SPECIALIST + FIRST END-TO-END DEMO.
+  14. aws-infra phase-04   (Lambda stack)                   feat/aws-infra-lambda
+  15. aws-infra phase-05   (Bedrock stack — Prime + KB)     feat/aws-infra-bedrock
+  16. agents phase-01      (Sentinel Prime supervisor)      feat/agents-supervisor
+  17. aws-infra phase-08   (Cross-account StackSet)         feat/aws-infra-crossaccount
+  18. agents phase-02      (F1 PassRole Cartographer)       feat/agents-passrole
+  [checkpoint-3-first-demo]
+
+WAVE 4 — BACKEND + API SURFACE.
+  19. backend phase-00     (FastAPI foundations)            feat/backend-foundation
+  20. aws-infra phase-07   (API Gateway REST + WS + Cognito)feat/aws-infra-api
+  21. backend phase-01     (REST endpoints)                 feat/backend-rest
+  22. backend phase-02     (WebSocket streaming)            feat/backend-websocket
+  23. aws-infra phase-06   (EventBridge + alarms + sched)   feat/aws-infra-event
+  [checkpoint-4-api-live]
+
+WAVE 5 — FRONTEND DEMO PATH.
+  24. frontend phase-00    (Next.js 14 + Amplify + BFF)     feat/frontend-foundation
+  25. frontend phase-01    (chat console, streaming)        feat/frontend-chat
+  26. frontend phase-02    (findings inbox)                 feat/frontend-findings
+  [checkpoint-5-frontend-alpha]
+
+WAVE 6 — REMAINING SEVEN SPECIALISTS.
+  27. agents phase-07      (F6 Shadow Guard)                feat/agents-shadow-guard
+  28. agents phase-05      (F4 SCP Impact Analyst — engine) feat/agents-scp-impact
+  29. agents phase-08      (F7 Collision Resolver)          feat/agents-collision-resolver
+  30. agents phase-09      (F8 SLR Guardian)                feat/agents-slr-guardian
+  31. agents phase-03      (F2 Org Context Validator)       feat/agents-org-context
+  32. agents phase-04      (F3 Data Event Enricher)         feat/agents-data-events
+  33. agents phase-06      (F5 Session Terminator)          feat/agents-session-terminator
+  [checkpoint-6-all-specialists]
+
+WAVE 7 — APPROVAL FLOW + FRONTEND POLISH.
+  34. backend phase-03     (approval workflow + Zelkova)    feat/backend-approval
+  35. backend phase-04     (audit + reports + evidence)     feat/backend-audit
+  36. frontend phase-03    (remediation approval UI)        feat/frontend-approval
+  37. frontend phase-04    (dashboards + operations page)   feat/frontend-dashboards
+  [checkpoint-7-approval-polish]
+
+WAVE 8 — CROSS-CUTTING MATURITY (submission-ready).
+  38. agents phase-14      (memory fabric)                  feat/agents-memory
+  39. agents phase-16      (cost guardrails)                feat/agents-cost-guardrails
+  40. agents phase-15      (dual-mode execution)            feat/agents-dual-mode
+  41. agents phase-17      (self-healing)                   feat/agents-self-healing
+  42. agents phase-12      (observability + formal evals)   feat/agents-observability
+  43. agents phase-13      (integration + prompt-injection) feat/agents-integration
+  [checkpoint-8-hardened]
+
+At checkpoint-8, tag `release/v1.0-submission`.
+
+
+7. UNIVERSAL PER-PHASE PROMPT
+-----------------------------
+
+The assistant uses this exact prompt (with `${phase_file}` and `${branch}`
+substituted) as its plan for every phase it enters. Nothing here is
+optional.
+
+BEGIN PROMPT
+============
+You are a Principal Engineer implementing IAM Sentinel. You have 15+ years
+of AWS experience and you write production code that survives review by
+another principal engineer without a single "nit" comment.
+
+CONTEXT
+Read in full, in order:
+  1. /SYSTEM_STATE.md
+  2. /docs/ARCHITECTURE.md
+  3. /docs/AGENTIC_DESIGN.md
+  4. /docs/DATA_CONTRACTS.md
+  5. /docs/AWS_GAPS.md (only if the current phase involves a specialist)
+  6. ${phase_file} — this is your primary spec. Follow it line by line.
+  7. The relevant module README (e.g., agents/README.md).
+
+BRANCH
+You are on ${branch}. Do not switch branches. Do not touch main.
+
+DELIVERABLES
+Implement exactly what §2 (Deliverables) of ${phase_file} lists. Nothing
+more, nothing less. If you believe the spec is wrong, WRITE an ADR under
+docs/decisions/ before deviating.
+
+CODE STANDARDS
+- Python 3.12, type hints everywhere. Pydantic v2 for every data model.
+- ruff + mypy --strict must be clean.
+- No `*` in IAM Action or Resource unless the API surface demands it (add
+  an inline comment naming the surface).
+- boto3 only through the adapters/ package. No inline SDK calls.
+- Every Lambda handler uses aws_lambda_powertools decorators (Logger,
+  Tracer, Metrics) and `sentinel_handler(feature_id=…)`.
+- No comments explaining WHAT the code does. Only WHY, only when non-
+  obvious.
+
+LLM PROVIDER
+This project has TWO LLM providers behind one interface (see §2 of this
+plan). Any code that invokes an LLM MUST go through the LLM adapter and
+respect `SENTINEL_LLM_PROVIDER`. Local dev + tests use Grok. AWS uses
+Bedrock. Never hard-code either.
+
+TESTING
+Write, then run:
+- Unit tests in ${module}/tests/unit/.
+- Contract tests where new Pydantic models land.
+- Property tests (Hypothesis) for pure functions with adversarial inputs.
+- For AWS-touching code, moto fixtures — no live AWS in unit tests.
+- Achieve ≥ 88% coverage on the new code. Report the number in the
+  commit body.
+
+EVALS (agents phases only)
+Write a golden set at agents/evals/${feature_id}/golden.jsonl with at
+least 5 entries covering: obvious-yes, obvious-no, tricky, adversarial-
+input, latency-sensitive. Run:
+  uv run python -m iam_sentinel_agents.evals.runner --phase ${phase_id}
+Score MUST be ≥ 0.9 weighted (routing 0.2, verdict 0.4, citation 0.2,
+grounding 0.2). If it fails, tune the prompt or the code — never lower
+the threshold.
+
+FRONTEND (frontend phases only)
+Meet §3 of this plan. Framer Motion for transitions. Recharts for
+charts. shadcn/ui + Tailwind for surfaces. Dark by default. axe-core
+zero serious violations. Playwright covers the phase's golden flow.
+
+COMMIT PROTOCOL
+- Small commits, each green (tests pass) on its own.
+- Conventional-commit prefix: `feat(${module}-${phase}): …`.
+- Never commit secrets or `.env*` files (repo has `.gitignore` — trust
+  it, but verify with `git diff --cached` before commit).
+- Never `--amend` a pushed commit. Never `--force-push` to main or
+  staging.
+- On failure of a hook, fix the underlying issue and create a new commit.
+
+WHEN THE PHASE IS DONE
+- All tests green.
+- All acceptance criteria in §Acceptance of ${phase_file} met.
+- Evals score ≥ 0.9 (if applicable).
+- Commit + push feat branch.
+- Open PR to main; on green CI, fast-forward merge; tag
+  `phase/${module}-${name}-done`.
+- Update /docs/EXECUTION_STATE.txt cursor to the next phase.
+- Announce completion; do NOT proactively start the next phase unless
+  the user said "start".
+END PROMPT
+
+
+8. START/STOP CONTRACT
+----------------------
+
+- "start" — read EXECUTION_STATE.txt. If `CURRENT_PHASE` is null or
+  `completed`, advance the cursor to the next phase in §6 and begin.
+  Otherwise resume the in-flight phase at `LAST_STEP`.
+- "stop" — commit any partial work with a WIP marker
+  (`chore(${phase}): WIP checkpoint`), push, and write the current
+  cursor to EXECUTION_STATE.txt. Do NOT merge to main mid-phase.
+- "start phase X" — override the cursor to X and begin. The prior
+  cursor is preserved in `PREVIOUS_PHASE`.
+- "status" — print EXECUTION_STATE.txt without changing anything.
+- "restart phase" — reset the current phase's branch to its pre-phase
+  parent commit and begin again. Confirms with the user first.
+
+
+9. NON-NEGOTIABLES
+------------------
+
+- Never delete a feat/* branch. Ever. Not even after merge.
+- Never force-push to main or staging.
+- Never skip tests or evals to hit a checkpoint.
+- Never merge a phase to main with a failing acceptance criterion.
+- Never commit an xAI or AWS API key. Ever.
+- Every finding cites the AWS documentation quote. Contract-enforced;
+  don't try to work around the validator.
+
+
+10. WHERE TO FIND THINGS
+------------------------
+
+- Phase specs: `<module>/docs/phase-*.txt`.
+- Contracts: `docs/DATA_CONTRACTS.md`.
+- The 8 AWS gaps with citations: `docs/AWS_GAPS.md`.
+- Agentic patterns (memory, dual-mode, cost, self-healing): the four
+  cross-cutting agent phases 14–17.
+- LLM adapter (Grok/Bedrock): `adapters/src/iam_sentinel_adapters/llm/`
+  (introduced by adapters phase-01).
+- Cursor: `docs/EXECUTION_STATE.txt` (this project) and the assistant's
+  `project-execution-cursor` memory entry.
+- Runbooks: `docs/runbooks/` (populated as each phase demands).
+
+End of plan.
