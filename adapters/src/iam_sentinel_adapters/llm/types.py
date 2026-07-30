@@ -33,6 +33,11 @@ class KnowledgeChunk:
     content: str
     source: str
     score: float
+    # `retrieved_on` grounds the phase-10 freshness contract (§4 step 6): a
+    # chunk without it (Grok's empty-list degraded path, or a KB data source
+    # that never got the `retrieved_on` metadata attribute) is never flagged
+    # stale -- there is no date to compare.
+    retrieved_on: str | None = None
 
 
 class LLMProvider(Protocol):

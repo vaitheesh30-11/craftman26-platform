@@ -163,6 +163,7 @@ class BedrockProvider:
                 content=result["content"]["text"],
                 source=result.get("location", {}).get("s3Location", {}).get("uri", ""),
                 score=result.get("score", 0.0),
+                retrieved_on=result.get("metadata", {}).get("retrieved_on"),
             )
             for result in response.get("retrievalResults", [])
         ]

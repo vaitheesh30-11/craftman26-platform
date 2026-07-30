@@ -44,6 +44,9 @@ class AdapterSettings(BaseSettings):
     grok_model_id: str = "grok-4-latest"
     xai_api_key: str = ""
     correlation_dollar_cap: float = 1.00
+    kb_manifest_bucket: str = "sentinelkb-manifest-dev"
+    kb_manifest_key: str = "manifest.json"
+    kb_manifest_kms_key_arn: str = ""
 
 
 settings = AdapterSettings()

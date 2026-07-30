@@ -65,3 +65,7 @@ class PromptTooLargeError(SentinelAdapterError):
 
 class EvidenceVerificationError(SentinelAdapterError):
     """Stored evidence failed KMS signature verification or is not valid JSON."""
+
+
+class ManifestVerificationError(SentinelAdapterError):
+    """The KB quote manifest failed KMS signature verification or is not valid JSON."""
