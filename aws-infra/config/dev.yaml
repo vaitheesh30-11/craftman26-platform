@@ -1,0 +1,7 @@
+stage: dev
+account_id: "111111111111"
+region: us-east-1
+org_id: o-devplaceholder
+org_root_id: r-devplaceholder
+delegated_admin_analyzer_account: "111111111111"
+delegated_admin_idc_account: "111111111111"

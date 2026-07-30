@@ -1,0 +1,84 @@
+name: infra-ci
+
+on:
+  push:
+    branches: [main, staging]
+    paths:
+      - "aws-infra/**"
+      - ".github/workflows/infra-ci.yml"
+  pull_request:
+    paths:
+      - "aws-infra/**"
+      - ".github/workflows/infra-ci.yml"
+
+defaults:
+  run:
+    working-directory: aws-infra
+
+env:
+  UV_LOCKED: "1"
+
+jobs:
+  lint:
+    name: lint (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          python-version: "3.12"
+      - run: uv sync --all-groups
+      - run: uv run ruff check src tests app.py
+      - run: uv run ruff format --check src tests app.py
+
+  type:
+    name: type (mypy --strict)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          python-version: "3.12"
+      - run: uv sync --all-groups
+      - run: uv run mypy --strict src
+
+  test:
+    name: test (cdk synth + cdk-nag + snapshot + pytest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm install -g aws-cdk@2.163.0
+      - uses: astral-sh/setup-uv@v3
+        with:
+          python-version: "3.12"
+      - run: uv sync --all-groups
+      - run: uv run cdk synth --all --context sentinel:stage=dev
+      - run: uv run pytest tests -v --junitxml=junit.xml --cov-report=xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: infra-test-results
+          path: |
+            aws-infra/junit.xml
+            aws-infra/coverage.xml
+      - name: Upload coverage to Codecov
+        if: github.ref == 'refs/heads/main'
+        uses: codecov/codecov-action@v4
+        with:
+          files: aws-infra/coverage.xml
+          flags: aws-infra
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  security:
+    name: security (pip-audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          python-version: "3.12"
+      - run: uv sync --all-groups
+      - run: uvx pip-audit --local

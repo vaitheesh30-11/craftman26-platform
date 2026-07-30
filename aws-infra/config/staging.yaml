@@ -1,0 +1,7 @@
+stage: staging
+account_id: "222222222222"
+region: us-east-1
+org_id: o-stagingplaceholder
+org_root_id: r-stagingplaceholder
+delegated_admin_analyzer_account: "222222222222"
+delegated_admin_idc_account: "222222222222"

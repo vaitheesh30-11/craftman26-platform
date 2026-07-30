@@ -1,0 +1,7 @@
+stage: prod
+account_id: "333333333333"
+region: us-east-1
+org_id: o-prodplaceholder
+org_root_id: r-prodplaceholder
+delegated_admin_analyzer_account: "333333333333"
+delegated_admin_idc_account: "333333333333"
