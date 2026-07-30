@@ -27,6 +27,7 @@ class StageConfig(BaseModel):
     org_root_id: str
     delegated_admin_analyzer_account: str
     delegated_admin_idc_account: str
+    org_trail_bucket_name: str = "org-cloudtrail-bucket-placeholder"
     haiku_model_id: str = "anthropic.claude-3-5-haiku-20241022-v1:0"
     sonnet_model_id: str = "anthropic.claude-3-5-sonnet-20241022-v2:0"
     kb_embedding_model_id: str = "amazon.titan-embed-text-v2:0"

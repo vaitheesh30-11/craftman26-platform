@@ -1,0 +1,35 @@
+{
+  "_source": "AWS-published CloudTrail Athena table schema (Athena partition-projection guide for CloudTrail logs), typed independently of iam_sentinel_infra.stacks.athena_stack.CLOUDTRAIL_COLUMNS as a regression fixture per phase-03 §3/§7.",
+  "columns": [
+    { "name": "eventversion", "type": "string" },
+    {
+      "name": "useridentity",
+      "type": "struct<type:string,principalid:string,arn:string,accountid:string,invokedby:string,accesskeyid:string,username:string,sessioncontext:struct<attributes:struct<mfaauthenticated:string,creationdate:string>,sessionissuer:struct<type:string,principalid:string,arn:string,accountid:string,username:string>>>"
+    },
+    { "name": "eventtime", "type": "string" },
+    { "name": "eventsource", "type": "string" },
+    { "name": "eventname", "type": "string" },
+    { "name": "awsregion", "type": "string" },
+    { "name": "sourceipaddress", "type": "string" },
+    { "name": "useragent", "type": "string" },
+    { "name": "errorcode", "type": "string" },
+    { "name": "errormessage", "type": "string" },
+    { "name": "requestparameters", "type": "string" },
+    { "name": "responseelements", "type": "string" },
+    { "name": "additionaleventdata", "type": "string" },
+    { "name": "requestid", "type": "string" },
+    { "name": "eventid", "type": "string" },
+    { "name": "resources", "type": "array<struct<arn:string,accountid:string,type:string>>" },
+    { "name": "eventtype", "type": "string" },
+    { "name": "apiversion", "type": "string" },
+    { "name": "readonly", "type": "string" },
+    { "name": "recipientaccountid", "type": "string" },
+    { "name": "serviceeventdetails", "type": "string" },
+    { "name": "sharedeventid", "type": "string" },
+    { "name": "vpcendpointid", "type": "string" },
+    {
+      "name": "tlsdetails",
+      "type": "struct<tlsversion:string,ciphersuite:string,clientprovidedhostheader:string>"
+    }
+  ]
+}

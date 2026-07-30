@@ -1,9 +1,843 @@
 {
+  "Metadata": {
+    "cdk_nag": {
+      "rules_to_suppress": [
+        {
+          "applies_to": [
+            "Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+          ],
+          "id": "AwsSolutions-IAM4",
+          "reason": "AWSLambdaBasicExecutionRole is CDK's default Lambda execution role addition (CloudWatch Logs only, scoped to the function's own log group)."
+        },
+        {
+          "id": "AwsSolutions-IAM5",
+          "reason": "Remaining wildcards are S3 object-level suffixes (`/*` under the results bucket or curated-writes prefix this stack was granted access to -- FoundationStack owns both buckets, cross-stack, so the exact resource token cdk-nag reports depends on CloudFormation's generated Fn::ImportValue export name, not something this stack controls) and the fixed action set `Key.grant_encrypt_decrypt` always emits (kms:GenerateDataKey*, kms:ReEncrypt*) -- both are CDK's own least-privilege grant helpers operating on Sentinel-owned resources, not hand-rolled wildcards."
+        },
+        {
+          "id": "HIPAA.Security-IAMNoInlinePolicy",
+          "reason": "CDK's auto-generated DefaultPolicy grants (Athena/Glue/S3/KMS actions scoped to this stack's own resources); splitting each into a managed policy adds indirection without changing the effective grant."
+        },
+        {
+          "id": "HIPAA.Security-LambdaInsideVPC",
+          "reason": "docs/ARCHITECTURE.md \u00a7Networking: IAM Sentinel is deliberately VPC-less across the whole platform."
+        }
+      ]
+    }
+  },
   "Parameters": {
     "BootstrapVersion": {
       "Default": "/cdk-bootstrap/hnb659fds/version",
       "Description": "Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]",
       "Type": "AWS::SSM::Parameter::Value<String>"
+    }
+  },
+  "Resources": {
+    "Bootstrap": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "CuratedLocation": {
+          "Fn::Join": [
+            "",
+            [
+              "s3://",
+              {
+                "Fn::ImportValue": "SentinelFoundation:ExportsOutputRefReports65402A0A5E09D1ED"
+              },
+              "/athena-curated/writes_curated/"
+            ]
+          ]
+        },
+        "CuratedTableName": "writes_curated",
+        "DatabaseName": "sentinel_cloudtrail",
+        "ServiceToken": {
+          "Fn::GetAtt": [
+            "BootstrapHandlerDD08BFAC",
+            "Arn"
+          ]
+        },
+        "TrailBucketName": "org-cloudtrail-bucket-dev-placeholder",
+        "WorkgroupName": "sentinel"
+      },
+      "Type": "AWS::CloudFormation::CustomResource",
+      "UpdateReplacePolicy": "Delete"
+    },
+    "BootstrapDlqF6174A21": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "MessageRetentionPeriod": 1209600,
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ]
+      },
+      "Type": "AWS::SQS::Queue",
+      "UpdateReplacePolicy": "Delete"
+    },
+    "BootstrapDlqPolicy26200033": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sqs:*",
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false"
+                }
+              },
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": "*"
+              },
+              "Resource": {
+                "Fn::GetAtt": [
+                  "BootstrapDlqF6174A21",
+                  "Arn"
+                ]
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "Queues": [
+          {
+            "Ref": "BootstrapDlqF6174A21"
+          }
+        ]
+      },
+      "Type": "AWS::SQS::QueuePolicy"
+    },
+    "BootstrapHandlerDD08BFAC": {
+      "DependsOn": [
+        "BootstrapHandlerServiceRoleDefaultPolicyCE790E24",
+        "BootstrapHandlerServiceRoleBC9D891A"
+      ],
+      "Properties": {
+        "Architectures": [
+          "arm64"
+        ],
+        "Code": {
+          "S3Bucket": "cdk-hnb659fds-assets-111111111111-us-east-1",
+          "S3Key": "ec2385bf96cbaa0e7a0abd4045a46bc3ec698c528bdef801dbc54c50bd76cbab.zip"
+        },
+        "DeadLetterConfig": {
+          "TargetArn": {
+            "Fn::GetAtt": [
+              "BootstrapDlqF6174A21",
+              "Arn"
+            ]
+          }
+        },
+        "Handler": "handler.handler",
+        "ReservedConcurrentExecutions": 1,
+        "Role": {
+          "Fn::GetAtt": [
+            "BootstrapHandlerServiceRoleBC9D891A",
+            "Arn"
+          ]
+        },
+        "Runtime": "python3.12",
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "Timeout": 300
+      },
+      "Type": "AWS::Lambda::Function"
+    },
+    "BootstrapHandlerServiceRoleBC9D891A": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com"
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition"
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+              ]
+            ]
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ]
+      },
+      "Type": "AWS::IAM::Role"
+    },
+    "BootstrapHandlerServiceRoleDefaultPolicyCE790E24": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sqs:SendMessage",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "BootstrapDlqF6174A21",
+                  "Arn"
+                ]
+              }
+            },
+            {
+              "Action": [
+                "athena:StartQueryExecution",
+                "athena:GetQueryExecution",
+                "athena:GetQueryResults"
+              ],
+              "Effect": "Allow",
+              "Resource": "arn:aws:athena:us-east-1:111111111111:workgroup/sentinel"
+            },
+            {
+              "Action": "glue:GetDatabase",
+              "Effect": "Allow",
+              "Resource": "arn:aws:glue:us-east-1:111111111111:database/sentinel_cloudtrail"
+            },
+            {
+              "Action": [
+                "glue:GetTable",
+                "glue:CreateTable"
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                "arn:aws:glue:us-east-1:111111111111:catalog",
+                "arn:aws:glue:us-east-1:111111111111:table/sentinel_cloudtrail/writes_curated"
+              ]
+            },
+            {
+              "Action": "s3:ListBucket",
+              "Effect": "Allow",
+              "Resource": "arn:aws:s3:::org-cloudtrail-bucket-dev-placeholder"
+            },
+            {
+              "Action": [
+                "s3:GetBucketLocation",
+                "s3:GetObject",
+                "s3:PutObject",
+                "s3:ListBucket"
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::ImportValue": "SentinelFoundation:ExportsOutputFnGetAttAthenaResults99A60126Arn5DEAC592"
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::ImportValue": "SentinelFoundation:ExportsOutputFnGetAttAthenaResults99A60126Arn5DEAC592"
+                      },
+                      "/*"
+                    ]
+                  ]
+                },
+                {
+                  "Fn::ImportValue": "SentinelFoundation:ExportsOutputFnGetAttReports65402A0AArn549BAC56"
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::ImportValue": "SentinelFoundation:ExportsOutputFnGetAttReports65402A0AArn549BAC56"
+                      },
+                      "/athena-curated/writes_curated/*"
+                    ]
+                  ]
+                }
+              ]
+            },
+            {
+              "Action": [
+                "kms:GenerateDataKey",
+                "kms:Decrypt"
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::ImportValue": "SentinelSecurity:ExportsOutputFnGetAttDataKey17AFBB84ArnCE2A1BC6"
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "PolicyName": "BootstrapHandlerServiceRoleDefaultPolicyCE790E24",
+        "Roles": [
+          {
+            "Ref": "BootstrapHandlerServiceRoleBC9D891A"
+          }
+        ]
+      },
+      "Type": "AWS::IAM::Policy"
+    },
+    "CloudtrailDatabase": {
+      "Properties": {
+        "CatalogId": "111111111111",
+        "DatabaseInput": {
+          "Name": "sentinel_cloudtrail"
+        }
+      },
+      "Type": "AWS::Glue::Database"
+    },
+    "CloudtrailLogsTable": {
+      "DependsOn": [
+        "CloudtrailDatabase"
+      ],
+      "Properties": {
+        "CatalogId": "111111111111",
+        "DatabaseName": "sentinel_cloudtrail",
+        "TableInput": {
+          "Name": "cloudtrail_logs",
+          "Parameters": {
+            "projection.account_id.type": "injected",
+            "projection.day.digits": "2",
+            "projection.day.range": "1,31",
+            "projection.day.type": "integer",
+            "projection.enabled": "true",
+            "projection.month.digits": "2",
+            "projection.month.range": "1,12",
+            "projection.month.type": "integer",
+            "projection.region.type": "injected",
+            "projection.year.range": "2020,2035",
+            "projection.year.type": "integer",
+            "storage.location.template": "s3://org-cloudtrail-bucket-dev-placeholder/AWSLogs/${account_id}/CloudTrail/${region}/${year}/${month}/${day}/"
+          },
+          "PartitionKeys": [
+            {
+              "Name": "account_id",
+              "Type": "string"
+            },
+            {
+              "Name": "region",
+              "Type": "string"
+            },
+            {
+              "Name": "year",
+              "Type": "string"
+            },
+            {
+              "Name": "month",
+              "Type": "string"
+            },
+            {
+              "Name": "day",
+              "Type": "string"
+            }
+          ],
+          "StorageDescriptor": {
+            "Columns": [
+              {
+                "Name": "eventversion",
+                "Type": "string"
+              },
+              {
+                "Name": "useridentity",
+                "Type": "struct<type:string,principalid:string,arn:string,accountid:string,invokedby:string,accesskeyid:string,username:string,sessioncontext:struct<attributes:struct<mfaauthenticated:string,creationdate:string>,sessionissuer:struct<type:string,principalid:string,arn:string,accountid:string,username:string>>>"
+              },
+              {
+                "Name": "eventtime",
+                "Type": "string"
+              },
+              {
+                "Name": "eventsource",
+                "Type": "string"
+              },
+              {
+                "Name": "eventname",
+                "Type": "string"
+              },
+              {
+                "Name": "awsregion",
+                "Type": "string"
+              },
+              {
+                "Name": "sourceipaddress",
+                "Type": "string"
+              },
+              {
+                "Name": "useragent",
+                "Type": "string"
+              },
+              {
+                "Name": "errorcode",
+                "Type": "string"
+              },
+              {
+                "Name": "errormessage",
+                "Type": "string"
+              },
+              {
+                "Name": "requestparameters",
+                "Type": "string"
+              },
+              {
+                "Name": "responseelements",
+                "Type": "string"
+              },
+              {
+                "Name": "additionaleventdata",
+                "Type": "string"
+              },
+              {
+                "Name": "requestid",
+                "Type": "string"
+              },
+              {
+                "Name": "eventid",
+                "Type": "string"
+              },
+              {
+                "Name": "resources",
+                "Type": "array<struct<arn:string,accountid:string,type:string>>"
+              },
+              {
+                "Name": "eventtype",
+                "Type": "string"
+              },
+              {
+                "Name": "apiversion",
+                "Type": "string"
+              },
+              {
+                "Name": "readonly",
+                "Type": "string"
+              },
+              {
+                "Name": "recipientaccountid",
+                "Type": "string"
+              },
+              {
+                "Name": "serviceeventdetails",
+                "Type": "string"
+              },
+              {
+                "Name": "sharedeventid",
+                "Type": "string"
+              },
+              {
+                "Name": "vpcendpointid",
+                "Type": "string"
+              },
+              {
+                "Name": "tlsdetails",
+                "Type": "struct<tlsversion:string,ciphersuite:string,clientprovidedhostheader:string>"
+              }
+            ],
+            "InputFormat": "com.amazon.emr.cloudtrail.CloudTrailInputFormat",
+            "Location": "s3://org-cloudtrail-bucket-dev-placeholder/AWSLogs/",
+            "OutputFormat": "org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat",
+            "SerdeInfo": {
+              "SerializationLibrary": "com.amazon.emr.hive.serde.CloudTrailSerde"
+            }
+          },
+          "TableType": "EXTERNAL_TABLE"
+        }
+      },
+      "Type": "AWS::Glue::Table"
+    },
+    "CurateDlq690E9C8C": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "MessageRetentionPeriod": 1209600,
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ]
+      },
+      "Type": "AWS::SQS::Queue",
+      "UpdateReplacePolicy": "Delete"
+    },
+    "CurateDlqPolicy1F9F9B83": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sqs:*",
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false"
+                }
+              },
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": "*"
+              },
+              "Resource": {
+                "Fn::GetAtt": [
+                  "CurateDlq690E9C8C",
+                  "Arn"
+                ]
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "Queues": [
+          {
+            "Ref": "CurateDlq690E9C8C"
+          }
+        ]
+      },
+      "Type": "AWS::SQS::QueuePolicy"
+    },
+    "CurateFunctionFCB03E66": {
+      "DependsOn": [
+        "CurateFunctionServiceRoleDefaultPolicy1D89E0C0",
+        "CurateFunctionServiceRoleED238097"
+      ],
+      "Properties": {
+        "Architectures": [
+          "arm64"
+        ],
+        "Code": {
+          "S3Bucket": "cdk-hnb659fds-assets-111111111111-us-east-1",
+          "S3Key": "c5800d779233b839e47e0061313245c4aac555dc35bf4be959d39957a2fded2b.zip"
+        },
+        "DeadLetterConfig": {
+          "TargetArn": {
+            "Fn::GetAtt": [
+              "CurateDlq690E9C8C",
+              "Arn"
+            ]
+          }
+        },
+        "Environment": {
+          "Variables": {
+            "ATHENA_CURATED_TABLE": "writes_curated",
+            "ATHENA_DATABASE": "sentinel_cloudtrail",
+            "ATHENA_RAW_TABLE": "cloudtrail_logs",
+            "ATHENA_WORKGROUP": "sentinel",
+            "SENTINEL_STAGE": "dev"
+          }
+        },
+        "Handler": "handler.handler",
+        "ReservedConcurrentExecutions": 1,
+        "Role": {
+          "Fn::GetAtt": [
+            "CurateFunctionServiceRoleED238097",
+            "Arn"
+          ]
+        },
+        "Runtime": "python3.12",
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "Timeout": 300
+      },
+      "Type": "AWS::Lambda::Function"
+    },
+    "CurateFunctionServiceRoleDefaultPolicy1D89E0C0": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sqs:SendMessage",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "CurateDlq690E9C8C",
+                  "Arn"
+                ]
+              }
+            },
+            {
+              "Action": [
+                "athena:StartQueryExecution",
+                "athena:GetQueryExecution",
+                "athena:GetQueryResults",
+                "athena:StopQueryExecution",
+                "athena:GetWorkGroup"
+              ],
+              "Effect": "Allow",
+              "Resource": "arn:aws:athena:us-east-1:111111111111:workgroup/sentinel"
+            },
+            {
+              "Action": [
+                "glue:GetDatabase",
+                "glue:GetTable",
+                "glue:GetTables",
+                "glue:GetPartition",
+                "glue:GetPartitions",
+                "glue:CreateTable",
+                "glue:UpdateTable",
+                "glue:BatchCreatePartition"
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                "arn:aws:glue:us-east-1:111111111111:catalog",
+                "arn:aws:glue:us-east-1:111111111111:database/sentinel_cloudtrail",
+                "arn:aws:glue:us-east-1:111111111111:table/sentinel_cloudtrail/cloudtrail_logs",
+                "arn:aws:glue:us-east-1:111111111111:table/sentinel_cloudtrail/writes_curated"
+              ]
+            },
+            {
+              "Action": [
+                "s3:GetBucketLocation",
+                "s3:GetObject",
+                "s3:ListBucket",
+                "s3:PutObject"
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::ImportValue": "SentinelFoundation:ExportsOutputFnGetAttAthenaResults99A60126Arn5DEAC592"
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::ImportValue": "SentinelFoundation:ExportsOutputFnGetAttAthenaResults99A60126Arn5DEAC592"
+                      },
+                      "/*"
+                    ]
+                  ]
+                }
+              ]
+            },
+            {
+              "Action": [
+                "s3:GetObject",
+                "s3:PutObject",
+                "s3:ListBucket",
+                "s3:DeleteObject"
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::ImportValue": "SentinelFoundation:ExportsOutputFnGetAttReports65402A0AArn549BAC56"
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::ImportValue": "SentinelFoundation:ExportsOutputFnGetAttReports65402A0AArn549BAC56"
+                      },
+                      "/athena-curated/writes_curated/*"
+                    ]
+                  ]
+                }
+              ]
+            },
+            {
+              "Action": [
+                "kms:Decrypt",
+                "kms:Encrypt",
+                "kms:ReEncrypt*",
+                "kms:GenerateDataKey*"
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::ImportValue": "SentinelSecurity:ExportsOutputFnGetAttDataKey17AFBB84ArnCE2A1BC6"
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "PolicyName": "CurateFunctionServiceRoleDefaultPolicy1D89E0C0",
+        "Roles": [
+          {
+            "Ref": "CurateFunctionServiceRoleED238097"
+          }
+        ]
+      },
+      "Type": "AWS::IAM::Policy"
+    },
+    "CurateFunctionServiceRoleED238097": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com"
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition"
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+              ]
+            ]
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ]
+      },
+      "Type": "AWS::IAM::Role"
+    },
+    "CurateSchedule4B50A7AF": {
+      "Properties": {
+        "ScheduleExpression": "rate(1 hour)",
+        "State": "ENABLED",
+        "Targets": [
+          {
+            "Arn": {
+              "Fn::GetAtt": [
+                "CurateFunctionFCB03E66",
+                "Arn"
+              ]
+            },
+            "Id": "Target0"
+          }
+        ]
+      },
+      "Type": "AWS::Events::Rule"
+    },
+    "CurateScheduleAllowEventRuleSentinelAthenaCurateFunctionCF471307DBD3D60D": {
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "CurateFunctionFCB03E66",
+            "Arn"
+          ]
+        },
+        "Principal": "events.amazonaws.com",
+        "SourceArn": {
+          "Fn::GetAtt": [
+            "CurateSchedule4B50A7AF",
+            "Arn"
+          ]
+        }
+      },
+      "Type": "AWS::Lambda::Permission"
+    },
+    "Workgroup": {
+      "Properties": {
+        "Name": "sentinel",
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "WorkGroupConfiguration": {
+          "BytesScannedCutoffPerQuery": 107374182400,
+          "EnforceWorkGroupConfiguration": true,
+          "EngineVersion": {
+            "SelectedEngineVersion": "Athena engine version 3"
+          },
+          "PublishCloudWatchMetricsEnabled": true,
+          "ResultConfiguration": {
+            "EncryptionConfiguration": {
+              "EncryptionOption": "SSE_KMS",
+              "KmsKey": {
+                "Fn::ImportValue": "SentinelSecurity:ExportsOutputFnGetAttDataKey17AFBB84ArnCE2A1BC6"
+              }
+            },
+            "OutputLocation": {
+              "Fn::Join": [
+                "",
+                [
+                  "s3://",
+                  {
+                    "Fn::ImportValue": "SentinelFoundation:ExportsOutputRefAthenaResults99A601264C50DC7A"
+                  },
+                  "/"
+                ]
+              ]
+            }
+          }
+        }
+      },
+      "Type": "AWS::Athena::WorkGroup"
     }
   },
   "Rules": {

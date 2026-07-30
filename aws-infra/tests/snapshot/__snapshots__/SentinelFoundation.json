@@ -33,6 +33,46 @@
       ]
     }
   },
+  "Outputs": {
+    "ExportsOutputFnGetAttAthenaResults99A60126Arn5DEAC592": {
+      "Export": {
+        "Name": "SentinelFoundation:ExportsOutputFnGetAttAthenaResults99A60126Arn5DEAC592"
+      },
+      "Value": {
+        "Fn::GetAtt": [
+          "AthenaResults99A60126",
+          "Arn"
+        ]
+      }
+    },
+    "ExportsOutputFnGetAttReports65402A0AArn549BAC56": {
+      "Export": {
+        "Name": "SentinelFoundation:ExportsOutputFnGetAttReports65402A0AArn549BAC56"
+      },
+      "Value": {
+        "Fn::GetAtt": [
+          "Reports65402A0A",
+          "Arn"
+        ]
+      }
+    },
+    "ExportsOutputRefAthenaResults99A601264C50DC7A": {
+      "Export": {
+        "Name": "SentinelFoundation:ExportsOutputRefAthenaResults99A601264C50DC7A"
+      },
+      "Value": {
+        "Ref": "AthenaResults99A60126"
+      }
+    },
+    "ExportsOutputRefReports65402A0A5E09D1ED": {
+      "Export": {
+        "Name": "SentinelFoundation:ExportsOutputRefReports65402A0A5E09D1ED"
+      },
+      "Value": {
+        "Ref": "Reports65402A0A"
+      }
+    }
+  },
   "Parameters": {
     "BootstrapVersion": {
       "Default": "/cdk-bootstrap/hnb659fds/version",
