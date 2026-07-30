@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
-from pydantic import BaseModel
 
 from iam_sentinel_agents.contracts import (
     AwsDocCitation,
@@ -32,6 +33,9 @@ from tests.contract._factories import (
 )
 
 pytestmark = pytest.mark.contract
+
+if TYPE_CHECKING:
+    from pydantic import BaseModel
 
 
 @pytest.mark.parametrize(

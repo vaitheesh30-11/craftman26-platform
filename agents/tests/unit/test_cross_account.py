@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 from typing import Any
 from unittest.mock import patch
 
@@ -65,7 +65,7 @@ def test_assume_refreshes_when_cache_within_safety_margin() -> None:
         access_key_id="stale-key",
         secret_access_key="stale-secret",
         session_token="stale-token",
-        expiration=datetime.now(timezone.utc) + timedelta(minutes=2),
+        expiration=datetime.now(UTC) + timedelta(minutes=2),
     )
     cross_account._CACHE.put(ACCOUNT_ID, ROLE_NAME, near_expiry)
 
@@ -125,7 +125,7 @@ def test_throttling_recovers_on_a_later_attempt() -> None:
         access_key_id="k",
         secret_access_key="s",
         session_token="t",
-        expiration=datetime.now(timezone.utc) + timedelta(hours=1),
+        expiration=datetime.now(UTC) + timedelta(hours=1),
     )
     with (
         patch.object(

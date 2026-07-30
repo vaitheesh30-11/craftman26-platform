@@ -84,7 +84,7 @@ def test_missing_correlation_id_raises_contract_error() -> None:
 
 def test_missing_api_path_and_function_raises_contract_error() -> None:
     broken = {k: v for k, v in OPENAPI_EVENT.items() if k not in {"apiPath", "httpMethod"}}
-    with pytest.raises(ContractError, match="apiPath.*function"):
+    with pytest.raises(ContractError, match=r"apiPath.*function"):
         parse_action_group(broken)
 
 

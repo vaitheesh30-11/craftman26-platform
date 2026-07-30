@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 
 from pydantic import AwareDatetime, Field, field_validator
 
 from iam_sentinel_agents.contracts.common import ARN_PATTERN, Base, ULID_PATTERN
+
+_MAX_HINTS = 16
+_MAX_HINT_KEY_LENGTH = 64
+_MAX_HINT_VALUE_LENGTH = 512
 
 
 class SentinelQuery(Base):
@@ -20,17 +24,20 @@ class SentinelQuery(Base):
     @field_validator("hints")
     @classmethod
     def _hints_size_cap(cls, value: dict[str, str]) -> dict[str, str]:
-        if len(value) > 16:
-            raise ValueError("hints capped at 16 entries")
+        if len(value) > _MAX_HINTS:
+            raise ValueError(f"hints capped at {_MAX_HINTS} entries")
         for key, val in value.items():
-            if len(key) > 64 or len(val) > 512:
-                raise ValueError("hint key ≤ 64 chars, value ≤ 512 chars")
+            if len(key) > _MAX_HINT_KEY_LENGTH or len(val) > _MAX_HINT_VALUE_LENGTH:
+                raise ValueError(
+                    f"hint key ≤ {_MAX_HINT_KEY_LENGTH} chars, "
+                    f"value ≤ {_MAX_HINT_VALUE_LENGTH} chars"
+                )
         return value
 
     @field_validator("submitted_at")
     @classmethod
     def _submitted_not_in_future(cls, value: datetime) -> datetime:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         if value > now + timedelta(minutes=5):
             raise ValueError("submitted_at cannot be more than 5 minutes in the future")
         return value

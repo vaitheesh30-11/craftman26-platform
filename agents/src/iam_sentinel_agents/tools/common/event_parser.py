@@ -126,7 +126,7 @@ def parse_action_group(event: Any) -> ParsedInvocation:
             parameters=parameters,
             action_group=action_group,
         )
-    except Exception as exc:  # noqa: BLE001 — normalize every failure to ContractError
+    except Exception as exc:
         raise ContractError(f"failed to build ParsedInvocation: {exc}") from exc
 
 

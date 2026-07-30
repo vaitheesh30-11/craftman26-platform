@@ -25,10 +25,10 @@ from iam_sentinel_agents.contracts.verdict import ToolInvocation
 from iam_sentinel_agents.errors import ContractError
 from iam_sentinel_agents.settings import settings
 from iam_sentinel_agents.tools.common.event_parser import (
-    ParsedInvocation,
     build_action_group_response,
     build_fallback_error_response,
     parse_action_group,
+    ParsedInvocation,
 )
 
 if TYPE_CHECKING:
@@ -129,7 +129,7 @@ def sentinel_handler(
                 input_hash = _canonical_hash(invocation.parameters)
                 try:
                     body = func(invocation, context)
-                except Exception as exc:  # noqa: BLE001 — conservative-default failure contract
+                except Exception as exc:
                     duration_ms = int((time.monotonic() - start) * 1000)
                     logger.exception("tool_failed", tool_name=resolved_tool_name)
                     _emit_invocation_metric(
@@ -176,7 +176,7 @@ def sentinel_handler(
         # already preserve `wrapper`'s exact signature or widen it to Any
         # varies by version, and an unused `type: ignore` is itself a mypy
         # --strict error. cast() is correct either way.
-        return cast(LambdaHandler, metrics.log_metrics(wrapper))
+        return cast("LambdaHandler", metrics.log_metrics(wrapper))
 
     return decorator
 

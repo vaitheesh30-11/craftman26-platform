@@ -5,9 +5,9 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from iam_sentinel_agents.contracts import AwsDocCitation, Finding
+from iam_sentinel_agents.contracts import AwsDocCitation
 from iam_sentinel_agents.contracts.finding import _canonical_quote_hash
-from tests.contract._factories import make_citation, make_finding
+from tests.contract._factories import make_finding
 
 pytestmark = pytest.mark.contract
 

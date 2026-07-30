@@ -14,7 +14,7 @@ narrow an invariant is.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 
 from hypothesis import strategies as st
 
@@ -70,8 +70,8 @@ def sha256_hexes() -> st.SearchStrategy[str]:
 
 def iso_dates() -> st.SearchStrategy[str]:
     return st.dates(
-        min_value=datetime(2020, 1, 1, tzinfo=timezone.utc).date(),
-        max_value=datetime(2035, 12, 31, tzinfo=timezone.utc).date(),
+        min_value=datetime(2020, 1, 1, tzinfo=UTC).date(),
+        max_value=datetime(2035, 12, 31, tzinfo=UTC).date(),
     ).map(lambda d: d.isoformat())
 
 
@@ -79,7 +79,7 @@ def aware_datetimes() -> st.SearchStrategy[datetime]:
     return st.datetimes(
         min_value=datetime(2020, 1, 1),
         max_value=datetime(2035, 12, 31),
-    ).map(lambda dt: dt.replace(tzinfo=timezone.utc))
+    ).map(lambda dt: dt.replace(tzinfo=UTC))
 
 
 def _arn_segment(min_size: int = 1, max_size: int = 12) -> st.SearchStrategy[str]:

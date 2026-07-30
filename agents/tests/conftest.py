@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import hashlib
 import unicodedata
-from collections.abc import Iterator
+from typing import TYPE_CHECKING
 
 import pytest
 
 from iam_sentinel_agents.contracts.finding import set_quote_manifest_provider
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 
 class _InMemoryManifest:

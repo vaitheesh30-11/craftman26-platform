@@ -6,7 +6,7 @@ line, and property tests can perturb from a known-good baseline.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from typing import Any
 
 from iam_sentinel_agents.contracts import (
@@ -32,7 +32,7 @@ VALID_KMS_ARN = "arn:aws:kms:us-east-1:111122223333:key/mrk-a1b2c3d4e5f678901234
 SHA256_ONES = "1" * 64
 SHA256_TWOS = "2" * 64
 SHA256_THREES = "3" * 64
-NOW = datetime(2026, 7, 30, 12, 0, 0, tzinfo=timezone.utc)
+NOW = datetime(2026, 7, 30, 12, 0, 0, tzinfo=UTC)
 
 CANONICAL_QUOTE = (
     "PassRole is not an API call. No CloudTrail logs are generated for iam:PassRole. "

@@ -13,7 +13,7 @@ import re
 import threading
 import time
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 from typing import TYPE_CHECKING
 
 import boto3
@@ -65,7 +65,7 @@ class _CredentialCache:
             cached = self._entries.get((account_id, role_name))
         if cached is None:
             return None
-        if not cached.is_fresh(now=datetime.now(timezone.utc)):
+        if not cached.is_fresh(now=datetime.now(UTC)):
             return None
         return cached
 

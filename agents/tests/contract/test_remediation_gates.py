@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 
 import pytest
 from pydantic import ValidationError
@@ -20,7 +20,7 @@ from tests.contract._factories import (
 
 pytestmark = pytest.mark.contract
 
-NOW = datetime(2026, 7, 30, 12, 0, 0, tzinfo=timezone.utc)
+NOW = datetime(2026, 7, 30, 12, 0, 0, tzinfo=UTC)
 
 
 def _zelkova(*, passed: bool) -> ZelkovaCheck:
@@ -45,7 +45,7 @@ def test_apply_without_pre_check_rejected() -> None:
 
 
 def test_apply_with_failing_pre_check_rejected() -> None:
-    with pytest.raises(ValidationError, match="zelkova_pre.pass=True"):
+    with pytest.raises(ValidationError, match=r"zelkova_pre\.pass=True"):
         RemediationPlan(
             action="attach_inline_policy",
             target_arn=VALID_ROLE_ARN,

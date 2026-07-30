@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+import logging
+from typing import Any, TYPE_CHECKING
 
 import pytest
-from aws_lambda_powertools.utilities.typing import LambdaContext
 
 from iam_sentinel_agents.tools.common import runtime
 from iam_sentinel_agents.tools.common.event_parser import ParsedInvocation
+
+if TYPE_CHECKING:
+    from aws_lambda_powertools.utilities.typing import LambdaContext
 
 pytestmark = pytest.mark.unit
 
@@ -54,10 +57,11 @@ def _reset_cold_start_tracking() -> None:
 
 
 def _read_json_lines(capsys: pytest.CaptureFixture[str]) -> list[dict[str, Any]]:
-    out = capsys.readouterr().out
+    captured = capsys.readouterr()
+    out = captured.out + captured.err  # Powertools Logger writes to stderr
     records: list[dict[str, Any]] = []
-    for line in out.splitlines():
-        line = line.strip()
+    for raw_line in out.splitlines():
+        line = raw_line.strip()
         if not line:
             continue
         try:
@@ -193,16 +197,50 @@ def test_emits_cold_start_metric_only_on_first_invocation(
     assert "ColdStart" not in second_names
 
 
-def test_logs_tool_completed_with_hashes(capsys: pytest.CaptureFixture[str]) -> None:
+class _ListHandler(logging.Handler):
+    """Attached directly to the Powertools logger instance.
+
+    Powertools sets `propagate=False` on its logger (to avoid duplicate
+    output), which breaks pytest's `caplog`; its singleton-per-service-name
+    logger also rebinds `capsys`'s stream incorrectly across tests. Attaching
+    our own handler straight to the logger object sidesteps both.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.lines: list[str] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.lines.append(self.format(record))
+
+
+def _completed_records(handler: _ListHandler) -> list[dict[str, Any]]:
+    records = []
+    for line in handler.lines:
+        try:
+            parsed = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if parsed.get("message") == "tool_completed":
+            records.append(parsed)
+    return records
+
+
+def test_logs_tool_completed_with_hashes() -> None:
     @runtime.sentinel_handler(feature_id="F1", tool_name="passrole_scan")
     def handler(invocation: ParsedInvocation, context: LambdaContext) -> dict[str, Any]:
         return {"edges": []}
 
-    handler(OPENAPI_EVENT, _fake_context())
+    target_logger = logging.getLogger("iam-sentinel-f1")
+    list_handler = _ListHandler()
+    list_handler.setFormatter(target_logger.handlers[0].formatter)
+    target_logger.addHandler(list_handler)
+    try:
+        handler(OPENAPI_EVENT, _fake_context())
+    finally:
+        target_logger.removeHandler(list_handler)
 
-    completed = [
-        r for r in _log_records(_read_json_lines(capsys)) if r.get("message") == "tool_completed"
-    ]
+    completed = _completed_records(list_handler)
     assert len(completed) == 1
     record = completed[0]
     assert record["tool_name"] == "passrole_scan"
@@ -214,23 +252,26 @@ def test_logs_tool_completed_with_hashes(capsys: pytest.CaptureFixture[str]) -> 
     assert record["aws_request_id"] == "req-123"
 
 
-def test_correlation_id_does_not_leak_across_invocations(
-    capsys: pytest.CaptureFixture[str],
-) -> None:
+def test_correlation_id_does_not_leak_across_invocations() -> None:
     @runtime.sentinel_handler(feature_id="F1", tool_name="passrole_scan")
     def handler(invocation: ParsedInvocation, context: LambdaContext) -> dict[str, Any]:
         return {}
 
-    handler(OPENAPI_EVENT, _fake_context())
-    capsys.readouterr()  # discard first invocation's output
-
     second_event = json.loads(json.dumps(OPENAPI_EVENT))
     second_event["sessionAttributes"]["correlation_id"] = "01JBP2VHF9K3Q0Z8R7X6M5N4A4"
-    handler(second_event, _fake_context())
 
-    completed = [
-        r for r in _log_records(_read_json_lines(capsys)) if r.get("message") == "tool_completed"
-    ]
+    target_logger = logging.getLogger("iam-sentinel-f1")
+    list_handler = _ListHandler()
+    list_handler.setFormatter(target_logger.handlers[0].formatter)
+    target_logger.addHandler(list_handler)
+    try:
+        handler(OPENAPI_EVENT, _fake_context())
+        list_handler.lines.clear()  # discard first invocation's records
+        handler(second_event, _fake_context())
+    finally:
+        target_logger.removeHandler(list_handler)
+
+    completed = _completed_records(list_handler)
     assert len(completed) == 1
     assert completed[0]["correlation_id"] == "01JBP2VHF9K3Q0Z8R7X6M5N4A4"
 
