@@ -235,5 +235,17 @@ def memory_procedural_table(moto_session: None) -> Table:
 
 
 @pytest.fixture
+def connections_table(moto_session: None) -> Table:
+    ddb = boto3.resource("dynamodb", region_name=_REGION)
+    ddb.create_table(
+        TableName="SentinelConnections-test",
+        KeySchema=[{"AttributeName": "connection_id", "KeyType": "HASH"}],
+        AttributeDefinitions=[{"AttributeName": "connection_id", "AttributeType": "S"}],
+        BillingMode="PAY_PER_REQUEST",
+    )
+    return ddb.Table("SentinelConnections-test")
+
+
+@pytest.fixture
 def moto_breaker(breakers_table: Table) -> BreakerAccessor:
     return BreakerAccessor(table=breakers_table)
