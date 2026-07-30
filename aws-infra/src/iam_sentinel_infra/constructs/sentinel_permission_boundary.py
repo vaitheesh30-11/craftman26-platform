@@ -43,10 +43,18 @@ class SentinelPermissionBoundary(Construct):
                     resources=resource_prefix_arns,
                 ),
                 iam.PolicyStatement(
+                    # Both role names are fixed literals owned by aws-infra
+                    # phase-08 (`crossaccount_stack.CROSS_ACCOUNT_ROLE_NAME` /
+                    # `DELEGATED_ADMIN_ROLE_NAME`) -- not imported here to avoid
+                    # a stack-ordering dependency this construct doesn't
+                    # otherwise need.
                     sid="AllowCrossAccountRoleAssumption",
                     effect=iam.Effect.ALLOW,
                     actions=["sts:AssumeRole"],
-                    resources=["arn:aws:iam::*:role/SentinelCrossAccountRole"],
+                    resources=[
+                        "arn:aws:iam::*:role/SentinelCrossAccountRole",
+                        "arn:aws:iam::*:role/SentinelDelegatedAdminAccountRole",
+                    ],
                 ),
                 iam.PolicyStatement(
                     sid="AllowF5SessionTerminatorScope",

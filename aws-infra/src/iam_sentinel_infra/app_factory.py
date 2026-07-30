@@ -68,7 +68,12 @@ def build_app(stage: Stage, *, app: cdk.App | None = None) -> cdk.App:
         env=env,
     )
     crossaccount = CrossAccountStack(
-        app, "SentinelCrossAccount", stage_config=stage_config, security=security, env=env
+        app,
+        "SentinelCrossAccount",
+        stage_config=stage_config,
+        security=security,
+        lambdas=lambdas,
+        env=env,
     )
 
     for stack in (security, foundation, athena, lambdas, bedrock, event, api, crossaccount):

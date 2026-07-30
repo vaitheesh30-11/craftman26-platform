@@ -49,6 +49,39 @@
         ]
       }
     },
+    "ExportsOutputFnGetAttEvidenceKey167D8F4DArnE1F27A98": {
+      "Export": {
+        "Name": "SentinelSecurity:ExportsOutputFnGetAttEvidenceKey167D8F4DArnE1F27A98"
+      },
+      "Value": {
+        "Fn::GetAtt": [
+          "EvidenceKey167D8F4D",
+          "Arn"
+        ]
+      }
+    },
+    "ExportsOutputFnGetAttGuardrail91D61981GuardrailArnCCBEF359": {
+      "Export": {
+        "Name": "SentinelSecurity:ExportsOutputFnGetAttGuardrail91D61981GuardrailArnCCBEF359"
+      },
+      "Value": {
+        "Fn::GetAtt": [
+          "Guardrail91D61981",
+          "GuardrailArn"
+        ]
+      }
+    },
+    "ExportsOutputFnGetAttGuardrail91D61981GuardrailVersionD8511E46": {
+      "Export": {
+        "Name": "SentinelSecurity:ExportsOutputFnGetAttGuardrail91D61981GuardrailVersionD8511E46"
+      },
+      "Value": {
+        "Fn::GetAtt": [
+          "Guardrail91D61981",
+          "GuardrailVersion"
+        ]
+      }
+    },
     "ExportsOutputFnGetAttKbKeyB9BF363EArn5DFF8B0E": {
       "Export": {
         "Name": "SentinelSecurity:ExportsOutputFnGetAttKbKeyB9BF363EArn5DFF8B0E"
@@ -58,6 +91,30 @@
           "KbKeyB9BF363E",
           "Arn"
         ]
+      }
+    },
+    "ExportsOutputRefGuardrail91D61981544B6523": {
+      "Export": {
+        "Name": "SentinelSecurity:ExportsOutputRefGuardrail91D61981544B6523"
+      },
+      "Value": {
+        "Ref": "Guardrail91D61981"
+      }
+    },
+    "ExportsOutputRefPermissionBoundary5A5E688699C146B3": {
+      "Export": {
+        "Name": "SentinelSecurity:ExportsOutputRefPermissionBoundary5A5E688699C146B3"
+      },
+      "Value": {
+        "Ref": "PermissionBoundary5A5E6886"
+      }
+    },
+    "ExportsOutputRefSecurityTopic077AEA2CE5C0B04D": {
+      "Export": {
+        "Name": "SentinelSecurity:ExportsOutputRefSecurityTopic077AEA2CE5C0B04D"
+      },
+      "Value": {
+        "Ref": "SecurityTopic077AEA2C"
       }
     }
   },
@@ -135,7 +192,7 @@
         ],
         "Code": {
           "S3Bucket": "cdk-hnb659fds-assets-111111111111-us-east-1",
-          "S3Key": "c9d3289448d976972d903c827211ac67ed013c047430736f08e1d9ad0ab637d3.zip"
+          "S3Key": "348f484da2ec9e0517e85988f3ca641b82b8a9125912825b6074012592aae88e.zip"
         },
         "DeadLetterConfig": {
           "TargetArn": {
@@ -361,7 +418,7 @@
         ],
         "Code": {
           "S3Bucket": "cdk-hnb659fds-assets-111111111111-us-east-1",
-          "S3Key": "c9d3289448d976972d903c827211ac67ed013c047430736f08e1d9ad0ab637d3.zip"
+          "S3Key": "348f484da2ec9e0517e85988f3ca641b82b8a9125912825b6074012592aae88e.zip"
         },
         "DeadLetterConfig": {
           "TargetArn": {
@@ -1188,7 +1245,7 @@
         ],
         "Code": {
           "S3Bucket": "cdk-hnb659fds-assets-111111111111-us-east-1",
-          "S3Key": "3b17023229f8e560c1a69670739b6e0829f1bfd5539879dfe4f4b4b704dd45e9.zip"
+          "S3Key": "2a07ae642dc2a5577d8df2983a67132a673f575805c194ab7848e9ad98352cc8.zip"
         },
         "DeadLetterConfig": {
           "TargetArn": {
@@ -1490,7 +1547,10 @@
             {
               "Action": "sts:AssumeRole",
               "Effect": "Allow",
-              "Resource": "arn:aws:iam::*:role/SentinelCrossAccountRole",
+              "Resource": [
+                "arn:aws:iam::*:role/SentinelCrossAccountRole",
+                "arn:aws:iam::*:role/SentinelDelegatedAdminAccountRole"
+              ],
               "Sid": "AllowCrossAccountRoleAssumption"
             },
             {

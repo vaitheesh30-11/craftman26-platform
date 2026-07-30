@@ -75,12 +75,28 @@
         "Ref": "AthenaResults99A60126"
       }
     },
+    "ExportsOutputRefEvidenceBucketC67FF7689705A422": {
+      "Export": {
+        "Name": "SentinelFoundation:ExportsOutputRefEvidenceBucketC67FF7689705A422"
+      },
+      "Value": {
+        "Ref": "EvidenceBucketC67FF768"
+      }
+    },
     "ExportsOutputRefReports65402A0A5E09D1ED": {
       "Export": {
         "Name": "SentinelFoundation:ExportsOutputRefReports65402A0A5E09D1ED"
       },
       "Value": {
         "Ref": "Reports65402A0A"
+      }
+    },
+    "ExportsOutputRefSentinelFindings041A34810F713541": {
+      "Export": {
+        "Name": "SentinelFoundation:ExportsOutputRefSentinelFindings041A34810F713541"
+      },
+      "Value": {
+        "Ref": "SentinelFindings041A3481"
       }
     }
   },
