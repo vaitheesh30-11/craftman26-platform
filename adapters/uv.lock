@@ -345,6 +345,19 @@ wheels = [
 ]
 
 [[package]]
+name = "hypothesis"
+version = "6.112.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "attrs" },
+    { name = "sortedcontainers" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/66/cb/ee8c37f20797ded08e147e712883b776da89f15abfc58072a08aea19bbf3/hypothesis-6.112.4.tar.gz", hash = "sha256:8fe64e4a6d0862e209e3c36b42037aee9665cb839d619d9281be45345ab7d856", size = 407975, upload-time = "2024-10-06T07:37:00.524Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c7/78/ae621a006c8ead1bbca2bf17b50b8fc4d8a4eb6bfe2c3b2845ccf9095e1f/hypothesis-6.112.4-py3-none-any.whl", hash = "sha256:6d3e3038968925069d1a7e7ebfa2ed0b65b22eff6800d1e88b687b3c6d2f57b5", size = 468836, upload-time = "2024-10-06T07:36:56.801Z" },
+]
+
+[[package]]
 name = "iam-sentinel-adapters"
 version = "0.1.0"
 source = { editable = "." }
@@ -360,6 +373,7 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "boto3-stubs", extra = ["bedrock-agent-runtime", "bedrock-runtime", "dynamodb", "iam", "kms", "s3", "ssm"] },
+    { name = "hypothesis" },
     { name = "moto", extra = ["all"] },
     { name = "mypy" },
     { name = "pytest" },
@@ -381,6 +395,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "boto3-stubs", extras = ["dynamodb", "kms", "s3", "iam", "ssm", "bedrock-runtime", "bedrock-agent-runtime"], specifier = "==1.35.36" },
+    { name = "hypothesis", specifier = "==6.112.4" },
     { name = "moto", extras = ["all"], specifier = "==5.0.16" },
     { name = "mypy", specifier = "==1.11.2" },
     { name = "pytest", specifier = "==8.3.3" },
@@ -1082,6 +1097,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/94/e7/b2c673351809dca68a0e064b6af791aa332cf192da575fd474ed7d6f16a2/six-1.17.0.tar.gz", hash = "sha256:ff70335d468e7eb6ec65b95b99d3a2836546063f63acc5171de367e834932a81", size = 34031, upload-time = "2024-12-04T17:35:28.174Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b7/ce/149a00dd41f10bc29e5921b496af8b574d8413afcd5e30dfa0ed46c2cc5e/six-1.17.0-py2.py3-none-any.whl", hash = "sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274", size = 11050, upload-time = "2024-12-04T17:35:26.475Z" },
+]
+
+[[package]]
+name = "sortedcontainers"
+version = "2.4.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/e8/c4/ba2f8066cceb6f23394729afe52f3bf7adec04bf9ed2c820b39e19299111/sortedcontainers-2.4.0.tar.gz", hash = "sha256:25caa5a06cc30b6b83d11423433f65d1f9d76c4c6a0c90e3379eaa43b9bfdb88", size = 30594, upload-time = "2021-05-16T22:03:42.897Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/32/46/9cb0e58b2deb7f82b84065f37f3bffeb12413f947f9388e4cac22c4621ce/sortedcontainers-2.4.0-py2.py3-none-any.whl", hash = "sha256:a163dcaede0f1c021485e957a39245190e74249897e2ae4b2aa38595db237ee0", size = 29575, upload-time = "2021-05-16T22:03:41.177Z" },
 ]
 
 [[package]]

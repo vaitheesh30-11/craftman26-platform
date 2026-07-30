@@ -57,3 +57,7 @@ class CircuitOpenError(SentinelAdapterError):
 
 class SanitizerRejection(SentinelAdapterError):  # noqa: N818 -- contract name, phase-00 §3
     """Untrusted input failed the prompt sanitizer's forbidden-pattern check."""
+
+
+class PromptTooLargeError(SentinelAdapterError):
+    """A composed prompt exceeded the Bedrock request-size accommodation cap."""
