@@ -35,6 +35,7 @@ class SpendKind(str, Enum):
     BEDROCK_AGENT_INVOCATION = "bedrock_agent_invocation"
     ATHENA_SCAN_BYTES = "athena_scan_bytes"
     LAMBDA_DURATION = "lambda_duration"
+    ZELKOVA_INVOCATION = "zelkova_invocation"
 
 
 class CostMeter:
