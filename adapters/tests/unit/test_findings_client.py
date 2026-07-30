@@ -35,13 +35,17 @@ def test_put_then_get_round_trips(findings_table: Table, moto_breaker: BreakerAc
     assert result["severity"] == "HIGH"
 
 
-def test_get_missing_finding_returns_none(findings_table: Table, moto_breaker: BreakerAccessor) -> None:
+def test_get_missing_finding_returns_none(
+    findings_table: Table, moto_breaker: BreakerAccessor
+) -> None:
     client = FindingsClient(table=findings_table, breaker=moto_breaker)
 
     assert client.get("111122223333", "F1", "nonexistent") is None
 
 
-def test_query_by_severity_uses_the_gsi(findings_table: Table, moto_breaker: BreakerAccessor) -> None:
+def test_query_by_severity_uses_the_gsi(
+    findings_table: Table, moto_breaker: BreakerAccessor
+) -> None:
     client = FindingsClient(table=findings_table, breaker=moto_breaker)
     client.put(_finding(finding_id="a", severity="HIGH", detected_at="2026-07-30T00:00:00+00:00"))
     client.put(_finding(finding_id="b", severity="LOW", detected_at="2026-07-30T00:00:00+00:00"))
@@ -52,7 +56,9 @@ def test_query_by_severity_uses_the_gsi(findings_table: Table, moto_breaker: Bre
     assert results[0]["finding_id"] == "a"
 
 
-def test_update_status_changes_the_stored_item(findings_table: Table, moto_breaker: BreakerAccessor) -> None:
+def test_update_status_changes_the_stored_item(
+    findings_table: Table, moto_breaker: BreakerAccessor
+) -> None:
     client = FindingsClient(table=findings_table, breaker=moto_breaker)
     client.put(_finding())
 
@@ -85,3 +91,60 @@ def test_query_by_severity_filters_out_stale_findings(
     results = client.query_by_severity("HIGH", since=datetime.now(UTC) - timedelta(days=1))
 
     assert results == []
+
+
+def test_get_by_id_finds_a_finding_without_knowing_account_or_feature(
+    findings_table: Table, moto_breaker: BreakerAccessor
+) -> None:
+    client = FindingsClient(table=findings_table, breaker=moto_breaker)
+    client.put(_finding(finding_id="a"))
+
+    result = client.get_by_id("a")
+
+    assert result is not None
+    assert result["account_id"] == "111122223333"
+
+
+def test_get_by_id_returns_none_when_missing(
+    findings_table: Table, moto_breaker: BreakerAccessor
+) -> None:
+    client = FindingsClient(table=findings_table, breaker=moto_breaker)
+
+    assert client.get_by_id("nonexistent") is None
+
+
+def test_list_page_by_account_and_feature_uses_main_table_query(
+    findings_table: Table, moto_breaker: BreakerAccessor
+) -> None:
+    client = FindingsClient(table=findings_table, breaker=moto_breaker)
+    client.put(_finding(finding_id="a", account_id="111122223333", feature_id="F1"))
+    client.put(_finding(finding_id="b", account_id="999988887777", feature_id="F1"))
+
+    items, next_key = client.list_page(account_id="111122223333", feature_id="F1")
+
+    assert [i["finding_id"] for i in items] == ["a"]
+    assert next_key is None
+
+
+def test_list_page_by_severity_uses_the_gsi_and_applies_extra_filters(
+    findings_table: Table, moto_breaker: BreakerAccessor
+) -> None:
+    client = FindingsClient(table=findings_table, breaker=moto_breaker)
+    client.put(_finding(finding_id="a", severity="HIGH", feature_id="F1"))
+    client.put(_finding(finding_id="b", severity="HIGH", feature_id="F2"))
+
+    items, _ = client.list_page(severity="HIGH", feature_id="F2")
+
+    assert [i["finding_id"] for i in items] == ["b"]
+
+
+def test_list_page_with_no_index_covering_filter_falls_back_to_scan(
+    findings_table: Table, moto_breaker: BreakerAccessor
+) -> None:
+    client = FindingsClient(table=findings_table, breaker=moto_breaker)
+    client.put(_finding(finding_id="a", principal_arn="arn:aws:iam::111122223333:role/X"))
+    client.put(_finding(finding_id="b", principal_arn="arn:aws:iam::111122223333:role/Y"))
+
+    items, _ = client.list_page(principal_arn="arn:aws:iam::111122223333:role/Y")
+
+    assert [i["finding_id"] for i in items] == ["b"]

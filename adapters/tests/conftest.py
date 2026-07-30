@@ -122,10 +122,50 @@ def decisions_table(moto_session: None) -> Table:
         AttributeDefinitions=[
             {"AttributeName": "principal", "AttributeType": "S"},
             {"AttributeName": "decided_at", "AttributeType": "S"},
+            {"AttributeName": "correlation_id", "AttributeType": "S"},
+        ],
+        GlobalSecondaryIndexes=[
+            {
+                "IndexName": "correlation-index",
+                "KeySchema": [
+                    {"AttributeName": "correlation_id", "KeyType": "HASH"},
+                    {"AttributeName": "decided_at", "KeyType": "RANGE"},
+                ],
+                "Projection": {"ProjectionType": "ALL"},
+            }
         ],
         BillingMode="PAY_PER_REQUEST",
     )
     return ddb.Table("SentinelDecisions-test")
+
+
+@pytest.fixture
+def faults_table(moto_session: None) -> Table:
+    ddb = boto3.resource("dynamodb", region_name=_REGION)
+    ddb.create_table(
+        TableName="SentinelFaults-test",
+        KeySchema=[
+            {"AttributeName": "correlation_id", "KeyType": "HASH"},
+            {"AttributeName": "detected_at", "KeyType": "RANGE"},
+        ],
+        AttributeDefinitions=[
+            {"AttributeName": "correlation_id", "AttributeType": "S"},
+            {"AttributeName": "detected_at", "AttributeType": "S"},
+            {"AttributeName": "fault_class", "AttributeType": "S"},
+        ],
+        GlobalSecondaryIndexes=[
+            {
+                "IndexName": "fault-class-index",
+                "KeySchema": [
+                    {"AttributeName": "fault_class", "KeyType": "HASH"},
+                    {"AttributeName": "detected_at", "KeyType": "RANGE"},
+                ],
+                "Projection": {"ProjectionType": "ALL"},
+            }
+        ],
+        BillingMode="PAY_PER_REQUEST",
+    )
+    return ddb.Table("SentinelFaults-test")
 
 
 @pytest.fixture

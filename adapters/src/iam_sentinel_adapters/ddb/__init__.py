@@ -7,6 +7,7 @@ from __future__ import annotations
 from iam_sentinel_adapters.ddb.base import DynamoDbHelper
 from iam_sentinel_adapters.ddb.decisions import DecisionsClient
 from iam_sentinel_adapters.ddb.decisions_in_flight import DecisionsInFlightClient
+from iam_sentinel_adapters.ddb.faults import FaultsClient
 from iam_sentinel_adapters.ddb.findings import FindingsClient
 from iam_sentinel_adapters.ddb.idempotency import IdempotencyClient
 
@@ -14,6 +15,7 @@ __all__ = [
     "DecisionsClient",
     "DecisionsInFlightClient",
     "DynamoDbHelper",
+    "FaultsClient",
     "FindingsClient",
     "IdempotencyClient",
 ]

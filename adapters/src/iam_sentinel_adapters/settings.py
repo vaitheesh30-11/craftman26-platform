@@ -49,6 +49,9 @@ class AdapterSettings(BaseSettings):
     kb_manifest_bucket: str = "sentinelkb-manifest-dev"
     kb_manifest_key: str = "manifest.json"
     kb_manifest_kms_key_arn: str = ""
+    faults_table: str = "SentinelFaults-dev"
+    reports_bucket: str = "sentinel-reports-dev"
+    router_function_name: str = ""
 
 
 settings = AdapterSettings()

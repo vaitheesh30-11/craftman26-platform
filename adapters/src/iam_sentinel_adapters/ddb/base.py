@@ -30,15 +30,13 @@ class DynamoDbHelper:
         metrics: Metrics | None = None,
     ) -> None:
         self._table_name = table_name
-        self._table: Table = table or boto3.resource(
-            "dynamodb", region_name=settings.region
-        ).Table(table_name)
+        self._table: Table = table or boto3.resource("dynamodb", region_name=settings.region).Table(
+            table_name
+        )
         self._breaker = breaker or BreakerAccessor()
         self._metrics = metrics or Metrics(namespace=settings.metric_namespace)
 
-    def put_item(
-        self, item: dict[str, Any], *, condition_expression: str | None = None
-    ) -> None:
+    def put_item(self, item: dict[str, Any], *, condition_expression: str | None = None) -> None:
         self._breaker.raise_if_open(self._table_name)
         try:
             self._write(item, condition_expression=condition_expression)
@@ -99,6 +97,80 @@ class DynamoDbHelper:
         self._metrics.add_metric(name="SentinelDdbReads", unit=MetricUnit.Count, value=1)
         return list(response.get("Items", []))
 
+    def query_page(
+        self,
+        *,
+        key_condition_expression: str,
+        expression_attribute_values: dict[str, Any],
+        expression_attribute_names: dict[str, str] | None = None,
+        filter_expression: str | None = None,
+        index_name: str | None = None,
+        limit: int = 100,
+        scan_index_forward: bool = True,
+        exclusive_start_key: dict[str, Any] | None = None,
+    ) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
+        """Like `query`, but also returns `LastEvaluatedKey` (opaque, caller
+        base64-encodes it as `next_token`) for backend REST pagination
+        (backend phase-01 §6) -- `query` alone discards it because no caller
+        needed multi-page reads before this phase.
+        """
+        self._breaker.raise_if_open(self._table_name)
+        kwargs: dict[str, Any] = {
+            "KeyConditionExpression": key_condition_expression,
+            "ExpressionAttributeValues": expression_attribute_values,
+            "Limit": limit,
+            "ScanIndexForward": scan_index_forward,
+        }
+        if expression_attribute_names is not None:
+            kwargs["ExpressionAttributeNames"] = expression_attribute_names
+        if filter_expression is not None:
+            kwargs["FilterExpression"] = filter_expression
+        if index_name is not None:
+            kwargs["IndexName"] = index_name
+        if exclusive_start_key is not None:
+            kwargs["ExclusiveStartKey"] = exclusive_start_key
+        try:
+            response = self._query(**kwargs)
+        except Exception:
+            self._breaker.record_failure(self._table_name)
+            raise
+        self._breaker.record_success(self._table_name)
+        self._metrics.add_metric(name="SentinelDdbReads", unit=MetricUnit.Count, value=1)
+        return list(response.get("Items", [])), response.get("LastEvaluatedKey")
+
+    def scan_page(
+        self,
+        *,
+        filter_expression: str | None = None,
+        expression_attribute_values: dict[str, Any] | None = None,
+        expression_attribute_names: dict[str, str] | None = None,
+        limit: int = 100,
+        exclusive_start_key: dict[str, Any] | None = None,
+    ) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
+        """Bounded fallback read path for filters that have no covering index
+        (backend phase-01 §6) -- correctness over efficiency for the handful
+        of query shapes no GSI was provisioned for; callers cap the number of
+        pages they walk rather than looping unbounded.
+        """
+        self._breaker.raise_if_open(self._table_name)
+        kwargs: dict[str, Any] = {"Limit": limit}
+        if filter_expression is not None:
+            kwargs["FilterExpression"] = filter_expression
+        if expression_attribute_values is not None:
+            kwargs["ExpressionAttributeValues"] = expression_attribute_values
+        if expression_attribute_names is not None:
+            kwargs["ExpressionAttributeNames"] = expression_attribute_names
+        if exclusive_start_key is not None:
+            kwargs["ExclusiveStartKey"] = exclusive_start_key
+        try:
+            response = self._scan(**kwargs)
+        except Exception:
+            self._breaker.record_failure(self._table_name)
+            raise
+        self._breaker.record_success(self._table_name)
+        self._metrics.add_metric(name="SentinelDdbReads", unit=MetricUnit.Count, value=1)
+        return list(response.get("Items", [])), response.get("LastEvaluatedKey")
+
     def update_item(
         self,
         key: dict[str, Any],
@@ -153,6 +225,13 @@ class DynamoDbHelper:
     def _query(self, **kwargs: Any) -> dict[str, Any]:
         try:
             return dict(self._table.query(**kwargs))
+        except self._table.meta.client.exceptions.ProvisionedThroughputExceededException as exc:
+            raise ThrottlingError(str(exc)) from exc
+
+    @retry(policy=Policy.AGGRESSIVE, retry_on=(ThrottlingError,))
+    def _scan(self, **kwargs: Any) -> dict[str, Any]:
+        try:
+            return dict(self._table.scan(**kwargs))
         except self._table.meta.client.exceptions.ProvisionedThroughputExceededException as exc:
             raise ThrottlingError(str(exc)) from exc
 

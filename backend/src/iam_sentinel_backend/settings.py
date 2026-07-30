@@ -46,5 +46,17 @@ class BackendSettings(BaseSettings):
     log_level: str = "INFO"
     service_name: str = "iam-sentinel-backend"
 
+    # Duplicated from `agents.settings` rather than imported -- same module
+    # boundary as `ids.py` (backend never depends on `agents/`). Two plain
+    # strings, not shared business logic.
+    prime_agent_id: str = ""
+    prime_agent_alias_id: str = ""
+
+    # backend phase-01 §4 step 5: poll `decisions.get(...)` with exponential
+    # backoff up to this budget after `invoke_agent` returns.
+    chat_poll_budget_seconds: float = 25.0
+    chat_poll_initial_delay_seconds: float = 0.5
+    chat_poll_max_delay_seconds: float = 5.0
+
 
 settings = BackendSettings()

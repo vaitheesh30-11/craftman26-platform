@@ -388,7 +388,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "boto3-stubs", extras = ["dynamodb", "kms", "s3", "iam", "ssm", "bedrock-runtime", "bedrock-agent-runtime", "securityhub", "sns", "sts"], specifier = "==1.35.36" },
+    { name = "boto3-stubs", extras = ["dynamodb", "kms", "s3", "iam", "ssm", "bedrock-runtime", "bedrock-agent-runtime", "securityhub", "sns", "sts", "lambda"], specifier = "==1.35.36" },
     { name = "hypothesis", specifier = "==6.112.4" },
     { name = "moto", extras = ["all"], specifier = "==5.0.16" },
     { name = "mypy", specifier = "==1.11.2" },

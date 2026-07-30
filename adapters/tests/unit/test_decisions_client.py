@@ -16,7 +16,9 @@ def test_put_then_latest_for_principal_round_trips(
     decisions_table: Table, moto_breaker: BreakerAccessor
 ) -> None:
     client = DecisionsClient(table=decisions_table, breaker=moto_breaker)
-    client.put({"principal": _PRINCIPAL, "decided_at": "2026-07-30T12:00:00Z", "status": "ANSWERED"})
+    client.put(
+        {"principal": _PRINCIPAL, "decided_at": "2026-07-30T12:00:00Z", "status": "ANSWERED"}
+    )
 
     latest = client.latest_for_principal(_PRINCIPAL)
 
@@ -28,20 +30,105 @@ def test_latest_for_principal_returns_most_recent_first(
     decisions_table: Table, moto_breaker: BreakerAccessor
 ) -> None:
     client = DecisionsClient(table=decisions_table, breaker=moto_breaker)
-    client.put({"principal": _PRINCIPAL, "decided_at": "2026-07-30T12:00:00Z", "status": "ANSWERED"})
-    client.put({"principal": _PRINCIPAL, "decided_at": "2026-07-30T13:00:00Z", "status": "ESCALATED"})
+    client.put(
+        {"principal": _PRINCIPAL, "decided_at": "2026-07-30T12:00:00Z", "status": "ANSWERED"}
+    )
+    client.put(
+        {"principal": _PRINCIPAL, "decided_at": "2026-07-30T13:00:00Z", "status": "ESCALATED"}
+    )
 
     latest = client.latest_for_principal(_PRINCIPAL, limit=1)
 
     assert latest[0]["status"] == "ESCALATED"
 
 
-def test_query_since_filters_by_sort_key(decisions_table: Table, moto_breaker: BreakerAccessor) -> None:
+def test_query_since_filters_by_sort_key(
+    decisions_table: Table, moto_breaker: BreakerAccessor
+) -> None:
     client = DecisionsClient(table=decisions_table, breaker=moto_breaker)
-    client.put({"principal": _PRINCIPAL, "decided_at": "2026-07-29T00:00:00Z", "status": "ANSWERED"})
-    client.put({"principal": _PRINCIPAL, "decided_at": "2026-07-30T13:00:00Z", "status": "ESCALATED"})
+    client.put(
+        {"principal": _PRINCIPAL, "decided_at": "2026-07-29T00:00:00Z", "status": "ANSWERED"}
+    )
+    client.put(
+        {"principal": _PRINCIPAL, "decided_at": "2026-07-30T13:00:00Z", "status": "ESCALATED"}
+    )
 
     results = client.query_since(_PRINCIPAL, "2026-07-30T00:00:00Z")
 
     assert len(results) == 1
     assert results[0]["status"] == "ESCALATED"
+
+
+def test_list_page_returns_most_recent_first_with_pagination(
+    decisions_table: Table, moto_breaker: BreakerAccessor
+) -> None:
+    client = DecisionsClient(table=decisions_table, breaker=moto_breaker)
+    client.put(
+        {"principal": _PRINCIPAL, "decided_at": "2026-07-29T00:00:00Z", "status": "ANSWERED"}
+    )
+    client.put(
+        {"principal": _PRINCIPAL, "decided_at": "2026-07-30T13:00:00Z", "status": "ESCALATED"}
+    )
+
+    items, next_key = client.list_page(_PRINCIPAL, limit=1)
+
+    assert len(items) == 1
+    assert items[0]["status"] == "ESCALATED"
+    assert next_key is not None
+
+
+def test_get_by_correlation_id_uses_the_gsi(
+    decisions_table: Table, moto_breaker: BreakerAccessor
+) -> None:
+    client = DecisionsClient(table=decisions_table, breaker=moto_breaker)
+    client.put(
+        {
+            "principal": _PRINCIPAL,
+            "decided_at": "2026-07-30T13:00:00Z",
+            "correlation_id": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+            "status": "ANSWERED",
+        }
+    )
+
+    found = client.get_by_correlation_id("01ARZ3NDEKTSV4RRFFQ69G5FAV")
+
+    assert found is not None
+    assert found["principal"] == _PRINCIPAL
+
+
+def test_get_by_id_finds_a_decision_within_a_known_principal(
+    decisions_table: Table, moto_breaker: BreakerAccessor
+) -> None:
+    client = DecisionsClient(table=decisions_table, breaker=moto_breaker)
+    client.put(
+        {
+            "principal": _PRINCIPAL,
+            "decided_at": "2026-07-30T13:00:00Z",
+            "decision_id": "01DECISIONID000000000000A",
+            "status": "ANSWERED",
+        }
+    )
+
+    found = client.get_by_id("01DECISIONID000000000000A", principal=_PRINCIPAL)
+
+    assert found is not None
+    assert found["status"] == "ANSWERED"
+
+
+def test_get_by_id_falls_back_to_scan_without_a_known_principal(
+    decisions_table: Table, moto_breaker: BreakerAccessor
+) -> None:
+    client = DecisionsClient(table=decisions_table, breaker=moto_breaker)
+    client.put(
+        {
+            "principal": _PRINCIPAL,
+            "decided_at": "2026-07-30T13:00:00Z",
+            "decision_id": "01DECISIONID000000000000B",
+            "status": "ANSWERED",
+        }
+    )
+
+    found = client.get_by_id("01DECISIONID000000000000B")
+
+    assert found is not None
+    assert found["principal"] == _PRINCIPAL
