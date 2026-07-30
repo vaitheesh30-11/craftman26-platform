@@ -12,13 +12,14 @@ and this file disagree, this file wins.
 ------------------------------------------------------------------
 CURSOR
 ------------------------------------------------------------------
-CURRENT_PHASE: agents phase-00 (foundations)
-STATUS: in_progress
-BRANCH: feat/agents-foundation
+CURRENT_PHASE: (none)
+STATUS: done
+BRANCH: main
 STARTED_AT: 2026-07-30
-LAST_STEP: chunk 1 committed (94acd79) — pyproject + tooling + 8 contract modules + 4 contract test files, all passing local validation.
-NEXT_STEP: chunk 2 — tools/common/{runtime,cross_account,event_parser}.py + unit tests + .github/workflows/agents-ci.yml. Then acceptance-gate the phase, tag phase/agents-foundation-done, fast-forward main, advance cursor to sprint step 02 (adapters phase-00 on feat/adapters-foundation, per user's request to start with agents phase-00 first, deviating from the plan's default ordering).
-PREVIOUS_PHASE: (unset)
+LAST_STEP: agents phase-00 CLOSED. Merged to main, tagged phase/agents-foundation-done. Real toolchain run (ruff/mypy --strict/pytest) on Python 3.13 with boto3-stubs — all clean, 78 tests passed, 96% coverage.
+NEXT_STEP: sprint step 01 — adapters phase-00 on feat/adapters-foundation.
+PREVIOUS_PHASE: agents phase-00 (done)
+TESTING POLICY (revised): write only tests needed to cover real behavior per phase (3-8 focused tests). No exhaustive Hypothesis fuzzing, no hand-audits — run the real tools (ruff/mypy/pytest) and fix only what fails.
 DEVIATION_NOTE: user requested "start with feat/agents-foundation" — sprint step 02 (agents phase-00) has been executed before sprint step 01 (adapters phase-00). Dependencies allow this because agents phase-00 defines pure Python contracts with no adapter imports at the contract layer.
 
 ------------------------------------------------------------------
