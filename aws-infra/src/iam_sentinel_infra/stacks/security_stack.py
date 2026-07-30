@@ -30,6 +30,7 @@ from aws_cdk import aws_stepfunctions_tasks as tasks
 from cdk_nag import NagSuppressions
 
 from iam_sentinel_infra.constructs.guardrail_custom_resource import GuardrailCustomResource
+from iam_sentinel_infra.constructs.sentinel_lambda import LAMBDA_ASSET_EXCLUDES
 from iam_sentinel_infra.constructs.sentinel_permission_boundary import SentinelPermissionBoundary
 
 if TYPE_CHECKING:
@@ -220,7 +221,7 @@ class SecurityStack(Stack):
             runtime=lambda_.Runtime.PYTHON_3_12,
             architecture=lambda_.Architecture.ARM_64,
             handler="approval.handler",
-            code=lambda_.Code.from_asset(str(_FUNCTIONS_DIR / "break_glass")),
+            code=lambda_.Code.from_asset(str(_FUNCTIONS_DIR / "break_glass"), exclude=LAMBDA_ASSET_EXCLUDES),
             timeout=Duration.seconds(10),
             reserved_concurrent_executions=5,
             dead_letter_queue=approval_dlq,
@@ -237,7 +238,7 @@ class SecurityStack(Stack):
             runtime=lambda_.Runtime.PYTHON_3_12,
             architecture=lambda_.Architecture.ARM_64,
             handler="assume.handler",
-            code=lambda_.Code.from_asset(str(_FUNCTIONS_DIR / "break_glass")),
+            code=lambda_.Code.from_asset(str(_FUNCTIONS_DIR / "break_glass"), exclude=LAMBDA_ASSET_EXCLUDES),
             timeout=Duration.seconds(10),
             reserved_concurrent_executions=5,
             dead_letter_queue=assume_dlq,

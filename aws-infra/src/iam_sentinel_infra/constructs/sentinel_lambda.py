@@ -32,6 +32,16 @@ DEFAULT_RESERVED_CONCURRENCY = 10
 _ERROR_ALARM_THRESHOLD = 5
 _ERROR_ALARM_PERIOD = Duration.minutes(5)
 
+# Every `lambda_.Code.from_asset(...)` call site in this repo must pass this:
+# pytest imports each `functions/*/handler.py` for its own unit tests, which
+# writes `__pycache__/*.pyc` into that same directory. `Code.from_asset`
+# hashes the directory's full byte content for its S3 asset key, so an
+# uncontrolled pycache write between "capture a snapshot" and "resynth to
+# verify it's stable" was making every snapshot depending on a Lambda asset
+# non-deterministic (found while verifying aws-infra phase-06's toolchain
+# run -- see ADR 0020's sibling fix, not a phase-06-specific resource).
+LAMBDA_ASSET_EXCLUDES = ["__pycache__", "*.pyc"]
+
 
 class SentinelLambda(Construct):
     def __init__(

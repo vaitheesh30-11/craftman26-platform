@@ -31,6 +31,7 @@ from iam_sentinel_infra.constructs.agent_collaborator_association import (
     AgentCollaboratorAssociation,
 )
 from iam_sentinel_infra.constructs.sentinel_bedrock_agent import SentinelBedrockAgent
+from iam_sentinel_infra.constructs.sentinel_lambda import LAMBDA_ASSET_EXCLUDES
 
 if TYPE_CHECKING:
     from constructs import Construct
@@ -294,7 +295,7 @@ class BedrockStack(Stack):
             runtime=lambda_.Runtime.PYTHON_3_12,
             architecture=lambda_.Architecture.ARM_64,
             handler="handler.handler",
-            code=lambda_.Code.from_asset(str(_FUNCTIONS_DIR / "kb_index_bootstrap")),
+            code=lambda_.Code.from_asset(str(_FUNCTIONS_DIR / "kb_index_bootstrap"), exclude=LAMBDA_ASSET_EXCLUDES),
             timeout=Duration.seconds(60),
             reserved_concurrent_executions=2,
             dead_letter_queue=dead_letter_queue,

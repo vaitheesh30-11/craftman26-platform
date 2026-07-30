@@ -33,6 +33,7 @@ from iam_sentinel_infra.constructs.sentinel_lambda import (
     DEFAULT_MEMORY_MB,
     DEFAULT_RESERVED_CONCURRENCY,
     DEFAULT_TIMEOUT,
+    LAMBDA_ASSET_EXCLUDES,
     SentinelLambda,
 )
 
@@ -115,7 +116,7 @@ class LambdaStack(Stack):
         layer = lambda_.LayerVersion(
             self,
             construct_id,
-            code=lambda_.Code.from_asset(str(asset_dir)),
+            code=lambda_.Code.from_asset(str(asset_dir), exclude=LAMBDA_ASSET_EXCLUDES),
             compatible_runtimes=[lambda_.Runtime.PYTHON_3_12],
             compatible_architectures=[lambda_.Architecture.ARM_64],
             description=description,
