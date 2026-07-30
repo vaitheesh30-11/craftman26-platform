@@ -33,6 +33,9 @@ class AgentSettings(BaseSettings):
     kb_manifest_refresh_seconds: int = Field(default=3600, ge=60)
     kb_knowledge_base_id: str = ""
     region: str = "us-east-1"
+    prime_agent_id: str = ""
+    prime_agent_alias_id: str = ""
+    security_hub_account_id: str = ""
 
 
 settings = AgentSettings()
