@@ -143,6 +143,9 @@ s3 = [
 securityhub = [
     { name = "mypy-boto3-securityhub" },
 ]
+sns = [
+    { name = "mypy-boto3-sns" },
+]
 ssm = [
     { name = "mypy-boto3-ssm" },
 ]
@@ -376,7 +379,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "boto3-stubs", extra = ["bedrock-agent-runtime", "bedrock-runtime", "dynamodb", "iam", "kms", "s3", "securityhub", "ssm"] },
+    { name = "boto3-stubs", extra = ["bedrock-agent-runtime", "bedrock-runtime", "dynamodb", "iam", "kms", "s3", "securityhub", "sns", "ssm"] },
     { name = "hypothesis" },
     { name = "moto", extra = ["all"] },
     { name = "mypy" },
@@ -400,7 +403,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "boto3-stubs", extras = ["dynamodb", "kms", "s3", "iam", "ssm", "bedrock-runtime", "bedrock-agent-runtime", "securityhub"], specifier = "==1.35.36" },
+    { name = "boto3-stubs", extras = ["dynamodb", "kms", "s3", "iam", "ssm", "bedrock-runtime", "bedrock-agent-runtime", "securityhub", "sns"], specifier = "==1.35.36" },
     { name = "hypothesis", specifier = "==6.112.4" },
     { name = "moto", extras = ["all"], specifier = "==5.0.16" },
     { name = "mypy", specifier = "==1.11.2" },
@@ -714,6 +717,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/0b/07/1f6332dcd555b2140499159859000080e3aa2c0b004930141eaf117ec320/mypy_boto3_securityhub-1.35.93.tar.gz", hash = "sha256:da43ce0f92794cafaf41b41515f2bdcfaf2e4de5cbeb6b23d49a9ed82b81e2cc", size = 135846, upload-time = "2025-01-07T00:47:54.106Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/0e/f0/82931a8fe98b25c55996b068b1460a8527bf4758164adc4f2bb74a1ede15/mypy_boto3_securityhub-1.35.93-py3-none-any.whl", hash = "sha256:a33d31b478a04df6996094177b07144dfaf5df9cc66210dfe8ae8e2d129143bf", size = 143484, upload-time = "2025-01-07T00:47:50.819Z" },
+]
+
+[[package]]
+name = "mypy-boto3-sns"
+version = "1.35.93"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/b1/fd/dceadf2b71f19b9e01b7fb9f80e76c57a38bf53eaea0df05204d42ee1493/mypy_boto3_sns-1.35.93.tar.gz", hash = "sha256:fd17cec410bc477096652431d324881f4d33b89fab7c4c857f3347442354ffa1", size = 32910, upload-time = "2025-01-07T00:49:34.656Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f6/43/503437c8efb6b1bb4e66e11540438876cfffb6561247af52e49ba75c19f9/mypy_boto3_sns-1.35.93-py3-none-any.whl", hash = "sha256:528b0246da33f4f0fce957cbcc844d9df4df372b70229361a0694f125b40dfcc", size = 39975, upload-time = "2025-01-07T00:49:31.793Z" },
 ]
 
 [[package]]

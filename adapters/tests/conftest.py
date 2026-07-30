@@ -111,6 +111,36 @@ def decisions_in_flight_table(moto_session: None) -> Table:
 
 
 @pytest.fixture
+def decisions_table(moto_session: None) -> Table:
+    ddb = boto3.resource("dynamodb", region_name=_REGION)
+    ddb.create_table(
+        TableName="SentinelDecisions-test",
+        KeySchema=[
+            {"AttributeName": "principal", "KeyType": "HASH"},
+            {"AttributeName": "decided_at", "KeyType": "RANGE"},
+        ],
+        AttributeDefinitions=[
+            {"AttributeName": "principal", "AttributeType": "S"},
+            {"AttributeName": "decided_at", "AttributeType": "S"},
+        ],
+        BillingMode="PAY_PER_REQUEST",
+    )
+    return ddb.Table("SentinelDecisions-test")
+
+
+@pytest.fixture
+def idempotency_table(moto_session: None) -> Table:
+    ddb = boto3.resource("dynamodb", region_name=_REGION)
+    ddb.create_table(
+        TableName="SentinelIdempotency-test",
+        KeySchema=[{"AttributeName": "correlation_id", "KeyType": "HASH"}],
+        AttributeDefinitions=[{"AttributeName": "correlation_id", "AttributeType": "S"}],
+        BillingMode="PAY_PER_REQUEST",
+    )
+    return ddb.Table("SentinelIdempotency-test")
+
+
+@pytest.fixture
 def memory_episodic_table(moto_session: None) -> Table:
     ddb = boto3.resource("dynamodb", region_name=_REGION)
     ddb.create_table(
