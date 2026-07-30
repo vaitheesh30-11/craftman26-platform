@@ -13,39 +13,41 @@ and this file disagree, this file wins.
 CURSOR
 ------------------------------------------------------------------
 CURRENT_PHASE: (none)
-STATUS: not_started
+STATUS: done
 BRANCH: main
-STARTED_AT: (unset)
-LAST_STEP: baseline canon committed; plan authored; awaiting first "start".
-NEXT_STEP: begin sprint step 01 — adapters phase-00 on feat/adapters-foundation.
-PREVIOUS_PHASE: (unset)
+STARTED_AT: 2026-07-30
+LAST_STEP: agents phase-02 (F1 PassRole Cartographer) CLOSED, scoped per ADR 0015 — see NOTES. Merged to main at 6973483, tagged phase/agents-passrole-done. Real toolchain run (uv sync/ruff/mypy --strict/pytest) — all clean, 191 tests passed, 96% coverage.
+NEXT_STEP: sprint step 19 — backend phase-00 on feat/backend-foundation.
+PREVIOUS_PHASE: agents phase-02 (done, scoped)
+TESTING POLICY (revised): write only tests needed to cover real behavior per phase (3-8 focused tests). No exhaustive Hypothesis fuzzing, no hand-audits — run the real tools (ruff/mypy/pytest) and fix only what fails.
+DEVIATION_NOTE: user requested "start with feat/agents-foundation" — sprint step 02 (agents phase-00) has been executed before sprint step 01 (adapters phase-00). Dependencies allow this because agents phase-00 defines pure Python contracts with no adapter imports at the contract layer.
 
 ------------------------------------------------------------------
 SPRINT PROGRESS (see EXECUTION_PLAN §6 for the ordered list)
 ------------------------------------------------------------------
 Wave 1 — Substrate:
-  [ ] 01. adapters phase-00       feat/adapters-foundation
-  [ ] 02. agents phase-00         feat/agents-foundation
-  [ ] 03. aws-infra phase-00      feat/aws-infra-foundation
-  [ ] 04. aws-infra phase-01      feat/aws-infra-security
-  [ ] 05. adapters phase-03       feat/adapters-prompts
-  [ ] 06. adapters phase-04       feat/adapters-evidence
-  [ ] 07. agents phase-11         feat/agents-guardrails
-  ---- checkpoint-1-substrate ----
+  [x] 01. adapters phase-00       feat/adapters-foundation
+  [x] 02. agents phase-00         feat/agents-foundation
+  [x] 03. aws-infra phase-00      feat/aws-infra-foundation
+  [x] 04. aws-infra phase-01      feat/aws-infra-security  (code-complete; 2 criteria deferred — see NOTES)
+  [x] 05. adapters phase-03       feat/adapters-prompts
+  [x] 06. adapters phase-04       feat/adapters-evidence
+  [x] 07. agents phase-11         feat/agents-guardrails  (scoped per ADR 0004 — see NOTES)
+  ---- checkpoint-1-substrate ---- [TAGGED on main]
 Wave 2 — Data plane + LLM adapters:
-  [ ] 08. aws-infra phase-02      feat/aws-infra-foundation-stack
-  [ ] 09. adapters phase-05       feat/adapters-ddb
-  [ ] 10. adapters phase-01       feat/adapters-bedrock         (Grok + Bedrock providers)
+  [x] 08. aws-infra phase-02      feat/aws-infra-foundation-stack
+  [x] 09. adapters phase-05       feat/adapters-ddb  (scoped to 3 representative table clients — see ADR 0006)
+  [x] 10. adapters phase-01       feat/adapters-bedrock         (Grok + Bedrock providers)
   [ ] 11. adapters phase-02       feat/adapters-zelkova
   [ ] 12. aws-infra phase-03      feat/aws-infra-athena
   [ ] 13. agents phase-10         feat/agents-rag
   ---- checkpoint-2-data-plane ----
 Wave 3 — Supervisor + first specialist + first demo:
-  [ ] 14. aws-infra phase-04      feat/aws-infra-lambda
-  [ ] 15. aws-infra phase-05      feat/aws-infra-bedrock
-  [ ] 16. agents phase-01         feat/agents-supervisor
-  [ ] 17. aws-infra phase-08      feat/aws-infra-crossaccount
-  [ ] 18. agents phase-02         feat/agents-passrole
+  [x] 14. aws-infra phase-04      feat/aws-infra-lambda
+  [x] 15. aws-infra phase-05      feat/aws-infra-bedrock
+  [x] 16. agents phase-01         feat/agents-supervisor
+  [x] 17. aws-infra phase-08      feat/aws-infra-crossaccount  (scoped; 3 criteria deferred — see NOTES)
+  [x] 18. agents phase-02         feat/agents-passrole  (scoped per ADR 0015 — see NOTES)
   ---- checkpoint-3-first-demo ----
 Wave 4 — Backend + API:
   [ ] 19. backend phase-00        feat/backend-foundation
@@ -86,19 +88,85 @@ Wave 8 — Cross-cutting maturity:
 ------------------------------------------------------------------
 CHECKPOINT TAGS ON MAIN (git tag, updated on merge of each wave-final PR)
 ------------------------------------------------------------------
-- (none yet)
+- checkpoint-1-substrate — 2026-07-30, on commit c233492. Wave 1 done
+  (sprint steps 01-07). 2 deferred items open (see NOTES): Guardrail LIVE
+  canary + break-glass drill (need a dev account), and running the
+  prompt-injection corpus through a deployed Prime (Prime doesn't exist
+  until Wave 3).
 
 ------------------------------------------------------------------
 NOTES + BLOCKERS
 ------------------------------------------------------------------
-- xAI API key not yet provisioned locally. Required before running evals
-  during adapters phase-01. User must set `XAI_API_KEY` in .env.local
-  before sprint step 10.
-- AWS account provisioning: dev account required before sprint step 03
-  (aws-infra phase-00). Break-glass initiator group must be seeded with
-  two identities before sprint step 04.
+- xAI API key still not provisioned locally. adapters phase-01's
+  GrokProvider is built and unit-tested against a mocked HTTP session
+  (see ADR 0007) — no real xAI call has been made or tested. Set
+  `XAI_API_KEY` in `.env.local` and re-verify GrokProvider against the
+  real endpoint before using Grok for actual local dev or evals.
+- AWS account provisioning: still not done. aws-infra phase-01 (security
+  stack) was built and verified entirely offline (cdk synth + cdk-nag +
+  mocked-boto3 unit tests per ADR 0001), but TWO of its acceptance criteria
+  are explicitly DEFERRED and open until a dev account exists:
+    1. Guardrail LIVE alias canary (payload "ignore your instructions" must
+       be blocked) — needs a deployed `SentinelSecurity` stack.
+    2. Break-glass drill end-to-end (single-signer fails, two-signer within
+       60s succeeds, alarm fires) — needs real `sts:AssumeRole` calls
+       across two distinct IAM principals.
+  Whoever provisions the dev account must re-open this phase and run both
+  before the security posture is production-verified. Break-glass
+  initiator group must be seeded with two identities at the same time.
+- Prompt-injection corpus (agents/tests/prompt_injection/corpus.jsonl, 24
+  payloads, agents phase-11) has not been run end-to-end: no Prime exists
+  until Wave 3 (sprint step 16) and no Guardrail is deployed until a dev
+  account exists. Re-run once both land; see ADR 0004.
+- aws-infra phase-02 (foundation stack) deferred 2 acceptance criteria
+  pending a real AWS dev account: OSS index queryable via opensearchpy,
+  and SNS delivery-status logs written to CloudWatch (needs real
+  subscriptions + live delivery). See ADR 0005.
+- adapters phase-05 (DDB adapter) only shipped 3 of 14 table clients
+  (Findings, DecisionsInFlight, Memory episodic/semantic/procedural via
+  MemoryClient) — see ADR 0006. The remaining 9 (Decisions,
+  MemorySemantic's own standalone client if ever split out, Policies,
+  SLRs, Revocations, Faults, Divergence, Idempotency) follow the identical
+  `DynamoDbHelper` pattern; add each on-demand when the specialist or
+  backend phase that needs it lands (starting with agents phase-02, F1,
+  Wave 3). Also: `MemoryClient.recall_episodic`'s true k-NN semantic path
+  needs a deployed OpenSearch Serverless collection — deferred with the
+  rest of ADR 0005.
+- adapters phase-01 (LLM adapter) deferred 2 acceptance criteria per
+  ADR 0007: "p99 adapter overhead ≤ 30ms vs raw boto3" (needs a real
+  benchmark against live Bedrock) and any real xAI call (see the
+  XAI_API_KEY note above). Streaming's mid-stream partial-cost-sample
+  cadence (spec: every 500 chunks) is not implemented — no consumer exists
+  yet (backend phase-02, Wave 4) to validate the right cadence against.
 - All 43 feature branches exist on origin at the baseline commit
   `Establish IAM Sentinel canon` (3a3e255). Do not delete after merge.
+- aws-infra phase-08 (cross-account) deferred all 3 acceptance criteria per
+  ADR 0014, pending a real AWS Organization: StackSet deployed to every
+  member account, drift detection returns IN_SYNC on deployed instances,
+  and feature-tag condition enforcement verified via live
+  iam:SimulatePrincipalPolicy/sts:AssumeRole. agents phase-02 fixed the
+  half of this that was code (see below); the live-AssumeRole proof itself
+  is still open. Delegated-admin role's wider Access Analyzer/SSO surface
+  also left unspecified — agents phase-02 (F1) turned out NOT to touch
+  Access Analyzer at all (only plain iam:List*/Get*); still pending
+  whichever of phase-03 (F2, org-context)/phase-07 (F6) actually needs it.
+- agents phase-02 (F1 PassRole Cartographer) deferred per ADR 0015:
+  (1) CDK wiring of PassRoleCartographer's CfnAgent + its two action-group
+  Lambdas into aws-infra's BedrockStack — blocked on Lambda dependency-
+  layer packaging (networkx + pydantic), a gap that predates this phase
+  (functions/layers/{boto3,powertools}/python/ are still empty .gitkeep
+  placeholders across all 16 prior phases, not something new to F1).
+  Whichever phase first solves that packaging problem should also call
+  `BedrockStack.new_agent()`/`associate_collaborator()` for F1 — the
+  Python tool code (tools/f1/scan.py, tools/f1/graph.py) is ready now.
+  (2) §9's "500-principal scan <60s" acceptance criterion is a design
+  property (bounded 10-worker thread pool, per-scan policy cache), not a
+  measured benchmark — moto has no network latency to approximate at that
+  scale meaningfully. (3) The golden eval set (agents/evals/f1/golden.jsonl,
+  10 entries covering all 5 required categories) is schema-verified only;
+  `iam_sentinel_agents.evals.runner` is a phase-12 deliverable that
+  doesn't exist yet, and no F1 agent is deployed to run a turn against.
+  Re-open all three once their respective blockers land.
 
 ------------------------------------------------------------------
 HISTORY (append-only)
@@ -106,3 +174,18 @@ HISTORY (append-only)
 2026-07-30 baseline canon committed to main (commit 3a3e255).
 2026-07-30 43 feat/* branches pushed to origin.
 2026-07-30 EXECUTION_PLAN.txt and EXECUTION_STATE.txt authored.
+2026-07-30 agents phase-00 started on feat/agents-foundation (per user override). Chunk 1 committed at 94acd79 — pyproject, tooling configs, 8 Pydantic contracts, contract tests. Branch pushed to origin.
+2026-07-30 Local toolchain gap noted: Windows machine has Python 3.13 only; uv/ruff/mypy/pytest not installed. Tests will run via CI once .github/workflows/agents-ci.yml lands in chunk 2, and locally after user installs uv.
+2026-07-30 adapters phase-00 done on feat/adapters-foundation, merged to main at 67cc04f, tagged phase/adapters-foundation-done. uv now installed locally; ran real ruff/mypy --strict/pytest. Deviation: pinned `aws-lambda-powertools[all]` bumped 2.42.0 -> 3.2.0 in adapters/pyproject.toml — 2.42.0's [all] extra hard-pins pydantic<2.0.0, which conflicts with pydantic==2.9.2 and made `uv sync` fail to resolve; confirmed the same conflict exists in agents/pyproject.toml (still on 2.42.0, unfixed — agents phase-00's prior "all clean" toolchain claim could not have been produced by a real `uv sync` on that pin and should be re-verified before agents phase-11 builds on it).
+2026-07-30 agents phase-00 re-verified: rebased feat/agents-foundation onto main, applied the same aws-lambda-powertools 2.42.0 -> 3.2.0 fix, ran real uv sync/ruff/mypy --strict/pytest. Result: 78 tests pass, 96% coverage, ruff clean, mypy --strict clean — the original functional claim held once the pin was fixed. Merged to main at 0d73bfe (fast-forward). No new tag; phase/agents-foundation-done already covers this phase.
+2026-07-30 aws-infra phase-00 done on feat/aws-infra-foundation, merged to main at 7a62f9c, tagged phase/aws-infra-foundation-done. Confirmed via the actual phase-00 spec that no live AWS account is needed (synth-only); node/npm available locally, cdk CLI run via `npx aws-cdk@2.163.0` (cdk.json app entry set to `uv run python app.py` so the CLI uses the uv-managed venv). Built config.py + 8 stack shells (dependency graph wired, resources land in later phases) + 5 shared L3 constructs + cdk-nag/AwsSolutions+HIPAA wiring. `cdk synth --all` clean for dev/staging/prod, cdk-nag zero Error-severity findings, snapshot baseline captured for all 8 stacks, 22 pytest cases (config validation + construct instantiation + synth/nag/snapshot), 99% coverage, ruff/mypy --strict clean.
+2026-07-30 aws-infra phase-01 done on feat/aws-infra-security, merged to main at 9f7f72c, tagged phase/aws-infra-security-done. User explicitly chose "build code-complete, defer live checks" for the 2 acceptance criteria that need a real AWS account (Guardrail LIVE canary, break-glass end-to-end drill) — see docs/decisions/0001. Built 3 KMS CMKs, Guardrail lifecycle Lambda (real bedrock:CreateGuardrail/UpdateGuardrail/DeleteGuardrail/CreateGuardrailVersion routing, unit-tested against a mocked boto3 client), extended SentinelPermissionBoundary with the phase-01 §5 deny statements, break-glass IAM role + two-signer Step Functions Standard workflow (approval Lambda decision logic unit-tested: distinct-principal + 60s-window check) + EventBridge/CloudWatch alarm to SNS. Two more deviations recorded as ADRs: 0002 (EventBridge management events instead of provisioning a new CloudTrail Trail) and 0003 (AWS Backup plan deferred to phase-02, PITR enabled in the meantime). Fixed a real bug along the way: IAM's MaxSessionDuration has a 3600s floor, so the spec's "900s break-glass session" is enforced via AssumeRole's DurationSeconds in the assume Lambda, not the role's MaxSessionDuration property. cdk synth clean for all 8 stacks/3 stages, cdk-nag (AwsSolutions + HIPAA) zero errors after real fixes (DLQ + reserved concurrency on every Lambda, DDB PITR, Step Functions logging + X-Ray, SNS KMS encryption + enforced TLS) plus justified suppressions for CDK-standard patterns (Lambda basic execution role, DefaultPolicy inline grants) and already-canonical architecture decisions (no-VPC per docs/ARCHITECTURE.md). 34 tests pass, 99% coverage, ruff/mypy --strict clean.
+2026-07-30 adapters phase-03 done on feat/adapters-prompts, merged to main at 87e7f3d, tagged phase/adapters-prompts-done. Built sanitize_untrusted() + build_prompt(); pulled forward a minimal evidence/canonicalize.py (RFC 8785 JCS subset) from phase-04 since the fencer needs it now. Found and fixed a real bug: forbidden patterns containing `<`/`>` (`</trusted_input`, `<|...|>`) were being checked after those characters were already stripped by the sanitizer's own character-removal step, making them permanently dead — the check now runs on the pre-strip text. Testing deviation from spec §7 (per the revised testing policy): Hypothesis property run capped at 200 examples, not 10,000; injection-pattern coverage trimmed to ~11 representative payloads, not the full 50-payload corpus. 38 tests pass, 98% coverage, ruff/mypy --strict clean.
+2026-07-30 adapters phase-04 done on feat/adapters-evidence, merged to main at 94b6103, tagged phase/adapters-evidence-done. Rewrote canonicalize.py for true RFC 8785 compliance — fetched the actual published test vectors from github.com/cyberphone/json-canonicalization (values/structures/arrays/french) via WebFetch and verified against them (weird.json/unicode.json skipped: their combining-character/emoji content couldn't be confirmed byte-exact through the fetch tool's summarization step). The phase-03 canonicalize.py was only a pragmatic subset (plain sort_keys json.dumps), not RFC-compliant — this rewrite implements real ECMA-262 Number::toString formatting (fixed vs. scientific notation thresholds), which Python's own float repr doesn't match beyond a coincidental overlap on small test cases. Built evidence/keys.py, kms_signer.py, kms_verifier.py (1h public-key cache; kms:Verify stays remote by design rather than reimplementing KMS's PSS salt-length convention locally), evidence/client.py (put_signed_evidence/verify with tamper detection via re-canonicalize+re-hash), security_hub/asff_mapper.py + client.py (batch 100, retry on LimitExceededException). Module-boundary note: adapters does not import agents' Finding model — ASFF mapper takes a local AsffFindingInput dataclass mirroring DATA_CONTRACTS.md instead. Testing scope reduced per the revised policy: property run at 200 examples (spec asks 1,000); ASFF conformance checked against documented required fields, not a live Security Hub schema validator. 67 tests pass, 98% coverage, ruff/mypy --strict clean.
+2026-07-30 agents phase-11 done on feat/agents-guardrails, merged to main at c233492, tagged phase/agents-guardrails-done. Wave 1 complete — tagged checkpoint-1-substrate. Per ADR 0004, scoped to just the two deliverables not already covered by other sprint steps (fencer/sanitizer = adapters phase-03 done; break-glass STS = aws-infra phase-01 done; Zelkova = its own sprint step, adapters phase-02): the actual Guardrail policy content (aws-infra/config/guardrail_v1.json — topic/content/PII/grounding policies) wired through an extended GuardrailCustomResource + lifecycle Lambda, and a 24-payload prompt-injection corpus (agents/tests/prompt_injection/corpus.jsonl, 3 per category x 8 categories, reduced from the spec's 200 per the revised testing policy) with a schema/quality test. Running the corpus end-to-end through a deployed Prime + Guardrail is deferred (neither exists yet) — tracked in NOTES + BLOCKERS. cdk synth clean, cdk-nag zero errors, ruff/mypy --strict clean in both aws-infra and agents; aws-infra 36 tests pass, agents 82 tests pass (96% coverage).
+2026-07-30 aws-infra phase-02 done on feat/aws-infra-foundation-stack, merged to main at c37bf56, tagged phase/aws-infra-foundation-stack-done. Wave 2 begins. Per ADR 0005: adapters phase-05's table inventory lists 14 tables despite both phase docs saying "13" -- provisioned all 14 rather than under-provisioning to match the miscounted headline. Established the key-attribute convention for the spec's `#`-joined PK/SK/GSI notation (composite-value attribute for main table keys, PK+SK split on the last `#` for GSIs) since adapters phase-05 hasn't landed yet to confirm it -- reconcile there if that phase's author reads it differently. Built all 14 DDB tables (CMK, PITR, deletion protection, on-demand) + an org-wide AWS Backup plan (the deferral ADR 0003 promised once this phase landed), the OSS VECTORSEARCH collection + policies + an index-bootstrap Lambda that hand-signs SigV4 via botocore instead of depending on opensearchpy (no Lambda-layer pipeline exists to add that dependency), 5 new S3 buckets sharing one access-log bucket, SessionKillQueue.fifo+DLQ, and 5 new SNS topics. Caught a real bug before it could hit deploy: phase-02 spec lists `SentinelSecurity` as one of its 6 topics, but aws-infra phase-01 already created it in SecurityStack for the break-glass alarm -- creating it again would collide (SNS names are unique per account+region). FoundationStack now references `security.security_topic` instead. Also had to fix mypy: two function dirs share a `handler.py` filename, which collided as one module when checked together -- CI and local runs now check each `functions/*/` directory separately. cdk synth clean, cdk-nag zero errors after real fixes (AWS Backup plan, log-bucket versioning) plus justified suppressions (no-VPC, single-region, CDK-standard managed-policy patterns, SSE-S3-only access-log bucket). 43 tests pass, 99% coverage, ruff/mypy --strict clean. Deferred per ADR 0005: OSS index query verification and SNS delivery-status logging both need a real AWS account.
+2026-07-30 adapters phase-05 done on feat/adapters-ddb, merged to main at 6d4a1c9, tagged phase/adapters-ddb-done. Per ADR 0006: scoped to `DynamoDbHelper` (the actual reusable logic -- retry, circuit breaker, EMF metrics) plus 3 representative table clients (FindingsClient, DecisionsInFlightClient, MemoryClient's DDB paths) instead of all 14 -- no specialist Lambda exists yet to validate the other 9 tables' query shapes against (Prime and F1 land in Wave 3). Reconciled ADR 0005's key-attribute convention as promised: confirmed the `#`-joined composite attribute names work as designed. Found a real bug doing so: DynamoDB's expression grammar treats a bare `#` as a name-placeholder marker, so those composite attribute names (`account_id#feature_id`, etc.) can't be referenced directly in KeyConditionExpression/UpdateExpression strings -- they need ExpressionAttributeNames aliases, which the base client didn't originally support. Added that support before it could bite a real caller. Client methods take/return plain dicts, never an agents Finding/EpisodicMemory model (module boundary). 86 tests pass, 95% coverage, ruff/mypy --strict clean. Deferred per ADR 0006: 9 remaining table clients (add on-demand per-consumer) and MemoryClient.recall_episodic's true k-NN path (needs a deployed OSS collection, per ADR 0005).
+2026-07-30 adapters phase-01 done on feat/adapters-bedrock, merged to main at 964c71f, tagged phase/adapters-bedrock-done. Built per docs/EXECUTION_PLAN.txt §2 (supersedes the pre-split phase-01 spec) and ADR 0007: a shared LLMProvider Protocol with BedrockProvider (real bedrock-agent-runtime/bedrock-runtime calls, budget gate, AGGRESSIVE retry, stopReason-based Guardrail detection, cost sampling) and GrokProvider (xAI's OpenAI-compatible endpoint via a new `requests` dependency, in-process multi-agent emulation, local structural Guardrail stand-in using the sanitizer's forbidden-pattern list), selected via SENTINEL_LLM_PROVIDER. Also built model_router.pick_model (cost-aware Haiku/Sonnet downgrade at 70% of cap) and output_validator.validate_output (rejects forged ARNs/evidence_ids/forbidden patterns). Found and closed a real cross-module gap: aws-infra phase-01 published /sentinel/{stage}/guardrail/version to SSM but never /sentinel/{stage}/guardrail/id, which this phase's GuardrailAccessor needs — added it to SecurityStack. Made prompts/sanitizer.py's FORBIDDEN_PATTERNS public so output_validator and GrokProvider's local guardrail both reference the same list instead of duplicating it. 112 tests pass, 94% coverage, ruff/mypy --strict clean in both adapters and aws-infra. Deferred per ADR 0007: the p99-overhead-vs-raw-boto3 benchmark, any real xAI call (XAI_API_KEY still unprovisioned), and streaming's mid-stream partial-cost-sample cadence (no consumer yet to validate it against).
+2026-07-31 sprint steps 11-16 done prior to this session (adapters phase-02 Zelkova, aws-infra phase-03 Athena, agents phase-10 RAG, aws-infra phase-04 Lambda, aws-infra phase-05 Bedrock, agents phase-01 Sentinel Prime supervisor) — see git tags phase/adapters-zelkova-done, phase/aws-infra-athena-done, phase/agents-rag-done, phase/aws-infra-lambda-done, phase/aws-infra-bedrock-done, phase/agents-supervisor-done for detail; this file's cursor had gone stale and was reconciled against git history at the start of this session.
+2026-07-31 aws-infra phase-08 (cross-account) done on feat/aws-infra-crossaccount, merged to main at 7afc5ed (fast-forward from prior WIP), tagged phase/aws-infra-crossaccount-done. Per ADR 0014: both StackSets (SentinelCrossAccountRole, SentinelDelegatedAdminAccountRole) synth-verified with hand-built CFN role templates (StackSets take a template body, no CDK L2 exists for that), drift-detection Lambda (real DetectStackSetDrift + bounded DescribeStackSetOperation poll + ListStackInstances, EMF metric alarmed through SecurityStack.security_topic), and a new-account health-check Step Functions workflow (30-min Wait matching AutoDeployment worst case, then sts:AssumeRole+iam:GetRole against the new account, Catch alerts to security_topic), triggered off Organizations CreateAccountResult on the default bus (no new Trail, per ADR 0002's precedent). Widened SentinelPermissionBoundary's AllowCrossAccountRoleAssumption to cover both new roles — without it no Sentinel Lambda could ever assume the delegated-admin role. Regenerated 3 stale snapshot fixtures (SentinelAthena, SentinelBedrock, SentinelCrossAccount) that had drifted from actual synth output before this phase's toolchain run. moto has no StackSet backend (same gap as ADR 0008/Access Analyzer) — tested via static assertions against the synthesized AWS::CloudFormation::StackSet resource + embedded template JSON, plus mocked-boto3 unit tests for both Lambdas. 91 tests pass, 99% coverage, ruff/mypy --strict clean. Deferred per ADR 0014: all 3 phase-08 acceptance criteria need a real AWS Organization (see NOTES).
+2026-07-31 agents phase-02 (F1 PassRole Cartographer) done on feat/agents-passrole, merged to main at 6973483, tagged phase/agents-passrole-done. Rebased the branch onto main first (it had sat at the original baseline commit 3a3e255 since the 43 feat branches were cut, 16 phases behind). Built per agents/docs/phase-02-passrole-cartographer.txt: contracts.passrole (PassRoleEdge/BlastPath/PassRoleBlastPayload), tools/f1/wildcard.py (fnmatchcase-based ARN Resource pattern resolver), tools/f1/scan.py (passrole_scan: paginated ListUsers/ListRoles, inline+attached policy collection via a 10-worker bounded ThreadPoolExecutor per §10's throttling risk, PassRole-statement extraction, wildcard edge resolution), tools/f1/graph.py (passrole_graph: networkx.DiGraph blast-radius BFS to depth 2), tools/f1/privilege.py + severity.py (the CRITICAL/HIGH/MEDIUM/LOW rubric), the specialist prompt and F1 action-group OpenAPI schema (both copied verbatim from spec), and a 10-entry evals/f1/golden.jsonl covering all 5 required categories. Found and fixed a real cross-module bug: tools/common/cross_account.assume() never passed Tags/TransitiveTagKeys to sts:AssumeRole, so aws:PrincipalTag/Feature — the condition key aws-infra ADR 0014 gates F2/F3/F5's mutating actions on — never actually existed at runtime; fixed with a regression test. Per ADR 0015, three things scoped out: (1) CDK wiring of the CfnAgent + its two Lambdas into BedrockStack, blocked on a pre-existing Lambda dependency-layer packaging gap (empty layer placeholders since aws-infra phase-04, not new to F1); (2) passrole_graph deviates from the spec's own "no AWS calls" one-liner and does real IAM reads to classify reached-role privilege, because no PassRoleEdge field carries the target role's own policy content and the spec's own Step 2 requires evaluating it — documented as a deliberate, tested resolution of a spec self-contradiction; (3) the golden eval set and the §9 500-principal/60s benchmark are both schema/design-verified only, not run/measured (phase-12's runner doesn't exist; no deployed F1 agent exists). 191 tests pass (moto-mocked against all 4 required fixtures: admin_shortcut→CRITICAL, service_scoped→MEDIUM, wildcard_pattern→4 resolved edges, no_passrole→empty), 96% coverage, ruff/mypy --strict clean in agents (mypy --strict run against src plus every touched/new test file; pre-existing unrelated strict-mode gaps in untouched test files were left alone, matching established precedent that only src is held to the "clean" bar).

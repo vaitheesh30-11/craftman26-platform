@@ -1,0 +1,1384 @@
+{
+  "Metadata": {
+    "cdk_nag": {
+      "rules_to_suppress": [
+        {
+          "applies_to": [
+            "Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+          ],
+          "id": "AwsSolutions-IAM4",
+          "reason": "AWSLambdaBasicExecutionRole is CDK's default Lambda execution role addition (CloudWatch Logs only, scoped to the function's own log group)."
+        },
+        {
+          "id": "AwsSolutions-IAM5",
+          "reason": "The drift detector's `cloudformation:List*`/`Describe*` surface and `sts:AssumeRole` on `arn:aws:iam::*:role/SentinelCrossAccountRole` are both wildcarded by design: the account-id segment is unknown at synth time (any current or future org member account) and `cloudwatch:PutMetricData` has no resource-level permissions at all per AWS's own action reference."
+        },
+        {
+          "id": "HIPAA.Security-LambdaInsideVPC",
+          "reason": "docs/ARCHITECTURE.md \u00a7Networking: IAM Sentinel is deliberately VPC-less across the whole platform."
+        },
+        {
+          "id": "HIPAA.Security-IAMNoInlinePolicy",
+          "reason": "CDK's auto-generated DefaultPolicy grants (sts:AssumeRole, cloudformation:Detect*/Describe*/List*, cloudwatch:PutMetricData, sns:Publish, and the Step Functions/EventBridge service roles CDK itself creates for the health-check workflow); splitting each into a managed policy adds indirection without changing the effective grant, matching the AthenaStack precedent (ADR 0009)."
+        }
+      ]
+    }
+  },
+  "Parameters": {
+    "BootstrapVersion": {
+      "Default": "/cdk-bootstrap/hnb659fds/version",
+      "Description": "Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]",
+      "Type": "AWS::SSM::Parameter::Value<String>"
+    }
+  },
+  "Resources": {
+    "CrossAccountDriftAlarm06E5FA3E": {
+      "Properties": {
+        "AlarmActions": [
+          {
+            "Fn::ImportValue": "SentinelSecurity:ExportsOutputRefSecurityTopic077AEA2CE5C0B04D"
+          }
+        ],
+        "AlarmDescription": "A SentinelCrossAccountRole/SentinelDelegatedAdminAccountRole stack instance has drifted from its StackSet-defined template.",
+        "ComparisonOperator": "GreaterThanThreshold",
+        "EvaluationPeriods": 1,
+        "MetricName": "SentinelCrossAccountDrift",
+        "Namespace": "IAMSentinel/CrossAccount",
+        "Period": 3600,
+        "Statistic": "Maximum",
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "Threshold": 0,
+        "TreatMissingData": "notBreaching"
+      },
+      "Type": "AWS::CloudWatch::Alarm"
+    },
+    "CrossAccountRoleStackSet": {
+      "Properties": {
+        "AutoDeployment": {
+          "Enabled": true,
+          "RetainStacksOnAccountRemoval": false
+        },
+        "Capabilities": [
+          "CAPABILITY_NAMED_IAM"
+        ],
+        "Description": "Deploys SentinelCrossAccountRole to every org member account except Sentinel's own central account (phase-08 \u00a72-4).",
+        "OperationPreferences": {
+          "FailureTolerancePercentage": 5,
+          "MaxConcurrentPercentage": 25
+        },
+        "PermissionModel": "SERVICE_MANAGED",
+        "StackInstancesGroup": [
+          {
+            "DeploymentTargets": {
+              "AccountFilterType": "DIFFERENCE",
+              "Accounts": [
+                "111111111111"
+              ],
+              "OrganizationalUnitIds": [
+                "r-devplaceholder"
+              ]
+            },
+            "Regions": [
+              "us-east-1"
+            ]
+          }
+        ],
+        "StackSetName": "SentinelCrossAccountRole-dev",
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "TemplateBody": "{\"AWSTemplateFormatVersion\": \"2010-09-09\", \"Description\": \"IAM Sentinel cross-account role (SentinelCrossAccountRole), owned by aws-infra phase-08. Do not edit outside the StackSet.\", \"Resources\": {\"SentinelRole\": {\"Type\": \"AWS::IAM::Role\", \"Properties\": {\"RoleName\": \"SentinelCrossAccountRole\", \"AssumeRolePolicyDocument\": {\"Version\": \"2012-10-17\", \"Statement\": [{\"Effect\": \"Allow\", \"Principal\": {\"AWS\": \"arn:aws:iam::111111111111:root\"}, \"Action\": \"sts:AssumeRole\", \"Condition\": {\"StringEquals\": {\"aws:PrincipalTag/Project\": \"IAMSentinel\"}, \"StringLike\": {\"aws:PrincipalArn\": \"arn:aws:iam::111111111111:role/Sentinel*\"}}}]}, \"Policies\": [{\"PolicyName\": \"SentinelReadOnlyBundle\", \"PolicyDocument\": {\"Version\": \"2012-10-17\", \"Statement\": [{\"Sid\": \"IamRead\", \"Effect\": \"Allow\", \"Action\": [\"iam:List*\", \"iam:Get*\", \"iam:SimulatePrincipalPolicy\", \"iam:SimulateCustomPolicy\", \"iam:GetAccountAuthorizationDetails\"], \"Resource\": \"*\"}, {\"Sid\": \"OrgRead\", \"Effect\": \"Allow\", \"Action\": [\"organizations:Describe*\", \"organizations:List*\"], \"Resource\": \"*\"}, {\"Sid\": \"AccessAnalyzerRead\", \"Effect\": \"Allow\", \"Action\": [\"access-analyzer:List*\", \"access-analyzer:Get*\", \"access-analyzer:CheckNoNewAccess\", \"access-analyzer:CheckAccessNotGranted\"], \"Resource\": \"arn:aws:access-analyzer:*:*:analyzer/*\"}, {\"Sid\": \"AccessAnalyzerUpdate\", \"Effect\": \"Allow\", \"Action\": [\"access-analyzer:UpdateFindings\", \"access-analyzer:CreateArchiveRule\", \"access-analyzer:UpdateArchiveRule\"], \"Resource\": \"arn:aws:access-analyzer:*:*:analyzer/*\", \"Condition\": {\"StringEquals\": {\"aws:PrincipalTag/Feature\": \"F2\"}}}, {\"Sid\": \"CloudTrailReadWrite\", \"Effect\": \"Allow\", \"Action\": [\"cloudtrail:GetTrail\", \"cloudtrail:GetEventSelectors\", \"cloudtrail:PutEventSelectors\"], \"Resource\": \"arn:aws:cloudtrail:*:*:trail/*\", \"Condition\": {\"StringEquals\": {\"aws:PrincipalTag/Feature\": \"F3\"}}}, {\"Sid\": \"SsoAdminReadOnly\", \"Effect\": \"Allow\", \"Action\": [\"sso:List*\", \"sso:Describe*\"], \"Resource\": \"*\"}, {\"Sid\": \"F5ScopedPutDelete\", \"Effect\": \"Allow\", \"Action\": [\"iam:PutRolePolicy\", \"iam:GetRolePolicy\", \"iam:DeleteRolePolicy\"], \"Resource\": \"arn:aws:iam::*:role/aws-reserved/sso.amazonaws.com/*\", \"Condition\": {\"StringEquals\": {\"aws:PrincipalTag/Feature\": \"F5\"}, \"StringLike\": {\"iam:PolicyName\": \"SENTINEL_EMERGENCY_REVOKE_*\"}}}]}}], \"Tags\": [{\"Key\": \"Project\", \"Value\": \"IAMSentinel\"}]}}}}"
+      },
+      "Type": "AWS::CloudFormation::StackSet"
+    },
+    "DelegatedAdminAccountRoleStackSet": {
+      "Properties": {
+        "AutoDeployment": {
+          "Enabled": false,
+          "RetainStacksOnAccountRemoval": false
+        },
+        "Capabilities": [
+          "CAPABILITY_NAMED_IAM"
+        ],
+        "Description": "Deploys SentinelDelegatedAdminAccountRole to the Access Analyzer and Identity Center delegated-admin accounts (phase-08 \u00a76).",
+        "OperationPreferences": {
+          "FailureTolerancePercentage": 0,
+          "MaxConcurrentPercentage": 100
+        },
+        "PermissionModel": "SERVICE_MANAGED",
+        "StackInstancesGroup": [
+          {
+            "DeploymentTargets": {
+              "Accounts": [
+                "111111111111"
+              ]
+            },
+            "Regions": [
+              "us-east-1"
+            ]
+          }
+        ],
+        "StackSetName": "SentinelDelegatedAdminAccountRole-dev",
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "TemplateBody": "{\"AWSTemplateFormatVersion\": \"2010-09-09\", \"Description\": \"IAM Sentinel cross-account role (SentinelDelegatedAdminAccountRole), owned by aws-infra phase-08. Do not edit outside the StackSet.\", \"Resources\": {\"SentinelRole\": {\"Type\": \"AWS::IAM::Role\", \"Properties\": {\"RoleName\": \"SentinelDelegatedAdminAccountRole\", \"AssumeRolePolicyDocument\": {\"Version\": \"2012-10-17\", \"Statement\": [{\"Effect\": \"Allow\", \"Principal\": {\"AWS\": \"arn:aws:iam::111111111111:root\"}, \"Action\": \"sts:AssumeRole\", \"Condition\": {\"StringEquals\": {\"aws:PrincipalTag/Project\": \"IAMSentinel\"}, \"StringLike\": {\"aws:PrincipalArn\": \"arn:aws:iam::111111111111:role/Sentinel*\"}}}]}, \"Policies\": [{\"PolicyName\": \"SentinelReadOnlyBundle\", \"PolicyDocument\": {\"Version\": \"2012-10-17\", \"Statement\": [{\"Sid\": \"IamRead\", \"Effect\": \"Allow\", \"Action\": [\"iam:List*\", \"iam:Get*\", \"iam:SimulatePrincipalPolicy\", \"iam:SimulateCustomPolicy\", \"iam:GetAccountAuthorizationDetails\"], \"Resource\": \"*\"}, {\"Sid\": \"OrgRead\", \"Effect\": \"Allow\", \"Action\": [\"organizations:Describe*\", \"organizations:List*\"], \"Resource\": \"*\"}, {\"Sid\": \"AccessAnalyzerRead\", \"Effect\": \"Allow\", \"Action\": [\"access-analyzer:List*\", \"access-analyzer:Get*\", \"access-analyzer:CheckNoNewAccess\", \"access-analyzer:CheckAccessNotGranted\"], \"Resource\": \"arn:aws:access-analyzer:*:*:analyzer/*\"}, {\"Sid\": \"AccessAnalyzerUpdate\", \"Effect\": \"Allow\", \"Action\": [\"access-analyzer:UpdateFindings\", \"access-analyzer:CreateArchiveRule\", \"access-analyzer:UpdateArchiveRule\"], \"Resource\": \"arn:aws:access-analyzer:*:*:analyzer/*\", \"Condition\": {\"StringEquals\": {\"aws:PrincipalTag/Feature\": \"F2\"}}}, {\"Sid\": \"CloudTrailReadWrite\", \"Effect\": \"Allow\", \"Action\": [\"cloudtrail:GetTrail\", \"cloudtrail:GetEventSelectors\", \"cloudtrail:PutEventSelectors\"], \"Resource\": \"arn:aws:cloudtrail:*:*:trail/*\", \"Condition\": {\"StringEquals\": {\"aws:PrincipalTag/Feature\": \"F3\"}}}, {\"Sid\": \"SsoAdminReadOnly\", \"Effect\": \"Allow\", \"Action\": [\"sso:List*\", \"sso:Describe*\"], \"Resource\": \"*\"}, {\"Sid\": \"F5ScopedPutDelete\", \"Effect\": \"Allow\", \"Action\": [\"iam:PutRolePolicy\", \"iam:GetRolePolicy\", \"iam:DeleteRolePolicy\"], \"Resource\": \"arn:aws:iam::*:role/aws-reserved/sso.amazonaws.com/*\", \"Condition\": {\"StringEquals\": {\"aws:PrincipalTag/Feature\": \"F5\"}, \"StringLike\": {\"iam:PolicyName\": \"SENTINEL_EMERGENCY_REVOKE_*\"}}}]}}], \"Tags\": [{\"Key\": \"Project\", \"Value\": \"IAMSentinel\"}]}}}}"
+      },
+      "Type": "AWS::CloudFormation::StackSet"
+    },
+    "DriftDetectionScheduleAllowEventRuleSentinelCrossAccountDriftDetectorFnFunction4FE457CA4D1342A4": {
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "DriftDetectorFnFunction36033E98",
+            "Arn"
+          ]
+        },
+        "Principal": "events.amazonaws.com",
+        "SourceArn": {
+          "Fn::GetAtt": [
+            "DriftDetectionScheduleC7FB61CC",
+            "Arn"
+          ]
+        }
+      },
+      "Type": "AWS::Lambda::Permission"
+    },
+    "DriftDetectionScheduleC7FB61CC": {
+      "Properties": {
+        "ScheduleExpression": "cron(0 5 ? * SAT *)",
+        "State": "ENABLED",
+        "Targets": [
+          {
+            "Arn": {
+              "Fn::GetAtt": [
+                "DriftDetectorFnFunction36033E98",
+                "Arn"
+              ]
+            },
+            "Id": "Target0",
+            "Input": "{\"stack_set_names\":[\"SentinelCrossAccountRole-dev\",\"SentinelDelegatedAdminAccountRole-dev\"]}"
+          }
+        ]
+      },
+      "Type": "AWS::Events::Rule"
+    },
+    "DriftDetectorFnDlq12F6A75B": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "MessageRetentionPeriod": 1209600,
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ]
+      },
+      "Type": "AWS::SQS::Queue",
+      "UpdateReplacePolicy": "Delete"
+    },
+    "DriftDetectorFnDlqPolicy3C04FA8A": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sqs:*",
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false"
+                }
+              },
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": "*"
+              },
+              "Resource": {
+                "Fn::GetAtt": [
+                  "DriftDetectorFnDlq12F6A75B",
+                  "Arn"
+                ]
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "Queues": [
+          {
+            "Ref": "DriftDetectorFnDlq12F6A75B"
+          }
+        ]
+      },
+      "Type": "AWS::SQS::QueuePolicy"
+    },
+    "DriftDetectorFnDurationAnomalyAlarmF5EBAC14": {
+      "Properties": {
+        "AlarmActions": [
+          {
+            "Fn::ImportValue": "SentinelSecurity:ExportsOutputRefSecurityTopic077AEA2CE5C0B04D"
+          }
+        ],
+        "AlarmDescription": {
+          "Fn::Join": [
+            "",
+            [
+              {
+                "Ref": "DriftDetectorFnFunction36033E98"
+              },
+              ": p95 Duration outside its normal anomaly-detection band."
+            ]
+          ]
+        },
+        "ComparisonOperator": "LessThanLowerOrGreaterThanUpperThreshold",
+        "EvaluationPeriods": 3,
+        "Metrics": [
+          {
+            "Id": "m1",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "FunctionName",
+                    "Value": {
+                      "Ref": "DriftDetectorFnFunction36033E98"
+                    }
+                  }
+                ],
+                "MetricName": "Duration",
+                "Namespace": "AWS/Lambda"
+              },
+              "Period": 300,
+              "Stat": "p95"
+            },
+            "ReturnData": true
+          },
+          {
+            "Expression": "ANOMALY_DETECTION_BAND(m1, 2)",
+            "Id": "ad1",
+            "Label": {
+              "Fn::Join": [
+                "",
+                [
+                  {
+                    "Ref": "DriftDetectorFnFunction36033E98"
+                  },
+                  " Duration (expected)"
+                ]
+              ]
+            }
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "ThresholdMetricId": "ad1",
+        "TreatMissingData": "notBreaching"
+      },
+      "Type": "AWS::CloudWatch::Alarm"
+    },
+    "DriftDetectorFnErrorAlarmBEF6C700": {
+      "Properties": {
+        "AlarmActions": [
+          {
+            "Fn::ImportValue": "SentinelSecurity:ExportsOutputRefSecurityTopic077AEA2CE5C0B04D"
+          }
+        ],
+        "AlarmDescription": {
+          "Fn::Join": [
+            "",
+            [
+              {
+                "Ref": "DriftDetectorFnFunction36033E98"
+              },
+              ": more than 5 errors in 5 minutes."
+            ]
+          ]
+        },
+        "ComparisonOperator": "GreaterThanThreshold",
+        "Dimensions": [
+          {
+            "Name": "FunctionName",
+            "Value": {
+              "Ref": "DriftDetectorFnFunction36033E98"
+            }
+          }
+        ],
+        "EvaluationPeriods": 1,
+        "MetricName": "Errors",
+        "Namespace": "AWS/Lambda",
+        "Period": 300,
+        "Statistic": "Sum",
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "Threshold": 5,
+        "TreatMissingData": "notBreaching"
+      },
+      "Type": "AWS::CloudWatch::Alarm"
+    },
+    "DriftDetectorFnFunction36033E98": {
+      "DependsOn": [
+        "DriftDetectorFnRoleDefaultPolicyB7F49BEE",
+        "DriftDetectorFnRole41CA8A52"
+      ],
+      "Properties": {
+        "Architectures": [
+          "arm64"
+        ],
+        "Code": {
+          "S3Bucket": "cdk-hnb659fds-assets-111111111111-us-east-1",
+          "S3Key": "4a4ea90c15d98ebb905708efb1300cae1ef22e45c8d0f367185b163df491e5fe.zip"
+        },
+        "DeadLetterConfig": {
+          "TargetArn": {
+            "Fn::GetAtt": [
+              "DriftDetectorFnDlq12F6A75B",
+              "Arn"
+            ]
+          }
+        },
+        "Environment": {
+          "Variables": {
+            "POWERTOOLS_METRICS_NAMESPACE": "IAMSentinel",
+            "SENTINEL_CROSS_ACCOUNT_ROLE_NAME": "SentinelCrossAccountRole",
+            "SENTINEL_EVIDENCE_BUCKET": {
+              "Fn::ImportValue": "SentinelFoundation:ExportsOutputRefEvidenceBucketC67FF7689705A422"
+            },
+            "SENTINEL_FINDINGS_TABLE": {
+              "Fn::ImportValue": "SentinelFoundation:ExportsOutputRefSentinelFindings041A34810F713541"
+            },
+            "SENTINEL_KMS_KEY_ARN": {
+              "Fn::ImportValue": "SentinelSecurity:ExportsOutputFnGetAttEvidenceKey167D8F4DArnE1F27A98"
+            },
+            "SENTINEL_LOG_LEVEL": "INFO",
+            "SENTINEL_METRIC_NAMESPACE": "IAMSentinel",
+            "SENTINEL_REGION": "us-east-1",
+            "SENTINEL_STAGE": "dev"
+          }
+        },
+        "Handler": "handler.handler",
+        "Layers": [
+          {
+            "Fn::ImportValue": "SentinelLambda:ExportsOutputRefPowertoolsLayer17979D4BF1F19FF3"
+          },
+          {
+            "Fn::ImportValue": "SentinelLambda:ExportsOutputRefBoto3Layer463A0AEAFC52CB63"
+          }
+        ],
+        "MemorySize": 256,
+        "ReservedConcurrentExecutions": 1,
+        "Role": {
+          "Fn::GetAtt": [
+            "DriftDetectorFnRole41CA8A52",
+            "Arn"
+          ]
+        },
+        "Runtime": "python3.12",
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "Timeout": 600,
+        "TracingConfig": {
+          "Mode": "Active"
+        }
+      },
+      "Type": "AWS::Lambda::Function"
+    },
+    "DriftDetectorFnFunctionLogRetentionA742FF1B": {
+      "Properties": {
+        "LogGroupName": {
+          "Fn::Join": [
+            "",
+            [
+              "/aws/lambda/",
+              {
+                "Ref": "DriftDetectorFnFunction36033E98"
+              }
+            ]
+          ]
+        },
+        "RetentionInDays": 14,
+        "ServiceToken": {
+          "Fn::GetAtt": [
+            "LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aFD4BFC8A",
+            "Arn"
+          ]
+        }
+      },
+      "Type": "Custom::LogRetention"
+    },
+    "DriftDetectorFnRole41CA8A52": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com"
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition"
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+              ]
+            ]
+          }
+        ],
+        "PermissionsBoundary": {
+          "Fn::ImportValue": "SentinelSecurity:ExportsOutputRefPermissionBoundary5A5E688699C146B3"
+        },
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ]
+      },
+      "Type": "AWS::IAM::Role"
+    },
+    "DriftDetectorFnRoleDefaultPolicyB7F49BEE": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "cloudformation:DetectStackSetDrift",
+                "cloudformation:DescribeStackSetOperation",
+                "cloudformation:ListStackInstances"
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                "arn:aws:cloudformation:us-east-1:111111111111:stackset/SentinelCrossAccountRole-dev:*",
+                "arn:aws:cloudformation:us-east-1:111111111111:stackset/SentinelDelegatedAdminAccountRole-dev:*"
+              ]
+            },
+            {
+              "Action": "cloudwatch:PutMetricData",
+              "Effect": "Allow",
+              "Resource": "*"
+            },
+            {
+              "Action": "sqs:SendMessage",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "DriftDetectorFnDlq12F6A75B",
+                  "Arn"
+                ]
+              }
+            },
+            {
+              "Action": [
+                "xray:PutTraceSegments",
+                "xray:PutTelemetryRecords"
+              ],
+              "Effect": "Allow",
+              "Resource": "*"
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "PolicyName": "DriftDetectorFnRoleDefaultPolicyB7F49BEE",
+        "Roles": [
+          {
+            "Ref": "DriftDetectorFnRole41CA8A52"
+          }
+        ]
+      },
+      "Type": "AWS::IAM::Policy"
+    },
+    "HealthCheckFnDlq9CE89B2E": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "MessageRetentionPeriod": 1209600,
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ]
+      },
+      "Type": "AWS::SQS::Queue",
+      "UpdateReplacePolicy": "Delete"
+    },
+    "HealthCheckFnDlqPolicy4E65591A": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sqs:*",
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false"
+                }
+              },
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": "*"
+              },
+              "Resource": {
+                "Fn::GetAtt": [
+                  "HealthCheckFnDlq9CE89B2E",
+                  "Arn"
+                ]
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "Queues": [
+          {
+            "Ref": "HealthCheckFnDlq9CE89B2E"
+          }
+        ]
+      },
+      "Type": "AWS::SQS::QueuePolicy"
+    },
+    "HealthCheckFnDurationAnomalyAlarm86FEAA03": {
+      "Properties": {
+        "AlarmActions": [
+          {
+            "Fn::ImportValue": "SentinelSecurity:ExportsOutputRefSecurityTopic077AEA2CE5C0B04D"
+          }
+        ],
+        "AlarmDescription": {
+          "Fn::Join": [
+            "",
+            [
+              {
+                "Ref": "HealthCheckFnFunction130376D7"
+              },
+              ": p95 Duration outside its normal anomaly-detection band."
+            ]
+          ]
+        },
+        "ComparisonOperator": "LessThanLowerOrGreaterThanUpperThreshold",
+        "EvaluationPeriods": 3,
+        "Metrics": [
+          {
+            "Id": "m1",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "FunctionName",
+                    "Value": {
+                      "Ref": "HealthCheckFnFunction130376D7"
+                    }
+                  }
+                ],
+                "MetricName": "Duration",
+                "Namespace": "AWS/Lambda"
+              },
+              "Period": 300,
+              "Stat": "p95"
+            },
+            "ReturnData": true
+          },
+          {
+            "Expression": "ANOMALY_DETECTION_BAND(m1, 2)",
+            "Id": "ad1",
+            "Label": {
+              "Fn::Join": [
+                "",
+                [
+                  {
+                    "Ref": "HealthCheckFnFunction130376D7"
+                  },
+                  " Duration (expected)"
+                ]
+              ]
+            }
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "ThresholdMetricId": "ad1",
+        "TreatMissingData": "notBreaching"
+      },
+      "Type": "AWS::CloudWatch::Alarm"
+    },
+    "HealthCheckFnErrorAlarm55B7BF15": {
+      "Properties": {
+        "AlarmActions": [
+          {
+            "Fn::ImportValue": "SentinelSecurity:ExportsOutputRefSecurityTopic077AEA2CE5C0B04D"
+          }
+        ],
+        "AlarmDescription": {
+          "Fn::Join": [
+            "",
+            [
+              {
+                "Ref": "HealthCheckFnFunction130376D7"
+              },
+              ": more than 5 errors in 5 minutes."
+            ]
+          ]
+        },
+        "ComparisonOperator": "GreaterThanThreshold",
+        "Dimensions": [
+          {
+            "Name": "FunctionName",
+            "Value": {
+              "Ref": "HealthCheckFnFunction130376D7"
+            }
+          }
+        ],
+        "EvaluationPeriods": 1,
+        "MetricName": "Errors",
+        "Namespace": "AWS/Lambda",
+        "Period": 300,
+        "Statistic": "Sum",
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "Threshold": 5,
+        "TreatMissingData": "notBreaching"
+      },
+      "Type": "AWS::CloudWatch::Alarm"
+    },
+    "HealthCheckFnFunction130376D7": {
+      "DependsOn": [
+        "HealthCheckFnRoleDefaultPolicyB1963753",
+        "HealthCheckFnRole84BBF7F1"
+      ],
+      "Properties": {
+        "Architectures": [
+          "arm64"
+        ],
+        "Code": {
+          "S3Bucket": "cdk-hnb659fds-assets-111111111111-us-east-1",
+          "S3Key": "28073a85da5bef2bc980cd1b6857b1bef2bf5e1c40b578fb532bffad90295408.zip"
+        },
+        "DeadLetterConfig": {
+          "TargetArn": {
+            "Fn::GetAtt": [
+              "HealthCheckFnDlq9CE89B2E",
+              "Arn"
+            ]
+          }
+        },
+        "Environment": {
+          "Variables": {
+            "POWERTOOLS_METRICS_NAMESPACE": "IAMSentinel",
+            "SENTINEL_CROSS_ACCOUNT_ROLE_NAME": "SentinelCrossAccountRole",
+            "SENTINEL_EVIDENCE_BUCKET": {
+              "Fn::ImportValue": "SentinelFoundation:ExportsOutputRefEvidenceBucketC67FF7689705A422"
+            },
+            "SENTINEL_FINDINGS_TABLE": {
+              "Fn::ImportValue": "SentinelFoundation:ExportsOutputRefSentinelFindings041A34810F713541"
+            },
+            "SENTINEL_KMS_KEY_ARN": {
+              "Fn::ImportValue": "SentinelSecurity:ExportsOutputFnGetAttEvidenceKey167D8F4DArnE1F27A98"
+            },
+            "SENTINEL_LOG_LEVEL": "INFO",
+            "SENTINEL_METRIC_NAMESPACE": "IAMSentinel",
+            "SENTINEL_REGION": "us-east-1",
+            "SENTINEL_STAGE": "dev"
+          }
+        },
+        "Handler": "handler.handler",
+        "Layers": [
+          {
+            "Fn::ImportValue": "SentinelLambda:ExportsOutputRefPowertoolsLayer17979D4BF1F19FF3"
+          },
+          {
+            "Fn::ImportValue": "SentinelLambda:ExportsOutputRefBoto3Layer463A0AEAFC52CB63"
+          }
+        ],
+        "MemorySize": 256,
+        "ReservedConcurrentExecutions": 10,
+        "Role": {
+          "Fn::GetAtt": [
+            "HealthCheckFnRole84BBF7F1",
+            "Arn"
+          ]
+        },
+        "Runtime": "python3.12",
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "Timeout": 30,
+        "TracingConfig": {
+          "Mode": "Active"
+        }
+      },
+      "Type": "AWS::Lambda::Function"
+    },
+    "HealthCheckFnFunctionLogRetentionA47E8F63": {
+      "Properties": {
+        "LogGroupName": {
+          "Fn::Join": [
+            "",
+            [
+              "/aws/lambda/",
+              {
+                "Ref": "HealthCheckFnFunction130376D7"
+              }
+            ]
+          ]
+        },
+        "RetentionInDays": 14,
+        "ServiceToken": {
+          "Fn::GetAtt": [
+            "LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aFD4BFC8A",
+            "Arn"
+          ]
+        }
+      },
+      "Type": "Custom::LogRetention"
+    },
+    "HealthCheckFnRole84BBF7F1": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com"
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition"
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+              ]
+            ]
+          }
+        ],
+        "PermissionsBoundary": {
+          "Fn::ImportValue": "SentinelSecurity:ExportsOutputRefPermissionBoundary5A5E688699C146B3"
+        },
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ]
+      },
+      "Type": "AWS::IAM::Role"
+    },
+    "HealthCheckFnRoleDefaultPolicyB1963753": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Resource": "arn:aws:iam::*:role/SentinelCrossAccountRole"
+            },
+            {
+              "Action": "sqs:SendMessage",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "HealthCheckFnDlq9CE89B2E",
+                  "Arn"
+                ]
+              }
+            },
+            {
+              "Action": [
+                "xray:PutTraceSegments",
+                "xray:PutTelemetryRecords"
+              ],
+              "Effect": "Allow",
+              "Resource": "*"
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "PolicyName": "HealthCheckFnRoleDefaultPolicyB1963753",
+        "Roles": [
+          {
+            "Ref": "HealthCheckFnRole84BBF7F1"
+          }
+        ]
+      },
+      "Type": "AWS::IAM::Policy"
+    },
+    "HealthCheckWorkflow1B90DF3B": {
+      "DeletionPolicy": "Delete",
+      "DependsOn": [
+        "HealthCheckWorkflowRoleDefaultPolicyACA09571",
+        "HealthCheckWorkflowRole85195C9C"
+      ],
+      "Properties": {
+        "DefinitionString": {
+          "Fn::Join": [
+            "",
+            [
+              "{\"StartAt\":\"WaitForAutoDeployment\",\"States\":{\"WaitForAutoDeployment\":{\"Type\":\"Wait\",\"Seconds\":1800,\"Next\":\"CheckRoleIsAssumable\"},\"CheckRoleIsAssumable\":{\"End\":true,\"Retry\":[{\"ErrorEquals\":[\"Lambda.ClientExecutionTimeoutException\",\"Lambda.ServiceException\",\"Lambda.AWSLambdaException\",\"Lambda.SdkClientException\"],\"IntervalSeconds\":2,\"MaxAttempts\":6,\"BackoffRate\":2}],\"Catch\":[{\"ErrorEquals\":[\"States.ALL\"],\"Next\":\"AlertHealthCheckFailure\"}],\"Type\":\"Task\",\"Resource\":\"",
+              {
+                "Fn::GetAtt": [
+                  "HealthCheckFnFunction130376D7",
+                  "Arn"
+                ]
+              },
+              "\",\"Parameters\":{\"account_id.$\":\"$.account_id\"}},\"AlertHealthCheckFailure\":{\"End\":true,\"Type\":\"Task\",\"Resource\":\"arn:",
+              {
+                "Ref": "AWS::Partition"
+              },
+              ":states:::sns:publish\",\"Parameters\":{\"TopicArn\":\"",
+              {
+                "Fn::ImportValue": "SentinelSecurity:ExportsOutputRefSecurityTopic077AEA2CE5C0B04D"
+              },
+              "\",\"Message\":\"SentinelCrossAccountRole health check failed 30 minutes after a new account joined the organization -- AutoDeployment may have failed.\"}}},\"TimeoutSeconds\":2400}"
+            ]
+          ]
+        },
+        "LoggingConfiguration": {
+          "Destinations": [
+            {
+              "CloudWatchLogsLogGroup": {
+                "LogGroupArn": {
+                  "Fn::GetAtt": [
+                    "HealthCheckWorkflowLogs4FC7E7FC",
+                    "Arn"
+                  ]
+                }
+              }
+            }
+          ],
+          "Level": "ALL"
+        },
+        "RoleArn": {
+          "Fn::GetAtt": [
+            "HealthCheckWorkflowRole85195C9C",
+            "Arn"
+          ]
+        },
+        "StateMachineType": "STANDARD",
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "TracingConfiguration": {
+          "Enabled": true
+        }
+      },
+      "Type": "AWS::StepFunctions::StateMachine",
+      "UpdateReplacePolicy": "Delete"
+    },
+    "HealthCheckWorkflowEventsRole111E1BAB": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "events.amazonaws.com"
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ]
+      },
+      "Type": "AWS::IAM::Role"
+    },
+    "HealthCheckWorkflowEventsRoleDefaultPolicyAA3ADBD5": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "states:StartExecution",
+              "Effect": "Allow",
+              "Resource": {
+                "Ref": "HealthCheckWorkflow1B90DF3B"
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "PolicyName": "HealthCheckWorkflowEventsRoleDefaultPolicyAA3ADBD5",
+        "Roles": [
+          {
+            "Ref": "HealthCheckWorkflowEventsRole111E1BAB"
+          }
+        ]
+      },
+      "Type": "AWS::IAM::Policy"
+    },
+    "HealthCheckWorkflowLogs4FC7E7FC": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "KmsKeyId": {
+          "Fn::ImportValue": "SentinelSecurity:ExportsOutputFnGetAttDataKey17AFBB84ArnCE2A1BC6"
+        },
+        "RetentionInDays": 365,
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ]
+      },
+      "Type": "AWS::Logs::LogGroup",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "HealthCheckWorkflowRole85195C9C": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "states.amazonaws.com"
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ]
+      },
+      "Type": "AWS::IAM::Role"
+    },
+    "HealthCheckWorkflowRoleDefaultPolicyACA09571": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "lambda:InvokeFunction",
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "HealthCheckFnFunction130376D7",
+                    "Arn"
+                  ]
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "HealthCheckFnFunction130376D7",
+                          "Arn"
+                        ]
+                      },
+                      ":*"
+                    ]
+                  ]
+                }
+              ]
+            },
+            {
+              "Action": "sns:Publish",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::ImportValue": "SentinelSecurity:ExportsOutputRefSecurityTopic077AEA2CE5C0B04D"
+              }
+            },
+            {
+              "Action": [
+                "logs:CreateLogDelivery",
+                "logs:GetLogDelivery",
+                "logs:UpdateLogDelivery",
+                "logs:DeleteLogDelivery",
+                "logs:ListLogDeliveries",
+                "logs:PutResourcePolicy",
+                "logs:DescribeResourcePolicies",
+                "logs:DescribeLogGroups"
+              ],
+              "Effect": "Allow",
+              "Resource": "*"
+            },
+            {
+              "Action": [
+                "xray:PutTraceSegments",
+                "xray:PutTelemetryRecords",
+                "xray:GetSamplingRules",
+                "xray:GetSamplingTargets"
+              ],
+              "Effect": "Allow",
+              "Resource": "*"
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "PolicyName": "HealthCheckWorkflowRoleDefaultPolicyACA09571",
+        "Roles": [
+          {
+            "Ref": "HealthCheckWorkflowRole85195C9C"
+          }
+        ]
+      },
+      "Type": "AWS::IAM::Policy"
+    },
+    "LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aFD4BFC8A": {
+      "DependsOn": [
+        "LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aServiceRoleDefaultPolicyADDA7DEB",
+        "LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aServiceRole9741ECFB"
+      ],
+      "Properties": {
+        "Code": {
+          "S3Bucket": "cdk-hnb659fds-assets-111111111111-us-east-1",
+          "S3Key": "2819175352ad1ce0dae768e83fc328fb70fb5f10b4a8ff0ccbcb791f02b0716d.zip"
+        },
+        "Handler": "index.handler",
+        "Role": {
+          "Fn::GetAtt": [
+            "LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aServiceRole9741ECFB",
+            "Arn"
+          ]
+        },
+        "Runtime": "nodejs20.x",
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "Timeout": 900
+      },
+      "Type": "AWS::Lambda::Function"
+    },
+    "LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aServiceRole9741ECFB": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com"
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition"
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+              ]
+            ]
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ]
+      },
+      "Type": "AWS::IAM::Role"
+    },
+    "LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aServiceRoleDefaultPolicyADDA7DEB": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "logs:PutRetentionPolicy",
+                "logs:DeleteRetentionPolicy"
+              ],
+              "Effect": "Allow",
+              "Resource": "*"
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "PolicyName": "LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aServiceRoleDefaultPolicyADDA7DEB",
+        "Roles": [
+          {
+            "Ref": "LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aServiceRole9741ECFB"
+          }
+        ]
+      },
+      "Type": "AWS::IAM::Policy"
+    },
+    "NewAccountJoinedRule8B901C41": {
+      "Properties": {
+        "EventPattern": {
+          "detail": {
+            "eventName": [
+              "CreateAccountResult"
+            ]
+          },
+          "detail-type": [
+            "AWS Service Event via CloudTrail"
+          ],
+          "source": [
+            "aws.organizations"
+          ]
+        },
+        "State": "ENABLED",
+        "Targets": [
+          {
+            "Arn": {
+              "Ref": "HealthCheckWorkflow1B90DF3B"
+            },
+            "Id": "Target0",
+            "InputTransformer": {
+              "InputPathsMap": {
+                "detail-serviceEventDetails-createAccountStatus-accountId": "$.detail.serviceEventDetails.createAccountStatus.accountId"
+              },
+              "InputTemplate": "{\"account_id\":<detail-serviceEventDetails-createAccountStatus-accountId>}"
+            },
+            "RoleArn": {
+              "Fn::GetAtt": [
+                "HealthCheckWorkflowEventsRole111E1BAB",
+                "Arn"
+              ]
+            }
+          }
+        ]
+      },
+      "Type": "AWS::Events::Rule"
+    }
+  },
+  "Rules": {
+    "CheckBootstrapVersion": {
+      "Assertions": [
+        {
+          "Assert": {
+            "Fn::Not": [
+              {
+                "Fn::Contains": [
+                  [
+                    "1",
+                    "2",
+                    "3",
+                    "4",
+                    "5"
+                  ],
+                  {
+                    "Ref": "BootstrapVersion"
+                  }
+                ]
+              }
+            ]
+          },
+          "AssertDescription": "CDK bootstrap stack version 6 required. Please run 'cdk bootstrap' with a recent version of the CDK CLI."
+        }
+      ]
+    }
+  }
+}

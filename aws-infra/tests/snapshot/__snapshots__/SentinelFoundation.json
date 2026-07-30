@@ -1,0 +1,2551 @@
+{
+  "Metadata": {
+    "cdk_nag": {
+      "rules_to_suppress": [
+        {
+          "id": "AwsSolutions-L1",
+          "reason": "Lambda runtime pinned to PYTHON_3_12 explicitly across every construct in this repo."
+        },
+        {
+          "applies_to": [
+            "Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+            "Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSBackupServiceRolePolicyForBackup"
+          ],
+          "id": "AwsSolutions-IAM4",
+          "reason": "AWSLambdaBasicExecutionRole is CDK's default Lambda execution role addition (CloudWatch Logs only, scoped to the function's own log group); AWSBackupServiceRolePolicyForBackup is CDK's default AWS Backup selection role, an AWS managed policy specifically designed for that service role."
+        },
+        {
+          "id": "HIPAA.Security-IAMNoInlinePolicy",
+          "reason": "CDK's auto-generated DefaultPolicy grants (aoss:APIAccessAll scoped to one collection ARN); splitting it into a managed policy adds indirection without changing the effective grant."
+        },
+        {
+          "id": "HIPAA.Security-LambdaInsideVPC",
+          "reason": "docs/ARCHITECTURE.md \u00a7Networking: IAM Sentinel is deliberately VPC-less across the whole platform."
+        },
+        {
+          "id": "HIPAA.Security-S3BucketReplicationEnabled",
+          "reason": "Single-region deployment by design (docs/ARCHITECTURE.md defines no multi-region topology); cross-region replication would double storage cost and region count for a DR posture not yet scoped."
+        },
+        {
+          "id": "HIPAA.Security-S3DefaultEncryptionKMS",
+          "reason": "AccessLogsBucket is the target for S3 server access log delivery, which AWS does not support against a KMS (SSE-KMS) destination bucket -- only SSE-S3. This is the one bucket that must stay off KMS."
+        }
+      ]
+    }
+  },
+  "Outputs": {
+    "ExportsOutputFnGetAttAthenaResults99A60126Arn5DEAC592": {
+      "Export": {
+        "Name": "SentinelFoundation:ExportsOutputFnGetAttAthenaResults99A60126Arn5DEAC592"
+      },
+      "Value": {
+        "Fn::GetAtt": [
+          "AthenaResults99A60126",
+          "Arn"
+        ]
+      }
+    },
+    "ExportsOutputFnGetAttKbSource2D3A83B9ArnC1B3D0FA": {
+      "Export": {
+        "Name": "SentinelFoundation:ExportsOutputFnGetAttKbSource2D3A83B9ArnC1B3D0FA"
+      },
+      "Value": {
+        "Fn::GetAtt": [
+          "KbSource2D3A83B9",
+          "Arn"
+        ]
+      }
+    },
+    "ExportsOutputFnGetAttReports65402A0AArn549BAC56": {
+      "Export": {
+        "Name": "SentinelFoundation:ExportsOutputFnGetAttReports65402A0AArn549BAC56"
+      },
+      "Value": {
+        "Fn::GetAtt": [
+          "Reports65402A0A",
+          "Arn"
+        ]
+      }
+    },
+    "ExportsOutputRefAthenaResults99A601264C50DC7A": {
+      "Export": {
+        "Name": "SentinelFoundation:ExportsOutputRefAthenaResults99A601264C50DC7A"
+      },
+      "Value": {
+        "Ref": "AthenaResults99A60126"
+      }
+    },
+    "ExportsOutputRefEvidenceBucketC67FF7689705A422": {
+      "Export": {
+        "Name": "SentinelFoundation:ExportsOutputRefEvidenceBucketC67FF7689705A422"
+      },
+      "Value": {
+        "Ref": "EvidenceBucketC67FF768"
+      }
+    },
+    "ExportsOutputRefReports65402A0A5E09D1ED": {
+      "Export": {
+        "Name": "SentinelFoundation:ExportsOutputRefReports65402A0A5E09D1ED"
+      },
+      "Value": {
+        "Ref": "Reports65402A0A"
+      }
+    },
+    "ExportsOutputRefSentinelFindings041A34810F713541": {
+      "Export": {
+        "Name": "SentinelFoundation:ExportsOutputRefSentinelFindings041A34810F713541"
+      },
+      "Value": {
+        "Ref": "SentinelFindings041A3481"
+      }
+    }
+  },
+  "Parameters": {
+    "BootstrapVersion": {
+      "Default": "/cdk-bootstrap/hnb659fds/version",
+      "Description": "Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]",
+      "Type": "AWS::SSM::Parameter::Value<String>"
+    }
+  },
+  "Resources": {
+    "AccessLogsBucket83982689": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "AccessControl": "LogDeliveryWrite",
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {
+              "ServerSideEncryptionByDefault": {
+                "SSEAlgorithm": "AES256"
+              }
+            }
+          ]
+        },
+        "BucketName": "sentinel-access-logs-dev-111111111111",
+        "OwnershipControls": {
+          "Rules": [
+            {
+              "ObjectOwnership": "ObjectWriter"
+            }
+          ]
+        },
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "BlockPublicPolicy": true,
+          "IgnorePublicAcls": true,
+          "RestrictPublicBuckets": true
+        },
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "VersioningConfiguration": {
+          "Status": "Enabled"
+        }
+      },
+      "Type": "AWS::S3::Bucket",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "AccessLogsBucketPolicy7F77476F": {
+      "Properties": {
+        "Bucket": {
+          "Ref": "AccessLogsBucket83982689"
+        },
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "s3:*",
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false"
+                }
+              },
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": "*"
+              },
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "AccessLogsBucket83982689",
+                    "Arn"
+                  ]
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "AccessLogsBucket83982689",
+                          "Arn"
+                        ]
+                      },
+                      "/*"
+                    ]
+                  ]
+                }
+              ]
+            }
+          ],
+          "Version": "2012-10-17"
+        }
+      },
+      "Type": "AWS::S3::BucketPolicy"
+    },
+    "AthenaResults99A60126": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {
+              "ServerSideEncryptionByDefault": {
+                "KMSMasterKeyID": {
+                  "Fn::ImportValue": "SentinelSecurity:ExportsOutputFnGetAttDataKey17AFBB84ArnCE2A1BC6"
+                },
+                "SSEAlgorithm": "aws:kms"
+              }
+            }
+          ]
+        },
+        "BucketName": "sentinel-athenaresults-dev-111111111111",
+        "LifecycleConfiguration": {
+          "Rules": [
+            {
+              "ExpirationInDays": 7,
+              "Status": "Enabled"
+            }
+          ]
+        },
+        "LoggingConfiguration": {
+          "DestinationBucketName": {
+            "Ref": "AccessLogsBucket83982689"
+          },
+          "LogFilePrefix": "athenaresults/"
+        },
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "BlockPublicPolicy": true,
+          "IgnorePublicAcls": true,
+          "RestrictPublicBuckets": true
+        },
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "VersioningConfiguration": {
+          "Status": "Enabled"
+        }
+      },
+      "Type": "AWS::S3::Bucket",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "AthenaResultsPolicyC1D66A19": {
+      "Properties": {
+        "Bucket": {
+          "Ref": "AthenaResults99A60126"
+        },
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "s3:*",
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false"
+                }
+              },
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": "*"
+              },
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "AthenaResults99A60126",
+                    "Arn"
+                  ]
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "AthenaResults99A60126",
+                          "Arn"
+                        ]
+                      },
+                      "/*"
+                    ]
+                  ]
+                }
+              ]
+            }
+          ],
+          "Version": "2012-10-17"
+        }
+      },
+      "Type": "AWS::S3::BucketPolicy"
+    },
+    "BackupPlanA8F64793": {
+      "Properties": {
+        "BackupPlan": {
+          "BackupPlanName": "BackupPlan",
+          "BackupPlanRule": [
+            {
+              "Lifecycle": {
+                "DeleteAfterDays": 35
+              },
+              "RuleName": "Daily",
+              "ScheduleExpression": "cron(0 5 * * ? *)",
+              "TargetBackupVault": {
+                "Fn::GetAtt": [
+                  "BackupVault3A9C5852",
+                  "BackupVaultName"
+                ]
+              }
+            },
+            {
+              "Lifecycle": {
+                "DeleteAfterDays": 365,
+                "MoveToColdStorageAfterDays": 30
+              },
+              "RuleName": "Monthly1Year",
+              "ScheduleExpression": "cron(0 5 1 * ? *)",
+              "TargetBackupVault": {
+                "Fn::GetAtt": [
+                  "BackupVault3A9C5852",
+                  "BackupVaultName"
+                ]
+              }
+            }
+          ]
+        },
+        "BackupPlanTags": {
+          "Owner": "iam-sentinel@customer.com",
+          "Project": "IAMSentinel",
+          "Stage": "dev"
+        }
+      },
+      "Type": "AWS::Backup::BackupPlan"
+    },
+    "BackupPlanBackupSelection0D85695B": {
+      "Properties": {
+        "BackupPlanId": {
+          "Fn::GetAtt": [
+            "BackupPlanA8F64793",
+            "BackupPlanId"
+          ]
+        },
+        "BackupSelection": {
+          "IamRoleArn": {
+            "Fn::GetAtt": [
+              "BackupPlanBackupSelectionRoleBA59CF13",
+              "Arn"
+            ]
+          },
+          "Resources": [
+            {
+              "Fn::GetAtt": [
+                "SentinelFindings041A3481",
+                "Arn"
+              ]
+            },
+            {
+              "Fn::GetAtt": [
+                "SentinelDecisions59DED8EB",
+                "Arn"
+              ]
+            },
+            {
+              "Fn::GetAtt": [
+                "SentinelDecisionsInFlight67F5F530",
+                "Arn"
+              ]
+            },
+            {
+              "Fn::GetAtt": [
+                "SentinelMemoryEpisodic562E66CF",
+                "Arn"
+              ]
+            },
+            {
+              "Fn::GetAtt": [
+                "SentinelMemorySemantic2D175195",
+                "Arn"
+              ]
+            },
+            {
+              "Fn::GetAtt": [
+                "SentinelMemoryProcedural6BBDF6A7",
+                "Arn"
+              ]
+            },
+            {
+              "Fn::GetAtt": [
+                "SentinelBudget909283CE",
+                "Arn"
+              ]
+            },
+            {
+              "Fn::GetAtt": [
+                "SentinelBreakersEEC28AA5",
+                "Arn"
+              ]
+            },
+            {
+              "Fn::GetAtt": [
+                "SentinelPolicies83F43F45",
+                "Arn"
+              ]
+            },
+            {
+              "Fn::GetAtt": [
+                "SentinelSLRsE79DFDAB",
+                "Arn"
+              ]
+            },
+            {
+              "Fn::GetAtt": [
+                "SentinelRevocationsEE3F2EA7",
+                "Arn"
+              ]
+            },
+            {
+              "Fn::GetAtt": [
+                "SentinelFaults39A0BA76",
+                "Arn"
+              ]
+            },
+            {
+              "Fn::GetAtt": [
+                "SentinelDivergence881D2533",
+                "Arn"
+              ]
+            },
+            {
+              "Fn::GetAtt": [
+                "SentinelIdempotencyA0F868B9",
+                "Arn"
+              ]
+            }
+          ],
+          "SelectionName": "BackupSelection"
+        }
+      },
+      "Type": "AWS::Backup::BackupSelection"
+    },
+    "BackupPlanBackupSelectionRoleBA59CF13": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "backup.amazonaws.com"
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition"
+                },
+                ":iam::aws:policy/service-role/AWSBackupServiceRolePolicyForBackup"
+              ]
+            ]
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ]
+      },
+      "Type": "AWS::IAM::Role"
+    },
+    "BackupVault3A9C5852": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "BackupVaultName": "SentinelFoundationBackupVault616947CC",
+        "BackupVaultTags": {
+          "Owner": "iam-sentinel@customer.com",
+          "Project": "IAMSentinel",
+          "Stage": "dev"
+        },
+        "EncryptionKeyArn": {
+          "Fn::ImportValue": "SentinelSecurity:ExportsOutputFnGetAttDataKey17AFBB84ArnCE2A1BC6"
+        }
+      },
+      "Type": "AWS::Backup::BackupVault",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "EpisodicVectorCollection": {
+      "DependsOn": [
+        "OssEncryptionPolicy",
+        "OssNetworkPolicy"
+      ],
+      "Properties": {
+        "Name": "sentinel-episodic-vector",
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "Type": "VECTORSEARCH"
+      },
+      "Type": "AWS::OpenSearchServerless::Collection"
+    },
+    "EvidenceBucketC67FF768": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {
+              "ServerSideEncryptionByDefault": {
+                "KMSMasterKeyID": {
+                  "Fn::ImportValue": "SentinelSecurity:ExportsOutputFnGetAttDataKey17AFBB84ArnCE2A1BC6"
+                },
+                "SSEAlgorithm": "aws:kms"
+              }
+            }
+          ]
+        },
+        "LoggingConfiguration": {
+          "DestinationBucketName": {
+            "Ref": "AccessLogsBucket83982689"
+          },
+          "LogFilePrefix": "access-logs/"
+        },
+        "ObjectLockConfiguration": {
+          "ObjectLockEnabled": "Enabled",
+          "Rule": {
+            "DefaultRetention": {
+              "Days": 2555,
+              "Mode": "COMPLIANCE"
+            }
+          }
+        },
+        "ObjectLockEnabled": true,
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "BlockPublicPolicy": true,
+          "IgnorePublicAcls": true,
+          "RestrictPublicBuckets": true
+        },
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "VersioningConfiguration": {
+          "Status": "Enabled"
+        }
+      },
+      "Type": "AWS::S3::Bucket",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "EvidenceBucketPolicy8C1EF42F": {
+      "Properties": {
+        "Bucket": {
+          "Ref": "EvidenceBucketC67FF768"
+        },
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "s3:*",
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false"
+                }
+              },
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": "*"
+              },
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "EvidenceBucketC67FF768",
+                    "Arn"
+                  ]
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "EvidenceBucketC67FF768",
+                          "Arn"
+                        ]
+                      },
+                      "/*"
+                    ]
+                  ]
+                }
+              ]
+            }
+          ],
+          "Version": "2012-10-17"
+        }
+      },
+      "Type": "AWS::S3::BucketPolicy"
+    },
+    "KbManifestA4312B82": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {
+              "ServerSideEncryptionByDefault": {
+                "KMSMasterKeyID": {
+                  "Fn::ImportValue": "SentinelSecurity:ExportsOutputFnGetAttDataKey17AFBB84ArnCE2A1BC6"
+                },
+                "SSEAlgorithm": "aws:kms"
+              }
+            }
+          ]
+        },
+        "BucketName": "sentinel-kbmanifest-dev-111111111111",
+        "LifecycleConfiguration": {
+          "Rules": [
+            {
+              "NoncurrentVersionExpiration": {
+                "NoncurrentDays": 90
+              },
+              "Status": "Enabled"
+            }
+          ]
+        },
+        "LoggingConfiguration": {
+          "DestinationBucketName": {
+            "Ref": "AccessLogsBucket83982689"
+          },
+          "LogFilePrefix": "kbmanifest/"
+        },
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "BlockPublicPolicy": true,
+          "IgnorePublicAcls": true,
+          "RestrictPublicBuckets": true
+        },
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "VersioningConfiguration": {
+          "Status": "Enabled"
+        }
+      },
+      "Type": "AWS::S3::Bucket",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "KbManifestPolicy8C1B0719": {
+      "Properties": {
+        "Bucket": {
+          "Ref": "KbManifestA4312B82"
+        },
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "s3:*",
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false"
+                }
+              },
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": "*"
+              },
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "KbManifestA4312B82",
+                    "Arn"
+                  ]
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "KbManifestA4312B82",
+                          "Arn"
+                        ]
+                      },
+                      "/*"
+                    ]
+                  ]
+                }
+              ]
+            }
+          ],
+          "Version": "2012-10-17"
+        }
+      },
+      "Type": "AWS::S3::BucketPolicy"
+    },
+    "KbSource2D3A83B9": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {
+              "ServerSideEncryptionByDefault": {
+                "KMSMasterKeyID": {
+                  "Fn::ImportValue": "SentinelSecurity:ExportsOutputFnGetAttDataKey17AFBB84ArnCE2A1BC6"
+                },
+                "SSEAlgorithm": "aws:kms"
+              }
+            }
+          ]
+        },
+        "BucketName": "sentinel-kbsource-dev-111111111111",
+        "LifecycleConfiguration": {
+          "Rules": [
+            {
+              "NoncurrentVersionExpiration": {
+                "NoncurrentDays": 90
+              },
+              "Status": "Enabled"
+            }
+          ]
+        },
+        "LoggingConfiguration": {
+          "DestinationBucketName": {
+            "Ref": "AccessLogsBucket83982689"
+          },
+          "LogFilePrefix": "kbsource/"
+        },
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "BlockPublicPolicy": true,
+          "IgnorePublicAcls": true,
+          "RestrictPublicBuckets": true
+        },
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "VersioningConfiguration": {
+          "Status": "Enabled"
+        }
+      },
+      "Type": "AWS::S3::Bucket",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "KbSourcePolicy78A3FE73": {
+      "Properties": {
+        "Bucket": {
+          "Ref": "KbSource2D3A83B9"
+        },
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "s3:*",
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false"
+                }
+              },
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": "*"
+              },
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "KbSource2D3A83B9",
+                    "Arn"
+                  ]
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "KbSource2D3A83B9",
+                          "Arn"
+                        ]
+                      },
+                      "/*"
+                    ]
+                  ]
+                }
+              ]
+            }
+          ],
+          "Version": "2012-10-17"
+        }
+      },
+      "Type": "AWS::S3::BucketPolicy"
+    },
+    "OssAccessPolicy": {
+      "DependsOn": [
+        "EpisodicVectorCollection"
+      ],
+      "Properties": {
+        "Name": "sentinel-episodic-vector-access-",
+        "Policy": "[{\"Rules\":[{\"ResourceType\":\"collection\",\"Resource\":[\"collection/sentinel-episodic-vector\"],\"Permission\":[\"aoss:*\"]},{\"ResourceType\":\"index\",\"Resource\":[\"index/sentinel-episodic-vector/*\"],\"Permission\":[\"aoss:*\"]}],\"Principal\":[\"arn:aws:iam::111111111111:root\"]}]",
+        "Type": "data"
+      },
+      "Type": "AWS::OpenSearchServerless::AccessPolicy"
+    },
+    "OssBootstrapDlq23FFBA76": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "MessageRetentionPeriod": 1209600,
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ]
+      },
+      "Type": "AWS::SQS::Queue",
+      "UpdateReplacePolicy": "Delete"
+    },
+    "OssBootstrapDlqPolicyAE1993BC": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sqs:*",
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false"
+                }
+              },
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": "*"
+              },
+              "Resource": {
+                "Fn::GetAtt": [
+                  "OssBootstrapDlq23FFBA76",
+                  "Arn"
+                ]
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "Queues": [
+          {
+            "Ref": "OssBootstrapDlq23FFBA76"
+          }
+        ]
+      },
+      "Type": "AWS::SQS::QueuePolicy"
+    },
+    "OssEncryptionPolicy": {
+      "Properties": {
+        "Name": "sentinel-episodic-vector-enc-dev",
+        "Policy": {
+          "Fn::Join": [
+            "",
+            [
+              "{\"Rules\":[{\"ResourceType\":\"collection\",\"Resource\":[\"collection/sentinel-episodic-vector\"]}],\"AWSOwnedKey\":false,\"KmsARN\":\"",
+              {
+                "Fn::ImportValue": "SentinelSecurity:ExportsOutputFnGetAttDataKey17AFBB84ArnCE2A1BC6"
+              },
+              "\"}"
+            ]
+          ]
+        },
+        "Type": "encryption"
+      },
+      "Type": "AWS::OpenSearchServerless::SecurityPolicy"
+    },
+    "OssIndexBootstrap": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "CollectionEndpoint": {
+          "Fn::GetAtt": [
+            "EpisodicVectorCollection",
+            "CollectionEndpoint"
+          ]
+        },
+        "ServiceToken": {
+          "Fn::GetAtt": [
+            "OssIndexBootstrapFnC1ECFDAE",
+            "Arn"
+          ]
+        }
+      },
+      "Type": "AWS::CloudFormation::CustomResource",
+      "UpdateReplacePolicy": "Delete"
+    },
+    "OssIndexBootstrapFnC1ECFDAE": {
+      "DependsOn": [
+        "OssIndexBootstrapFnServiceRoleDefaultPolicy5EAB2750",
+        "OssIndexBootstrapFnServiceRole3FF9A866"
+      ],
+      "Properties": {
+        "Architectures": [
+          "arm64"
+        ],
+        "Code": {
+          "S3Bucket": "cdk-hnb659fds-assets-111111111111-us-east-1",
+          "S3Key": "42286df7b7c29a6c59f7dafe52a59b0e521b100e7c4657713041345612d6b521.zip"
+        },
+        "DeadLetterConfig": {
+          "TargetArn": {
+            "Fn::GetAtt": [
+              "OssBootstrapDlq23FFBA76",
+              "Arn"
+            ]
+          }
+        },
+        "Handler": "handler.handler",
+        "ReservedConcurrentExecutions": 2,
+        "Role": {
+          "Fn::GetAtt": [
+            "OssIndexBootstrapFnServiceRole3FF9A866",
+            "Arn"
+          ]
+        },
+        "Runtime": "python3.12",
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "Timeout": 60
+      },
+      "Type": "AWS::Lambda::Function"
+    },
+    "OssIndexBootstrapFnServiceRole3FF9A866": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com"
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition"
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+              ]
+            ]
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ]
+      },
+      "Type": "AWS::IAM::Role"
+    },
+    "OssIndexBootstrapFnServiceRoleDefaultPolicy5EAB2750": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sqs:SendMessage",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "OssBootstrapDlq23FFBA76",
+                  "Arn"
+                ]
+              }
+            },
+            {
+              "Action": "aoss:APIAccessAll",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "EpisodicVectorCollection",
+                  "Arn"
+                ]
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "PolicyName": "OssIndexBootstrapFnServiceRoleDefaultPolicy5EAB2750",
+        "Roles": [
+          {
+            "Ref": "OssIndexBootstrapFnServiceRole3FF9A866"
+          }
+        ]
+      },
+      "Type": "AWS::IAM::Policy"
+    },
+    "OssNetworkPolicy": {
+      "Properties": {
+        "Name": "sentinel-episodic-vector-net-dev",
+        "Policy": "[{\"Rules\":[{\"ResourceType\":\"collection\",\"Resource\":[\"collection/sentinel-episodic-vector\"]}],\"AllowFromPublic\":true}]",
+        "Type": "network"
+      },
+      "Type": "AWS::OpenSearchServerless::SecurityPolicy"
+    },
+    "Reports65402A0A": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {
+              "ServerSideEncryptionByDefault": {
+                "KMSMasterKeyID": {
+                  "Fn::ImportValue": "SentinelSecurity:ExportsOutputFnGetAttDataKey17AFBB84ArnCE2A1BC6"
+                },
+                "SSEAlgorithm": "aws:kms"
+              }
+            }
+          ]
+        },
+        "BucketName": "sentinel-reports-dev-111111111111",
+        "LifecycleConfiguration": {
+          "Rules": [
+            {
+              "Status": "Enabled",
+              "Transitions": [
+                {
+                  "StorageClass": "STANDARD_IA",
+                  "TransitionInDays": 90
+                },
+                {
+                  "StorageClass": "GLACIER",
+                  "TransitionInDays": 365
+                }
+              ]
+            }
+          ]
+        },
+        "LoggingConfiguration": {
+          "DestinationBucketName": {
+            "Ref": "AccessLogsBucket83982689"
+          },
+          "LogFilePrefix": "reports/"
+        },
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "BlockPublicPolicy": true,
+          "IgnorePublicAcls": true,
+          "RestrictPublicBuckets": true
+        },
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "VersioningConfiguration": {
+          "Status": "Enabled"
+        }
+      },
+      "Type": "AWS::S3::Bucket",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "ReportsPolicyA13B441D": {
+      "Properties": {
+        "Bucket": {
+          "Ref": "Reports65402A0A"
+        },
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "s3:*",
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false"
+                }
+              },
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": "*"
+              },
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "Reports65402A0A",
+                    "Arn"
+                  ]
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "Reports65402A0A",
+                          "Arn"
+                        ]
+                      },
+                      "/*"
+                    ]
+                  ]
+                }
+              ]
+            }
+          ],
+          "Version": "2012-10-17"
+        }
+      },
+      "Type": "AWS::S3::BucketPolicy"
+    },
+    "SentinelBreakersEEC28AA5": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "AttributeDefinitions": [
+          {
+            "AttributeName": "breaker_name",
+            "AttributeType": "S"
+          }
+        ],
+        "BillingMode": "PAY_PER_REQUEST",
+        "ContributorInsightsSpecification": {
+          "Enabled": false
+        },
+        "DeletionProtectionEnabled": true,
+        "KeySchema": [
+          {
+            "AttributeName": "breaker_name",
+            "KeyType": "HASH"
+          }
+        ],
+        "PointInTimeRecoverySpecification": {
+          "PointInTimeRecoveryEnabled": true
+        },
+        "SSESpecification": {
+          "KMSMasterKeyId": {
+            "Fn::ImportValue": "SentinelSecurity:ExportsOutputFnGetAttDataKey17AFBB84ArnCE2A1BC6"
+          },
+          "SSEEnabled": true,
+          "SSEType": "KMS"
+        },
+        "TableName": "SentinelBreakers-dev",
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ]
+      },
+      "Type": "AWS::DynamoDB::Table",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "SentinelBudget909283CE": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "AttributeDefinitions": [
+          {
+            "AttributeName": "correlation_id",
+            "AttributeType": "S"
+          },
+          {
+            "AttributeName": "ulid",
+            "AttributeType": "S"
+          },
+          {
+            "AttributeName": "principal",
+            "AttributeType": "S"
+          },
+          {
+            "AttributeName": "ymd",
+            "AttributeType": "S"
+          }
+        ],
+        "BillingMode": "PAY_PER_REQUEST",
+        "ContributorInsightsSpecification": {
+          "Enabled": true
+        },
+        "DeletionProtectionEnabled": true,
+        "GlobalSecondaryIndexes": [
+          {
+            "IndexName": "principal-index",
+            "KeySchema": [
+              {
+                "AttributeName": "principal",
+                "KeyType": "HASH"
+              },
+              {
+                "AttributeName": "ymd",
+                "KeyType": "RANGE"
+              }
+            ],
+            "Projection": {
+              "ProjectionType": "ALL"
+            }
+          }
+        ],
+        "KeySchema": [
+          {
+            "AttributeName": "correlation_id",
+            "KeyType": "HASH"
+          },
+          {
+            "AttributeName": "ulid",
+            "KeyType": "RANGE"
+          }
+        ],
+        "PointInTimeRecoverySpecification": {
+          "PointInTimeRecoveryEnabled": true
+        },
+        "SSESpecification": {
+          "KMSMasterKeyId": {
+            "Fn::ImportValue": "SentinelSecurity:ExportsOutputFnGetAttDataKey17AFBB84ArnCE2A1BC6"
+          },
+          "SSEEnabled": true,
+          "SSEType": "KMS"
+        },
+        "TableName": "SentinelBudget-dev",
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "TimeToLiveSpecification": {
+          "AttributeName": "expires_at",
+          "Enabled": true
+        }
+      },
+      "Type": "AWS::DynamoDB::Table",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "SentinelCostAnomaly339A265B": {
+      "Properties": {
+        "KmsMasterKeyId": {
+          "Fn::ImportValue": "SentinelSecurity:ExportsOutputFnGetAttDataKey17AFBB84ArnCE2A1BC6"
+        },
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "TopicName": "SentinelCostAnomaly"
+      },
+      "Type": "AWS::SNS::Topic"
+    },
+    "SentinelCriticalFindings8502B01B": {
+      "Properties": {
+        "KmsMasterKeyId": {
+          "Fn::ImportValue": "SentinelSecurity:ExportsOutputFnGetAttDataKey17AFBB84ArnCE2A1BC6"
+        },
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "TopicName": "SentinelCriticalFindings"
+      },
+      "Type": "AWS::SNS::Topic"
+    },
+    "SentinelDecisions59DED8EB": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "AttributeDefinitions": [
+          {
+            "AttributeName": "principal",
+            "AttributeType": "S"
+          },
+          {
+            "AttributeName": "decided_at",
+            "AttributeType": "S"
+          },
+          {
+            "AttributeName": "correlation_id",
+            "AttributeType": "S"
+          }
+        ],
+        "BillingMode": "PAY_PER_REQUEST",
+        "ContributorInsightsSpecification": {
+          "Enabled": true
+        },
+        "DeletionProtectionEnabled": true,
+        "GlobalSecondaryIndexes": [
+          {
+            "IndexName": "correlation-index",
+            "KeySchema": [
+              {
+                "AttributeName": "correlation_id",
+                "KeyType": "HASH"
+              },
+              {
+                "AttributeName": "decided_at",
+                "KeyType": "RANGE"
+              }
+            ],
+            "Projection": {
+              "ProjectionType": "ALL"
+            }
+          }
+        ],
+        "KeySchema": [
+          {
+            "AttributeName": "principal",
+            "KeyType": "HASH"
+          },
+          {
+            "AttributeName": "decided_at",
+            "KeyType": "RANGE"
+          }
+        ],
+        "PointInTimeRecoverySpecification": {
+          "PointInTimeRecoveryEnabled": true
+        },
+        "SSESpecification": {
+          "KMSMasterKeyId": {
+            "Fn::ImportValue": "SentinelSecurity:ExportsOutputFnGetAttDataKey17AFBB84ArnCE2A1BC6"
+          },
+          "SSEEnabled": true,
+          "SSEType": "KMS"
+        },
+        "TableName": "SentinelDecisions-dev",
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ]
+      },
+      "Type": "AWS::DynamoDB::Table",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "SentinelDecisionsInFlight67F5F530": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "AttributeDefinitions": [
+          {
+            "AttributeName": "correlation_id",
+            "AttributeType": "S"
+          }
+        ],
+        "BillingMode": "PAY_PER_REQUEST",
+        "ContributorInsightsSpecification": {
+          "Enabled": false
+        },
+        "DeletionProtectionEnabled": true,
+        "KeySchema": [
+          {
+            "AttributeName": "correlation_id",
+            "KeyType": "HASH"
+          }
+        ],
+        "PointInTimeRecoverySpecification": {
+          "PointInTimeRecoveryEnabled": true
+        },
+        "SSESpecification": {
+          "KMSMasterKeyId": {
+            "Fn::ImportValue": "SentinelSecurity:ExportsOutputFnGetAttDataKey17AFBB84ArnCE2A1BC6"
+          },
+          "SSEEnabled": true,
+          "SSEType": "KMS"
+        },
+        "TableName": "SentinelDecisionsInFlight-dev",
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "TimeToLiveSpecification": {
+          "AttributeName": "expires_at",
+          "Enabled": true
+        }
+      },
+      "Type": "AWS::DynamoDB::Table",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "SentinelDivergence881D2533": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "AttributeDefinitions": [
+          {
+            "AttributeName": "correlation_id",
+            "AttributeType": "S"
+          },
+          {
+            "AttributeName": "detected_at",
+            "AttributeType": "S"
+          },
+          {
+            "AttributeName": "feature_id",
+            "AttributeType": "S"
+          },
+          {
+            "AttributeName": "divergence_kind",
+            "AttributeType": "S"
+          }
+        ],
+        "BillingMode": "PAY_PER_REQUEST",
+        "ContributorInsightsSpecification": {
+          "Enabled": false
+        },
+        "DeletionProtectionEnabled": true,
+        "GlobalSecondaryIndexes": [
+          {
+            "IndexName": "feature-divergence-index",
+            "KeySchema": [
+              {
+                "AttributeName": "feature_id",
+                "KeyType": "HASH"
+              },
+              {
+                "AttributeName": "divergence_kind",
+                "KeyType": "RANGE"
+              }
+            ],
+            "Projection": {
+              "ProjectionType": "ALL"
+            }
+          }
+        ],
+        "KeySchema": [
+          {
+            "AttributeName": "correlation_id",
+            "KeyType": "HASH"
+          },
+          {
+            "AttributeName": "detected_at",
+            "KeyType": "RANGE"
+          }
+        ],
+        "PointInTimeRecoverySpecification": {
+          "PointInTimeRecoveryEnabled": true
+        },
+        "SSESpecification": {
+          "KMSMasterKeyId": {
+            "Fn::ImportValue": "SentinelSecurity:ExportsOutputFnGetAttDataKey17AFBB84ArnCE2A1BC6"
+          },
+          "SSEEnabled": true,
+          "SSEType": "KMS"
+        },
+        "TableName": "SentinelDivergence-dev",
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "TimeToLiveSpecification": {
+          "AttributeName": "expires_at",
+          "Enabled": true
+        }
+      },
+      "Type": "AWS::DynamoDB::Table",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "SentinelEmergencyRevocationsA7A2C921": {
+      "Properties": {
+        "KmsMasterKeyId": {
+          "Fn::ImportValue": "SentinelSecurity:ExportsOutputFnGetAttDataKey17AFBB84ArnCE2A1BC6"
+        },
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "TopicName": "SentinelEmergencyRevocations"
+      },
+      "Type": "AWS::SNS::Topic"
+    },
+    "SentinelFaults39A0BA76": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "AttributeDefinitions": [
+          {
+            "AttributeName": "correlation_id",
+            "AttributeType": "S"
+          },
+          {
+            "AttributeName": "detected_at",
+            "AttributeType": "S"
+          },
+          {
+            "AttributeName": "fault_class",
+            "AttributeType": "S"
+          }
+        ],
+        "BillingMode": "PAY_PER_REQUEST",
+        "ContributorInsightsSpecification": {
+          "Enabled": false
+        },
+        "DeletionProtectionEnabled": true,
+        "GlobalSecondaryIndexes": [
+          {
+            "IndexName": "fault-class-index",
+            "KeySchema": [
+              {
+                "AttributeName": "fault_class",
+                "KeyType": "HASH"
+              },
+              {
+                "AttributeName": "detected_at",
+                "KeyType": "RANGE"
+              }
+            ],
+            "Projection": {
+              "ProjectionType": "ALL"
+            }
+          }
+        ],
+        "KeySchema": [
+          {
+            "AttributeName": "correlation_id",
+            "KeyType": "HASH"
+          },
+          {
+            "AttributeName": "detected_at",
+            "KeyType": "RANGE"
+          }
+        ],
+        "PointInTimeRecoverySpecification": {
+          "PointInTimeRecoveryEnabled": true
+        },
+        "SSESpecification": {
+          "KMSMasterKeyId": {
+            "Fn::ImportValue": "SentinelSecurity:ExportsOutputFnGetAttDataKey17AFBB84ArnCE2A1BC6"
+          },
+          "SSEEnabled": true,
+          "SSEType": "KMS"
+        },
+        "TableName": "SentinelFaults-dev",
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "TimeToLiveSpecification": {
+          "AttributeName": "expires_at",
+          "Enabled": true
+        }
+      },
+      "Type": "AWS::DynamoDB::Table",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "SentinelFindings041A3481": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "AttributeDefinitions": [
+          {
+            "AttributeName": "account_id#feature_id",
+            "AttributeType": "S"
+          },
+          {
+            "AttributeName": "finding_id#detected_at",
+            "AttributeType": "S"
+          },
+          {
+            "AttributeName": "severity",
+            "AttributeType": "S"
+          },
+          {
+            "AttributeName": "detected_at",
+            "AttributeType": "S"
+          },
+          {
+            "AttributeName": "feature_id#status",
+            "AttributeType": "S"
+          }
+        ],
+        "BillingMode": "PAY_PER_REQUEST",
+        "ContributorInsightsSpecification": {
+          "Enabled": true
+        },
+        "DeletionProtectionEnabled": true,
+        "GlobalSecondaryIndexes": [
+          {
+            "IndexName": "severity-index",
+            "KeySchema": [
+              {
+                "AttributeName": "severity",
+                "KeyType": "HASH"
+              },
+              {
+                "AttributeName": "detected_at",
+                "KeyType": "RANGE"
+              }
+            ],
+            "Projection": {
+              "ProjectionType": "ALL"
+            }
+          },
+          {
+            "IndexName": "feature-status-index",
+            "KeySchema": [
+              {
+                "AttributeName": "feature_id#status",
+                "KeyType": "HASH"
+              },
+              {
+                "AttributeName": "detected_at",
+                "KeyType": "RANGE"
+              }
+            ],
+            "Projection": {
+              "ProjectionType": "ALL"
+            }
+          }
+        ],
+        "KeySchema": [
+          {
+            "AttributeName": "account_id#feature_id",
+            "KeyType": "HASH"
+          },
+          {
+            "AttributeName": "finding_id#detected_at",
+            "KeyType": "RANGE"
+          }
+        ],
+        "PointInTimeRecoverySpecification": {
+          "PointInTimeRecoveryEnabled": true
+        },
+        "SSESpecification": {
+          "KMSMasterKeyId": {
+            "Fn::ImportValue": "SentinelSecurity:ExportsOutputFnGetAttDataKey17AFBB84ArnCE2A1BC6"
+          },
+          "SSEEnabled": true,
+          "SSEType": "KMS"
+        },
+        "TableName": "SentinelFindings-dev",
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "TimeToLiveSpecification": {
+          "AttributeName": "expires_at",
+          "Enabled": true
+        }
+      },
+      "Type": "AWS::DynamoDB::Table",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "SentinelIdempotencyA0F868B9": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "AttributeDefinitions": [
+          {
+            "AttributeName": "idempotency_key",
+            "AttributeType": "S"
+          }
+        ],
+        "BillingMode": "PAY_PER_REQUEST",
+        "ContributorInsightsSpecification": {
+          "Enabled": false
+        },
+        "DeletionProtectionEnabled": true,
+        "KeySchema": [
+          {
+            "AttributeName": "idempotency_key",
+            "KeyType": "HASH"
+          }
+        ],
+        "PointInTimeRecoverySpecification": {
+          "PointInTimeRecoveryEnabled": true
+        },
+        "SSESpecification": {
+          "KMSMasterKeyId": {
+            "Fn::ImportValue": "SentinelSecurity:ExportsOutputFnGetAttDataKey17AFBB84ArnCE2A1BC6"
+          },
+          "SSEEnabled": true,
+          "SSEType": "KMS"
+        },
+        "TableName": "SentinelIdempotency-dev",
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "TimeToLiveSpecification": {
+          "AttributeName": "expires_at",
+          "Enabled": true
+        }
+      },
+      "Type": "AWS::DynamoDB::Table",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "SentinelMemoryEpisodic562E66CF": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "AttributeDefinitions": [
+          {
+            "AttributeName": "principal",
+            "AttributeType": "S"
+          },
+          {
+            "AttributeName": "decided_at",
+            "AttributeType": "S"
+          },
+          {
+            "AttributeName": "account_id",
+            "AttributeType": "S"
+          },
+          {
+            "AttributeName": "feature_id",
+            "AttributeType": "S"
+          },
+          {
+            "AttributeName": "subject_arn",
+            "AttributeType": "S"
+          },
+          {
+            "AttributeName": "detected_at",
+            "AttributeType": "S"
+          }
+        ],
+        "BillingMode": "PAY_PER_REQUEST",
+        "ContributorInsightsSpecification": {
+          "Enabled": false
+        },
+        "DeletionProtectionEnabled": true,
+        "GlobalSecondaryIndexes": [
+          {
+            "IndexName": "account-index",
+            "KeySchema": [
+              {
+                "AttributeName": "account_id",
+                "KeyType": "HASH"
+              },
+              {
+                "AttributeName": "decided_at",
+                "KeyType": "RANGE"
+              }
+            ],
+            "Projection": {
+              "ProjectionType": "ALL"
+            }
+          },
+          {
+            "IndexName": "feature-index",
+            "KeySchema": [
+              {
+                "AttributeName": "feature_id",
+                "KeyType": "HASH"
+              },
+              {
+                "AttributeName": "decided_at",
+                "KeyType": "RANGE"
+              }
+            ],
+            "Projection": {
+              "ProjectionType": "ALL"
+            }
+          },
+          {
+            "IndexName": "subject-index",
+            "KeySchema": [
+              {
+                "AttributeName": "subject_arn",
+                "KeyType": "HASH"
+              },
+              {
+                "AttributeName": "detected_at",
+                "KeyType": "RANGE"
+              }
+            ],
+            "Projection": {
+              "ProjectionType": "ALL"
+            }
+          }
+        ],
+        "KeySchema": [
+          {
+            "AttributeName": "principal",
+            "KeyType": "HASH"
+          },
+          {
+            "AttributeName": "decided_at",
+            "KeyType": "RANGE"
+          }
+        ],
+        "PointInTimeRecoverySpecification": {
+          "PointInTimeRecoveryEnabled": true
+        },
+        "SSESpecification": {
+          "KMSMasterKeyId": {
+            "Fn::ImportValue": "SentinelSecurity:ExportsOutputFnGetAttDataKey17AFBB84ArnCE2A1BC6"
+          },
+          "SSEEnabled": true,
+          "SSEType": "KMS"
+        },
+        "TableName": "SentinelMemoryEpisodic-dev",
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "TimeToLiveSpecification": {
+          "AttributeName": "expires_at",
+          "Enabled": true
+        }
+      },
+      "Type": "AWS::DynamoDB::Table",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "SentinelMemoryProcedural6BBDF6A7": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "AttributeDefinitions": [
+          {
+            "AttributeName": "pattern_kind",
+            "AttributeType": "S"
+          },
+          {
+            "AttributeName": "pattern_hash",
+            "AttributeType": "S"
+          }
+        ],
+        "BillingMode": "PAY_PER_REQUEST",
+        "ContributorInsightsSpecification": {
+          "Enabled": false
+        },
+        "DeletionProtectionEnabled": true,
+        "KeySchema": [
+          {
+            "AttributeName": "pattern_kind",
+            "KeyType": "HASH"
+          },
+          {
+            "AttributeName": "pattern_hash",
+            "KeyType": "RANGE"
+          }
+        ],
+        "PointInTimeRecoverySpecification": {
+          "PointInTimeRecoveryEnabled": true
+        },
+        "SSESpecification": {
+          "KMSMasterKeyId": {
+            "Fn::ImportValue": "SentinelSecurity:ExportsOutputFnGetAttDataKey17AFBB84ArnCE2A1BC6"
+          },
+          "SSEEnabled": true,
+          "SSEType": "KMS"
+        },
+        "TableName": "SentinelMemoryProcedural-dev",
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "TimeToLiveSpecification": {
+          "AttributeName": "expires_at",
+          "Enabled": true
+        }
+      },
+      "Type": "AWS::DynamoDB::Table",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "SentinelMemorySemantic2D175195": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "AttributeDefinitions": [
+          {
+            "AttributeName": "entity_kind",
+            "AttributeType": "S"
+          },
+          {
+            "AttributeName": "entity_key",
+            "AttributeType": "S"
+          },
+          {
+            "AttributeName": "related_entity",
+            "AttributeType": "S"
+          }
+        ],
+        "BillingMode": "PAY_PER_REQUEST",
+        "ContributorInsightsSpecification": {
+          "Enabled": false
+        },
+        "DeletionProtectionEnabled": true,
+        "GlobalSecondaryIndexes": [
+          {
+            "IndexName": "related-index",
+            "KeySchema": [
+              {
+                "AttributeName": "related_entity",
+                "KeyType": "HASH"
+              },
+              {
+                "AttributeName": "entity_key",
+                "KeyType": "RANGE"
+              }
+            ],
+            "Projection": {
+              "ProjectionType": "ALL"
+            }
+          }
+        ],
+        "KeySchema": [
+          {
+            "AttributeName": "entity_kind",
+            "KeyType": "HASH"
+          },
+          {
+            "AttributeName": "entity_key",
+            "KeyType": "RANGE"
+          }
+        ],
+        "PointInTimeRecoverySpecification": {
+          "PointInTimeRecoveryEnabled": true
+        },
+        "SSESpecification": {
+          "KMSMasterKeyId": {
+            "Fn::ImportValue": "SentinelSecurity:ExportsOutputFnGetAttDataKey17AFBB84ArnCE2A1BC6"
+          },
+          "SSEEnabled": true,
+          "SSEType": "KMS"
+        },
+        "TableName": "SentinelMemorySemantic-dev",
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ]
+      },
+      "Type": "AWS::DynamoDB::Table",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "SentinelOpsA83C408C": {
+      "Properties": {
+        "KmsMasterKeyId": {
+          "Fn::ImportValue": "SentinelSecurity:ExportsOutputFnGetAttDataKey17AFBB84ArnCE2A1BC6"
+        },
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "TopicName": "SentinelOps"
+      },
+      "Type": "AWS::SNS::Topic"
+    },
+    "SentinelPolicies83F43F45": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "AttributeDefinitions": [
+          {
+            "AttributeName": "org_id",
+            "AttributeType": "S"
+          },
+          {
+            "AttributeName": "policy_arn",
+            "AttributeType": "S"
+          }
+        ],
+        "BillingMode": "PAY_PER_REQUEST",
+        "ContributorInsightsSpecification": {
+          "Enabled": false
+        },
+        "DeletionProtectionEnabled": true,
+        "KeySchema": [
+          {
+            "AttributeName": "org_id",
+            "KeyType": "HASH"
+          },
+          {
+            "AttributeName": "policy_arn",
+            "KeyType": "RANGE"
+          }
+        ],
+        "PointInTimeRecoverySpecification": {
+          "PointInTimeRecoveryEnabled": true
+        },
+        "SSESpecification": {
+          "KMSMasterKeyId": {
+            "Fn::ImportValue": "SentinelSecurity:ExportsOutputFnGetAttDataKey17AFBB84ArnCE2A1BC6"
+          },
+          "SSEEnabled": true,
+          "SSEType": "KMS"
+        },
+        "TableName": "SentinelPolicies-dev",
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "TimeToLiveSpecification": {
+          "AttributeName": "expires_at",
+          "Enabled": true
+        }
+      },
+      "Type": "AWS::DynamoDB::Table",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "SentinelRevocationsEE3F2EA7": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "AttributeDefinitions": [
+          {
+            "AttributeName": "account_id",
+            "AttributeType": "S"
+          },
+          {
+            "AttributeName": "role_arn",
+            "AttributeType": "S"
+          },
+          {
+            "AttributeName": "correlation_id",
+            "AttributeType": "S"
+          },
+          {
+            "AttributeName": "attached_at",
+            "AttributeType": "S"
+          }
+        ],
+        "BillingMode": "PAY_PER_REQUEST",
+        "ContributorInsightsSpecification": {
+          "Enabled": false
+        },
+        "DeletionProtectionEnabled": true,
+        "GlobalSecondaryIndexes": [
+          {
+            "IndexName": "correlation-index",
+            "KeySchema": [
+              {
+                "AttributeName": "correlation_id",
+                "KeyType": "HASH"
+              },
+              {
+                "AttributeName": "attached_at",
+                "KeyType": "RANGE"
+              }
+            ],
+            "Projection": {
+              "ProjectionType": "ALL"
+            }
+          }
+        ],
+        "KeySchema": [
+          {
+            "AttributeName": "account_id",
+            "KeyType": "HASH"
+          },
+          {
+            "AttributeName": "role_arn",
+            "KeyType": "RANGE"
+          }
+        ],
+        "PointInTimeRecoverySpecification": {
+          "PointInTimeRecoveryEnabled": true
+        },
+        "SSESpecification": {
+          "KMSMasterKeyId": {
+            "Fn::ImportValue": "SentinelSecurity:ExportsOutputFnGetAttDataKey17AFBB84ArnCE2A1BC6"
+          },
+          "SSEEnabled": true,
+          "SSEType": "KMS"
+        },
+        "TableName": "SentinelRevocations-dev",
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "TimeToLiveSpecification": {
+          "AttributeName": "ttl_expires_at",
+          "Enabled": true
+        }
+      },
+      "Type": "AWS::DynamoDB::Table",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "SentinelSLRsE79DFDAB": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "AttributeDefinitions": [
+          {
+            "AttributeName": "service_principal",
+            "AttributeType": "S"
+          }
+        ],
+        "BillingMode": "PAY_PER_REQUEST",
+        "ContributorInsightsSpecification": {
+          "Enabled": false
+        },
+        "DeletionProtectionEnabled": true,
+        "KeySchema": [
+          {
+            "AttributeName": "service_principal",
+            "KeyType": "HASH"
+          }
+        ],
+        "PointInTimeRecoverySpecification": {
+          "PointInTimeRecoveryEnabled": true
+        },
+        "SSESpecification": {
+          "KMSMasterKeyId": {
+            "Fn::ImportValue": "SentinelSecurity:ExportsOutputFnGetAttDataKey17AFBB84ArnCE2A1BC6"
+          },
+          "SSEEnabled": true,
+          "SSEType": "KMS"
+        },
+        "TableName": "SentinelSLRs-dev",
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ]
+      },
+      "Type": "AWS::DynamoDB::Table",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "SentinelWeeklyReports737B0314": {
+      "Properties": {
+        "KmsMasterKeyId": {
+          "Fn::ImportValue": "SentinelSecurity:ExportsOutputFnGetAttDataKey17AFBB84ArnCE2A1BC6"
+        },
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "TopicName": "SentinelWeeklyReports"
+      },
+      "Type": "AWS::SNS::Topic"
+    },
+    "SessionKillDlq974F0537": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "FifoQueue": true,
+        "KmsMasterKeyId": {
+          "Fn::ImportValue": "SentinelSecurity:ExportsOutputFnGetAttDataKey17AFBB84ArnCE2A1BC6"
+        },
+        "MessageRetentionPeriod": 1209600,
+        "QueueName": "SessionKillQueue-DLQ.fifo",
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ]
+      },
+      "Type": "AWS::SQS::Queue",
+      "UpdateReplacePolicy": "Delete"
+    },
+    "SessionKillDlqPolicy1AE5B46A": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sqs:*",
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false"
+                }
+              },
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": "*"
+              },
+              "Resource": {
+                "Fn::GetAtt": [
+                  "SessionKillDlq974F0537",
+                  "Arn"
+                ]
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "Queues": [
+          {
+            "Ref": "SessionKillDlq974F0537"
+          }
+        ]
+      },
+      "Type": "AWS::SQS::QueuePolicy"
+    },
+    "SessionKillQueue1F8B2A8D": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "ContentBasedDeduplication": false,
+        "FifoQueue": true,
+        "KmsMasterKeyId": {
+          "Fn::ImportValue": "SentinelSecurity:ExportsOutputFnGetAttDataKey17AFBB84ArnCE2A1BC6"
+        },
+        "MessageRetentionPeriod": 345600,
+        "QueueName": "SessionKillQueue.fifo",
+        "RedrivePolicy": {
+          "deadLetterTargetArn": {
+            "Fn::GetAtt": [
+              "SessionKillDlq974F0537",
+              "Arn"
+            ]
+          },
+          "maxReceiveCount": 3
+        },
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "VisibilityTimeout": 30
+      },
+      "Type": "AWS::SQS::Queue",
+      "UpdateReplacePolicy": "Delete"
+    },
+    "SessionKillQueuePolicyDD6A0584": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sqs:*",
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false"
+                }
+              },
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": "*"
+              },
+              "Resource": {
+                "Fn::GetAtt": [
+                  "SessionKillQueue1F8B2A8D",
+                  "Arn"
+                ]
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "Queues": [
+          {
+            "Ref": "SessionKillQueue1F8B2A8D"
+          }
+        ]
+      },
+      "Type": "AWS::SQS::QueuePolicy"
+    }
+  },
+  "Rules": {
+    "CheckBootstrapVersion": {
+      "Assertions": [
+        {
+          "Assert": {
+            "Fn::Not": [
+              {
+                "Fn::Contains": [
+                  [
+                    "1",
+                    "2",
+                    "3",
+                    "4",
+                    "5"
+                  ],
+                  {
+                    "Ref": "BootstrapVersion"
+                  }
+                ]
+              }
+            ]
+          },
+          "AssertDescription": "CDK bootstrap stack version 6 required. Please run 'cdk bootstrap' with a recent version of the CDK CLI."
+        }
+      ]
+    }
+  }
+}
