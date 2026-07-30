@@ -16,9 +16,9 @@ CURRENT_PHASE: (none)
 STATUS: done
 BRANCH: main
 STARTED_AT: 2026-07-30
-LAST_STEP: adapters phase-05 CLOSED (scoped per ADR 0006 — see NOTES). Merged to main, tagged phase/adapters-ddb-done. Real toolchain run (uv sync/ruff/mypy --strict/pytest) — all clean, 86 tests passed, 95% coverage.
-NEXT_STEP: sprint step 10 — adapters phase-01 on feat/adapters-bedrock (Grok + Bedrock LLM providers).
-PREVIOUS_PHASE: adapters phase-05 (done, scoped)
+LAST_STEP: adapters phase-01 CLOSED (LLM adapter, scoped per ADR 0007 — see NOTES). Merged to main, tagged phase/adapters-bedrock-done. Real toolchain run (uv sync/ruff/mypy --strict/pytest) — all clean, 112 tests passed, 94% coverage.
+NEXT_STEP: sprint step 11 — adapters phase-02 on feat/adapters-zelkova.
+PREVIOUS_PHASE: adapters phase-01 (done, scoped)
 TESTING POLICY (revised): write only tests needed to cover real behavior per phase (3-8 focused tests). No exhaustive Hypothesis fuzzing, no hand-audits — run the real tools (ruff/mypy/pytest) and fix only what fails.
 DEVIATION_NOTE: user requested "start with feat/agents-foundation" — sprint step 02 (agents phase-00) has been executed before sprint step 01 (adapters phase-00). Dependencies allow this because agents phase-00 defines pure Python contracts with no adapter imports at the contract layer.
 
@@ -37,7 +37,7 @@ Wave 1 — Substrate:
 Wave 2 — Data plane + LLM adapters:
   [x] 08. aws-infra phase-02      feat/aws-infra-foundation-stack
   [x] 09. adapters phase-05       feat/adapters-ddb  (scoped to 3 representative table clients — see ADR 0006)
-  [ ] 10. adapters phase-01       feat/adapters-bedrock         (Grok + Bedrock providers)
+  [x] 10. adapters phase-01       feat/adapters-bedrock         (Grok + Bedrock providers)
   [ ] 11. adapters phase-02       feat/adapters-zelkova
   [ ] 12. aws-infra phase-03      feat/aws-infra-athena
   [ ] 13. agents phase-10         feat/agents-rag
@@ -97,9 +97,11 @@ CHECKPOINT TAGS ON MAIN (git tag, updated on merge of each wave-final PR)
 ------------------------------------------------------------------
 NOTES + BLOCKERS
 ------------------------------------------------------------------
-- xAI API key not yet provisioned locally. Required before running evals
-  during adapters phase-01. User must set `XAI_API_KEY` in .env.local
-  before sprint step 10.
+- xAI API key still not provisioned locally. adapters phase-01's
+  GrokProvider is built and unit-tested against a mocked HTTP session
+  (see ADR 0007) — no real xAI call has been made or tested. Set
+  `XAI_API_KEY` in `.env.local` and re-verify GrokProvider against the
+  real endpoint before using Grok for actual local dev or evals.
 - AWS account provisioning: still not done. aws-infra phase-01 (security
   stack) was built and verified entirely offline (cdk synth + cdk-nag +
   mocked-boto3 unit tests per ADR 0001), but TWO of its acceptance criteria
@@ -130,6 +132,12 @@ NOTES + BLOCKERS
   Wave 3). Also: `MemoryClient.recall_episodic`'s true k-NN semantic path
   needs a deployed OpenSearch Serverless collection — deferred with the
   rest of ADR 0005.
+- adapters phase-01 (LLM adapter) deferred 2 acceptance criteria per
+  ADR 0007: "p99 adapter overhead ≤ 30ms vs raw boto3" (needs a real
+  benchmark against live Bedrock) and any real xAI call (see the
+  XAI_API_KEY note above). Streaming's mid-stream partial-cost-sample
+  cadence (spec: every 500 chunks) is not implemented — no consumer exists
+  yet (backend phase-02, Wave 4) to validate the right cadence against.
 - All 43 feature branches exist on origin at the baseline commit
   `Establish IAM Sentinel canon` (3a3e255). Do not delete after merge.
 
@@ -150,3 +158,4 @@ HISTORY (append-only)
 2026-07-30 agents phase-11 done on feat/agents-guardrails, merged to main at c233492, tagged phase/agents-guardrails-done. Wave 1 complete — tagged checkpoint-1-substrate. Per ADR 0004, scoped to just the two deliverables not already covered by other sprint steps (fencer/sanitizer = adapters phase-03 done; break-glass STS = aws-infra phase-01 done; Zelkova = its own sprint step, adapters phase-02): the actual Guardrail policy content (aws-infra/config/guardrail_v1.json — topic/content/PII/grounding policies) wired through an extended GuardrailCustomResource + lifecycle Lambda, and a 24-payload prompt-injection corpus (agents/tests/prompt_injection/corpus.jsonl, 3 per category x 8 categories, reduced from the spec's 200 per the revised testing policy) with a schema/quality test. Running the corpus end-to-end through a deployed Prime + Guardrail is deferred (neither exists yet) — tracked in NOTES + BLOCKERS. cdk synth clean, cdk-nag zero errors, ruff/mypy --strict clean in both aws-infra and agents; aws-infra 36 tests pass, agents 82 tests pass (96% coverage).
 2026-07-30 aws-infra phase-02 done on feat/aws-infra-foundation-stack, merged to main at c37bf56, tagged phase/aws-infra-foundation-stack-done. Wave 2 begins. Per ADR 0005: adapters phase-05's table inventory lists 14 tables despite both phase docs saying "13" -- provisioned all 14 rather than under-provisioning to match the miscounted headline. Established the key-attribute convention for the spec's `#`-joined PK/SK/GSI notation (composite-value attribute for main table keys, PK+SK split on the last `#` for GSIs) since adapters phase-05 hasn't landed yet to confirm it -- reconcile there if that phase's author reads it differently. Built all 14 DDB tables (CMK, PITR, deletion protection, on-demand) + an org-wide AWS Backup plan (the deferral ADR 0003 promised once this phase landed), the OSS VECTORSEARCH collection + policies + an index-bootstrap Lambda that hand-signs SigV4 via botocore instead of depending on opensearchpy (no Lambda-layer pipeline exists to add that dependency), 5 new S3 buckets sharing one access-log bucket, SessionKillQueue.fifo+DLQ, and 5 new SNS topics. Caught a real bug before it could hit deploy: phase-02 spec lists `SentinelSecurity` as one of its 6 topics, but aws-infra phase-01 already created it in SecurityStack for the break-glass alarm -- creating it again would collide (SNS names are unique per account+region). FoundationStack now references `security.security_topic` instead. Also had to fix mypy: two function dirs share a `handler.py` filename, which collided as one module when checked together -- CI and local runs now check each `functions/*/` directory separately. cdk synth clean, cdk-nag zero errors after real fixes (AWS Backup plan, log-bucket versioning) plus justified suppressions (no-VPC, single-region, CDK-standard managed-policy patterns, SSE-S3-only access-log bucket). 43 tests pass, 99% coverage, ruff/mypy --strict clean. Deferred per ADR 0005: OSS index query verification and SNS delivery-status logging both need a real AWS account.
 2026-07-30 adapters phase-05 done on feat/adapters-ddb, merged to main at 6d4a1c9, tagged phase/adapters-ddb-done. Per ADR 0006: scoped to `DynamoDbHelper` (the actual reusable logic -- retry, circuit breaker, EMF metrics) plus 3 representative table clients (FindingsClient, DecisionsInFlightClient, MemoryClient's DDB paths) instead of all 14 -- no specialist Lambda exists yet to validate the other 9 tables' query shapes against (Prime and F1 land in Wave 3). Reconciled ADR 0005's key-attribute convention as promised: confirmed the `#`-joined composite attribute names work as designed. Found a real bug doing so: DynamoDB's expression grammar treats a bare `#` as a name-placeholder marker, so those composite attribute names (`account_id#feature_id`, etc.) can't be referenced directly in KeyConditionExpression/UpdateExpression strings -- they need ExpressionAttributeNames aliases, which the base client didn't originally support. Added that support before it could bite a real caller. Client methods take/return plain dicts, never an agents Finding/EpisodicMemory model (module boundary). 86 tests pass, 95% coverage, ruff/mypy --strict clean. Deferred per ADR 0006: 9 remaining table clients (add on-demand per-consumer) and MemoryClient.recall_episodic's true k-NN path (needs a deployed OSS collection, per ADR 0005).
+2026-07-30 adapters phase-01 done on feat/adapters-bedrock, merged to main at 964c71f, tagged phase/adapters-bedrock-done. Built per docs/EXECUTION_PLAN.txt §2 (supersedes the pre-split phase-01 spec) and ADR 0007: a shared LLMProvider Protocol with BedrockProvider (real bedrock-agent-runtime/bedrock-runtime calls, budget gate, AGGRESSIVE retry, stopReason-based Guardrail detection, cost sampling) and GrokProvider (xAI's OpenAI-compatible endpoint via a new `requests` dependency, in-process multi-agent emulation, local structural Guardrail stand-in using the sanitizer's forbidden-pattern list), selected via SENTINEL_LLM_PROVIDER. Also built model_router.pick_model (cost-aware Haiku/Sonnet downgrade at 70% of cap) and output_validator.validate_output (rejects forged ARNs/evidence_ids/forbidden patterns). Found and closed a real cross-module gap: aws-infra phase-01 published /sentinel/{stage}/guardrail/version to SSM but never /sentinel/{stage}/guardrail/id, which this phase's GuardrailAccessor needs — added it to SecurityStack. Made prompts/sanitizer.py's FORBIDDEN_PATTERNS public so output_validator and GrokProvider's local guardrail both reference the same list instead of duplicating it. 112 tests pass, 94% coverage, ruff/mypy --strict clean in both adapters and aws-infra. Deferred per ADR 0007: the p99-overhead-vs-raw-boto3 benchmark, any real xAI call (XAI_API_KEY still unprovisioned), and streaming's mid-stream partial-cost-sample cadence (no consumer yet to validate it against).
