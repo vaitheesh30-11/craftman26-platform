@@ -16,9 +16,9 @@ CURRENT_PHASE: (none)
 STATUS: done
 BRANCH: main
 STARTED_AT: 2026-07-30
-LAST_STEP: adapters phase-04 CLOSED. Merged to main, tagged phase/adapters-evidence-done. Real toolchain run (uv sync/ruff/mypy --strict/pytest) — all clean, 67 tests passed, 98% coverage.
-NEXT_STEP: sprint step 07 — agents phase-11 on feat/agents-guardrails.
-PREVIOUS_PHASE: adapters phase-04 (done)
+LAST_STEP: agents phase-11 CLOSED. Merged to main, tagged phase/agents-guardrails-done. checkpoint-1-substrate tagged on main — Wave 1 complete. Real toolchain run in both aws-infra and agents (uv sync/ruff/mypy --strict/cdk synth/cdk-nag/pytest) — all clean.
+NEXT_STEP: sprint step 08 — aws-infra phase-02 on feat/aws-infra-foundation-stack (Wave 2 begins).
+PREVIOUS_PHASE: agents phase-11 (done)
 TESTING POLICY (revised): write only tests needed to cover real behavior per phase (3-8 focused tests). No exhaustive Hypothesis fuzzing, no hand-audits — run the real tools (ruff/mypy/pytest) and fix only what fails.
 DEVIATION_NOTE: user requested "start with feat/agents-foundation" — sprint step 02 (agents phase-00) has been executed before sprint step 01 (adapters phase-00). Dependencies allow this because agents phase-00 defines pure Python contracts with no adapter imports at the contract layer.
 
@@ -32,8 +32,8 @@ Wave 1 — Substrate:
   [x] 04. aws-infra phase-01      feat/aws-infra-security  (code-complete; 2 criteria deferred — see NOTES)
   [x] 05. adapters phase-03       feat/adapters-prompts
   [x] 06. adapters phase-04       feat/adapters-evidence
-  [ ] 07. agents phase-11         feat/agents-guardrails
-  ---- checkpoint-1-substrate ----
+  [x] 07. agents phase-11         feat/agents-guardrails  (scoped per ADR 0004 — see NOTES)
+  ---- checkpoint-1-substrate ---- [TAGGED on main]
 Wave 2 — Data plane + LLM adapters:
   [ ] 08. aws-infra phase-02      feat/aws-infra-foundation-stack
   [ ] 09. adapters phase-05       feat/adapters-ddb
@@ -88,7 +88,11 @@ Wave 8 — Cross-cutting maturity:
 ------------------------------------------------------------------
 CHECKPOINT TAGS ON MAIN (git tag, updated on merge of each wave-final PR)
 ------------------------------------------------------------------
-- (none yet)
+- checkpoint-1-substrate — 2026-07-30, on commit c233492. Wave 1 done
+  (sprint steps 01-07). 2 deferred items open (see NOTES): Guardrail LIVE
+  canary + break-glass drill (need a dev account), and running the
+  prompt-injection corpus through a deployed Prime (Prime doesn't exist
+  until Wave 3).
 
 ------------------------------------------------------------------
 NOTES + BLOCKERS
@@ -108,6 +112,10 @@ NOTES + BLOCKERS
   Whoever provisions the dev account must re-open this phase and run both
   before the security posture is production-verified. Break-glass
   initiator group must be seeded with two identities at the same time.
+- Prompt-injection corpus (agents/tests/prompt_injection/corpus.jsonl, 24
+  payloads, agents phase-11) has not been run end-to-end: no Prime exists
+  until Wave 3 (sprint step 16) and no Guardrail is deployed until a dev
+  account exists. Re-run once both land; see ADR 0004.
 - All 43 feature branches exist on origin at the baseline commit
   `Establish IAM Sentinel canon` (3a3e255). Do not delete after merge.
 
@@ -125,3 +133,4 @@ HISTORY (append-only)
 2026-07-30 aws-infra phase-01 done on feat/aws-infra-security, merged to main at 9f7f72c, tagged phase/aws-infra-security-done. User explicitly chose "build code-complete, defer live checks" for the 2 acceptance criteria that need a real AWS account (Guardrail LIVE canary, break-glass end-to-end drill) — see docs/decisions/0001. Built 3 KMS CMKs, Guardrail lifecycle Lambda (real bedrock:CreateGuardrail/UpdateGuardrail/DeleteGuardrail/CreateGuardrailVersion routing, unit-tested against a mocked boto3 client), extended SentinelPermissionBoundary with the phase-01 §5 deny statements, break-glass IAM role + two-signer Step Functions Standard workflow (approval Lambda decision logic unit-tested: distinct-principal + 60s-window check) + EventBridge/CloudWatch alarm to SNS. Two more deviations recorded as ADRs: 0002 (EventBridge management events instead of provisioning a new CloudTrail Trail) and 0003 (AWS Backup plan deferred to phase-02, PITR enabled in the meantime). Fixed a real bug along the way: IAM's MaxSessionDuration has a 3600s floor, so the spec's "900s break-glass session" is enforced via AssumeRole's DurationSeconds in the assume Lambda, not the role's MaxSessionDuration property. cdk synth clean for all 8 stacks/3 stages, cdk-nag (AwsSolutions + HIPAA) zero errors after real fixes (DLQ + reserved concurrency on every Lambda, DDB PITR, Step Functions logging + X-Ray, SNS KMS encryption + enforced TLS) plus justified suppressions for CDK-standard patterns (Lambda basic execution role, DefaultPolicy inline grants) and already-canonical architecture decisions (no-VPC per docs/ARCHITECTURE.md). 34 tests pass, 99% coverage, ruff/mypy --strict clean.
 2026-07-30 adapters phase-03 done on feat/adapters-prompts, merged to main at 87e7f3d, tagged phase/adapters-prompts-done. Built sanitize_untrusted() + build_prompt(); pulled forward a minimal evidence/canonicalize.py (RFC 8785 JCS subset) from phase-04 since the fencer needs it now. Found and fixed a real bug: forbidden patterns containing `<`/`>` (`</trusted_input`, `<|...|>`) were being checked after those characters were already stripped by the sanitizer's own character-removal step, making them permanently dead — the check now runs on the pre-strip text. Testing deviation from spec §7 (per the revised testing policy): Hypothesis property run capped at 200 examples, not 10,000; injection-pattern coverage trimmed to ~11 representative payloads, not the full 50-payload corpus. 38 tests pass, 98% coverage, ruff/mypy --strict clean.
 2026-07-30 adapters phase-04 done on feat/adapters-evidence, merged to main at 94b6103, tagged phase/adapters-evidence-done. Rewrote canonicalize.py for true RFC 8785 compliance — fetched the actual published test vectors from github.com/cyberphone/json-canonicalization (values/structures/arrays/french) via WebFetch and verified against them (weird.json/unicode.json skipped: their combining-character/emoji content couldn't be confirmed byte-exact through the fetch tool's summarization step). The phase-03 canonicalize.py was only a pragmatic subset (plain sort_keys json.dumps), not RFC-compliant — this rewrite implements real ECMA-262 Number::toString formatting (fixed vs. scientific notation thresholds), which Python's own float repr doesn't match beyond a coincidental overlap on small test cases. Built evidence/keys.py, kms_signer.py, kms_verifier.py (1h public-key cache; kms:Verify stays remote by design rather than reimplementing KMS's PSS salt-length convention locally), evidence/client.py (put_signed_evidence/verify with tamper detection via re-canonicalize+re-hash), security_hub/asff_mapper.py + client.py (batch 100, retry on LimitExceededException). Module-boundary note: adapters does not import agents' Finding model — ASFF mapper takes a local AsffFindingInput dataclass mirroring DATA_CONTRACTS.md instead. Testing scope reduced per the revised policy: property run at 200 examples (spec asks 1,000); ASFF conformance checked against documented required fields, not a live Security Hub schema validator. 67 tests pass, 98% coverage, ruff/mypy --strict clean.
+2026-07-30 agents phase-11 done on feat/agents-guardrails, merged to main at c233492, tagged phase/agents-guardrails-done. Wave 1 complete — tagged checkpoint-1-substrate. Per ADR 0004, scoped to just the two deliverables not already covered by other sprint steps (fencer/sanitizer = adapters phase-03 done; break-glass STS = aws-infra phase-01 done; Zelkova = its own sprint step, adapters phase-02): the actual Guardrail policy content (aws-infra/config/guardrail_v1.json — topic/content/PII/grounding policies) wired through an extended GuardrailCustomResource + lifecycle Lambda, and a 24-payload prompt-injection corpus (agents/tests/prompt_injection/corpus.jsonl, 3 per category x 8 categories, reduced from the spec's 200 per the revised testing policy) with a schema/quality test. Running the corpus end-to-end through a deployed Prime + Guardrail is deferred (neither exists yet) — tracked in NOTES + BLOCKERS. cdk synth clean, cdk-nag zero errors, ruff/mypy --strict clean in both aws-infra and agents; aws-infra 36 tests pass, agents 82 tests pass (96% coverage).
