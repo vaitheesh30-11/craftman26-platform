@@ -16,6 +16,8 @@ from aws_cdk import aws_lambda as lambda_
 from aws_cdk import aws_sqs as sqs
 from constructs import Construct
 
+from iam_sentinel_infra.constructs.sentinel_lambda import LAMBDA_ASSET_EXCLUDES
+
 _FUNCTIONS_DIR = Path(__file__).resolve().parents[3] / "functions"
 
 
@@ -42,7 +44,7 @@ class AgentCollaboratorAssociation(Construct):
             runtime=lambda_.Runtime.PYTHON_3_12,
             architecture=lambda_.Architecture.ARM_64,
             handler="handler.handler",
-            code=lambda_.Code.from_asset(str(_FUNCTIONS_DIR / "agent_collaborator")),
+            code=lambda_.Code.from_asset(str(_FUNCTIONS_DIR / "agent_collaborator"), exclude=LAMBDA_ASSET_EXCLUDES),
             timeout=Duration.seconds(60),
             reserved_concurrent_executions=5,
             dead_letter_queue=self.dead_letter_queue,

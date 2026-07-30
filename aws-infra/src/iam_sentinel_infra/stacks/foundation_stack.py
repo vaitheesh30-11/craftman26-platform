@@ -24,6 +24,7 @@ from aws_cdk import aws_sns as sns
 from aws_cdk import aws_sqs as sqs
 from cdk_nag import NagSuppressions
 
+from iam_sentinel_infra.constructs.sentinel_lambda import LAMBDA_ASSET_EXCLUDES
 from iam_sentinel_infra.constructs.signed_object_lock_bucket import SignedObjectLockBucket
 
 if TYPE_CHECKING:
@@ -324,7 +325,7 @@ class FoundationStack(Stack):
             runtime=lambda_.Runtime.PYTHON_3_12,
             architecture=lambda_.Architecture.ARM_64,
             handler="handler.handler",
-            code=lambda_.Code.from_asset(str(_FUNCTIONS_DIR / "oss_index_bootstrap")),
+            code=lambda_.Code.from_asset(str(_FUNCTIONS_DIR / "oss_index_bootstrap"), exclude=LAMBDA_ASSET_EXCLUDES),
             timeout=Duration.seconds(60),
             reserved_concurrent_executions=2,
             dead_letter_queue=dead_letter_queue,

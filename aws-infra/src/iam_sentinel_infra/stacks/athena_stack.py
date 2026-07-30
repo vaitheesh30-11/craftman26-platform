@@ -28,6 +28,8 @@ from aws_cdk import aws_lambda as lambda_
 from aws_cdk import aws_sqs as sqs
 from cdk_nag import NagSuppressions
 
+from iam_sentinel_infra.constructs.sentinel_lambda import LAMBDA_ASSET_EXCLUDES
+
 if TYPE_CHECKING:
     from constructs import Construct
 
@@ -262,7 +264,7 @@ class AthenaStack(Stack):
             runtime=lambda_.Runtime.PYTHON_3_12,
             architecture=lambda_.Architecture.ARM_64,
             handler="handler.handler",
-            code=lambda_.Code.from_asset(str(_FUNCTIONS_DIR / "athena_curate_writes")),
+            code=lambda_.Code.from_asset(str(_FUNCTIONS_DIR / "athena_curate_writes"), exclude=LAMBDA_ASSET_EXCLUDES),
             timeout=Duration.minutes(5),
             reserved_concurrent_executions=1,
             dead_letter_queue=dlq,
@@ -385,7 +387,7 @@ class _AthenaBootstrap:
             runtime=lambda_.Runtime.PYTHON_3_12,
             architecture=lambda_.Architecture.ARM_64,
             handler="handler.handler",
-            code=lambda_.Code.from_asset(str(_FUNCTIONS_DIR / "athena_bootstrap")),
+            code=lambda_.Code.from_asset(str(_FUNCTIONS_DIR / "athena_bootstrap"), exclude=LAMBDA_ASSET_EXCLUDES),
             timeout=Duration.minutes(5),
             reserved_concurrent_executions=1,
             dead_letter_queue=self.dead_letter_queue,

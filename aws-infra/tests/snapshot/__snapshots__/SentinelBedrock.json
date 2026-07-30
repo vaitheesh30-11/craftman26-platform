@@ -1022,7 +1022,7 @@
         ],
         "Code": {
           "S3Bucket": "cdk-hnb659fds-assets-111111111111-us-east-1",
-          "S3Key": "7996fb527e86a6be8e4c5e3d8d0025cf6f31462749895f82b57243c3cc81c04d.zip"
+          "S3Key": "f83f3856911b482bfc1a1df136dfcc7f304b0805d0595203bea21e8fe5c18e14.zip"
         },
         "DeadLetterConfig": {
           "TargetArn": {

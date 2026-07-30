@@ -32,6 +32,8 @@ from aws_cdk import aws_stepfunctions as sfn
 from aws_cdk import aws_stepfunctions_tasks as tasks
 from cdk_nag import NagSuppressions
 
+from iam_sentinel_infra.constructs.sentinel_lambda import LAMBDA_ASSET_EXCLUDES
+
 if TYPE_CHECKING:
     from constructs import Construct
 
@@ -344,7 +346,7 @@ class CrossAccountStack(Stack):
         fn = self.lambdas.new_function(
             self,
             "DriftDetectorFn",
-            code=lambda_.Code.from_asset(str(_FUNCTIONS_DIR / "crossaccount_drift_detector")),
+            code=lambda_.Code.from_asset(str(_FUNCTIONS_DIR / "crossaccount_drift_detector"), exclude=LAMBDA_ASSET_EXCLUDES),
             role_statements=[
                 iam.PolicyStatement(
                     actions=[
@@ -407,7 +409,7 @@ class CrossAccountStack(Stack):
         healthcheck_fn = self.lambdas.new_function(
             self,
             "HealthCheckFn",
-            code=lambda_.Code.from_asset(str(_FUNCTIONS_DIR / "crossaccount_healthcheck")),
+            code=lambda_.Code.from_asset(str(_FUNCTIONS_DIR / "crossaccount_healthcheck"), exclude=LAMBDA_ASSET_EXCLUDES),
             role_statements=[
                 iam.PolicyStatement(
                     actions=["sts:AssumeRole"],

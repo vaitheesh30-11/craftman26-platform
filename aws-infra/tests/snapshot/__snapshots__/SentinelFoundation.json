@@ -100,6 +100,17 @@
         ]
       }
     },
+    "ExportsOutputFnGetAttSessionKillDlq974F0537QueueNameD0A8D0A1": {
+      "Export": {
+        "Name": "SentinelFoundation:ExportsOutputFnGetAttSessionKillDlq974F0537QueueNameD0A8D0A1"
+      },
+      "Value": {
+        "Fn::GetAtt": [
+          "SessionKillDlq974F0537",
+          "QueueName"
+        ]
+      }
+    },
     "ExportsOutputRefAthenaResults99A601264C50DC7A": {
       "Export": {
         "Name": "SentinelFoundation:ExportsOutputRefAthenaResults99A601264C50DC7A"
@@ -124,12 +135,28 @@
         "Ref": "Reports65402A0A"
       }
     },
+    "ExportsOutputRefSentinelCostAnomaly339A265BD40EC7D6": {
+      "Export": {
+        "Name": "SentinelFoundation:ExportsOutputRefSentinelCostAnomaly339A265BD40EC7D6"
+      },
+      "Value": {
+        "Ref": "SentinelCostAnomaly339A265B"
+      }
+    },
     "ExportsOutputRefSentinelFindings041A34810F713541": {
       "Export": {
         "Name": "SentinelFoundation:ExportsOutputRefSentinelFindings041A34810F713541"
       },
       "Value": {
         "Ref": "SentinelFindings041A3481"
+      }
+    },
+    "ExportsOutputRefSentinelOpsA83C408CF6B1A2EE": {
+      "Export": {
+        "Name": "SentinelFoundation:ExportsOutputRefSentinelOpsA83C408CF6B1A2EE"
+      },
+      "Value": {
+        "Ref": "SentinelOpsA83C408C"
       }
     }
   },

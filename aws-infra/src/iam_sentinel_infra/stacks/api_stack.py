@@ -31,6 +31,8 @@ from aws_cdk import aws_ssm as ssm
 from aws_cdk import aws_wafv2 as wafv2
 from cdk_nag import NagSuppressions
 
+from iam_sentinel_infra.constructs.sentinel_lambda import LAMBDA_ASSET_EXCLUDES
+
 if TYPE_CHECKING:
     from constructs import Construct
 
@@ -349,7 +351,7 @@ class ApiStack(Stack):
         fn = self.lambdas.new_function(
             self,
             "ApiAuthorizerFn",
-            code=lambda_.Code.from_asset(str(_FUNCTIONS_DIR / "api_authorizer")),
+            code=lambda_.Code.from_asset(str(_FUNCTIONS_DIR / "api_authorizer"), exclude=LAMBDA_ASSET_EXCLUDES),
             timeout=Duration.seconds(10),
             memory_size=256,
             alarm_topic=self.security.security_topic,
@@ -363,7 +365,7 @@ class ApiStack(Stack):
         sentinel_fn = self.lambdas.new_function(
             self,
             "BackendApiFn",
-            code=lambda_.Code.from_asset(str(_FUNCTIONS_DIR / "backend_api")),
+            code=lambda_.Code.from_asset(str(_FUNCTIONS_DIR / "backend_api"), exclude=LAMBDA_ASSET_EXCLUDES),
             role_statements=[
                 iam.PolicyStatement(
                     actions=["bedrock:InvokeAgent"],
@@ -653,7 +655,7 @@ class ApiStack(Stack):
         connect_fn = self.lambdas.new_function(
             self,
             "WsConnectFn",
-            code=lambda_.Code.from_asset(str(_FUNCTIONS_DIR / "ws_connect")),
+            code=lambda_.Code.from_asset(str(_FUNCTIONS_DIR / "ws_connect"), exclude=LAMBDA_ASSET_EXCLUDES),
             extra_environment={"SENTINEL_CONNECTIONS_TABLE": self.connections_table.table_name},
             timeout=Duration.seconds(10),
             memory_size=256,
@@ -664,7 +666,7 @@ class ApiStack(Stack):
         disconnect_fn = self.lambdas.new_function(
             self,
             "WsDisconnectFn",
-            code=lambda_.Code.from_asset(str(_FUNCTIONS_DIR / "ws_disconnect")),
+            code=lambda_.Code.from_asset(str(_FUNCTIONS_DIR / "ws_disconnect"), exclude=LAMBDA_ASSET_EXCLUDES),
             extra_environment={"SENTINEL_CONNECTIONS_TABLE": self.connections_table.table_name},
             timeout=Duration.seconds(10),
             memory_size=256,
@@ -675,7 +677,7 @@ class ApiStack(Stack):
         default_fn = self.lambdas.new_function(
             self,
             "WsDefaultFn",
-            code=lambda_.Code.from_asset(str(_FUNCTIONS_DIR / "ws_default")),
+            code=lambda_.Code.from_asset(str(_FUNCTIONS_DIR / "ws_default"), exclude=LAMBDA_ASSET_EXCLUDES),
             extra_environment={"SENTINEL_CONNECTIONS_TABLE": self.connections_table.table_name},
             timeout=Duration.seconds(10),
             memory_size=256,

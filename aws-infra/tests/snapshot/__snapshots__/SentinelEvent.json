@@ -6,6 +6,163 @@
       "Type": "AWS::SSM::Parameter::Value<String>"
     }
   },
+  "Resources": {
+    "BedrockSpendAnomalyAlarm": {
+      "Properties": {
+        "AlarmActions": [
+          {
+            "Fn::ImportValue": "SentinelFoundation:ExportsOutputRefSentinelCostAnomaly339A265BD40EC7D6"
+          }
+        ],
+        "AlarmDescription": "Bedrock spend ($) is outside its normal anomaly-detection band.",
+        "ComparisonOperator": "LessThanLowerOrGreaterThanUpperThreshold",
+        "EvaluationPeriods": 3,
+        "Metrics": [
+          {
+            "Id": "m1",
+            "MetricStat": {
+              "Metric": {
+                "MetricName": "SentinelBedrockDollars",
+                "Namespace": "IAMSentinel"
+              },
+              "Period": 3600,
+              "Stat": "Sum"
+            },
+            "ReturnData": true
+          },
+          {
+            "Expression": "ANOMALY_DETECTION_BAND(m1, 2)",
+            "Id": "ad1",
+            "Label": "Bedrock spend (expected)"
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "ThresholdMetricId": "ad1",
+        "TreatMissingData": "notBreaching"
+      },
+      "Type": "AWS::CloudWatch::Alarm"
+    },
+    "GuardrailInterventionsAlarmB24EF11F": {
+      "Properties": {
+        "AlarmActions": [
+          {
+            "Fn::ImportValue": "SentinelFoundation:ExportsOutputRefSentinelOpsA83C408CF6B1A2EE"
+          }
+        ],
+        "AlarmDescription": "More than 20 Guardrail interventions in an hour.",
+        "ComparisonOperator": "GreaterThanThreshold",
+        "EvaluationPeriods": 1,
+        "MetricName": "SentinelGuardrailInterventions",
+        "Namespace": "IAMSentinel",
+        "Period": 3600,
+        "Statistic": "Sum",
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "Threshold": 20,
+        "TreatMissingData": "notBreaching"
+      },
+      "Type": "AWS::CloudWatch::Alarm"
+    },
+    "SessionKillDlqDepthAlarm61966E38": {
+      "Properties": {
+        "AlarmActions": [
+          {
+            "Fn::ImportValue": "SentinelFoundation:ExportsOutputRefSentinelOpsA83C408CF6B1A2EE"
+          }
+        ],
+        "AlarmDescription": "SessionKillQueue-DLQ has messages -- a session-kill dispatch exhausted its 3 delivery attempts.",
+        "ComparisonOperator": "GreaterThanThreshold",
+        "Dimensions": [
+          {
+            "Name": "QueueName",
+            "Value": {
+              "Fn::ImportValue": "SentinelFoundation:ExportsOutputFnGetAttSessionKillDlq974F0537QueueNameD0A8D0A1"
+            }
+          }
+        ],
+        "EvaluationPeriods": 1,
+        "MetricName": "ApproximateNumberOfMessagesVisible",
+        "Namespace": "AWS/SQS",
+        "Period": 300,
+        "Statistic": "Maximum",
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "Threshold": 0,
+        "TreatMissingData": "notBreaching"
+      },
+      "Type": "AWS::CloudWatch::Alarm"
+    },
+    "ZelkovaViolationsAlarmABA1ACCE": {
+      "Properties": {
+        "AlarmActions": [
+          {
+            "Fn::ImportValue": "SentinelSecurity:ExportsOutputRefSecurityTopic077AEA2CE5C0B04D"
+          }
+        ],
+        "AlarmDescription": "A Zelkova formal-verification check found a policy violation.",
+        "ComparisonOperator": "GreaterThanThreshold",
+        "EvaluationPeriods": 1,
+        "MetricName": "SentinelZelkovaViolations",
+        "Namespace": "IAMSentinel",
+        "Period": 60,
+        "Statistic": "Sum",
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "Threshold": 0,
+        "TreatMissingData": "notBreaching"
+      },
+      "Type": "AWS::CloudWatch::Alarm"
+    }
+  },
   "Rules": {
     "CheckBootstrapVersion": {
       "Assertions": [
