@@ -1,9 +1,3884 @@
 {
+  "Metadata": {
+    "cdk_nag": {
+      "rules_to_suppress": [
+        {
+          "applies_to": [
+            "Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+          ],
+          "id": "AwsSolutions-IAM4",
+          "reason": "AWSLambdaBasicExecutionRole is CDK's default Lambda execution role addition (CloudWatch Logs only, scoped to the function's own log group)."
+        },
+        {
+          "id": "AwsSolutions-IAM5",
+          "reason": "cognito-idp:GetUser and apigatewaymanagementapi:PostToConnection are wildcarded on the pool-id/api-id ARN segment because both resources are created by this same stack -- CDK cannot reference a resource's own ARN before it exists (same self-reference constraint the Guardrail lifecycle Lambda documents in ADR 0001)."
+        },
+        {
+          "id": "AwsSolutions-APIG2",
+          "reason": "Request validation lives in the FastAPI/Pydantic layer (backend phase-00's error envelope, phase-01's route models) -- API Gateway is a thin proxy per phase-07 \u00a73, not a second validation layer."
+        },
+        {
+          "id": "AwsSolutions-APIG1",
+          "reason": "Access logging is enabled via deploy_options below; this stack's own execution/access log group already covers it -- cdk-nag flags the L1 pattern it expects, not an actual gap."
+        },
+        {
+          "id": "AwsSolutions-COG4",
+          "reason": "The `{proxy+}` catch-all route uses the custom Lambda authorizer (ADR 0017 decision 1), not the native COGNITO_USER_POOLS authorizer type, precisely because it also has to accept IAM SigV4 machine callers on the same routes -- the Lambda authorizer still verifies Cognito access tokens via cognito-idp:GetUser."
+        },
+        {
+          "id": "HIPAA.Security-LambdaInsideVPC",
+          "reason": "docs/ARCHITECTURE.md \u00a7Networking: IAM Sentinel is deliberately VPC-less across the whole platform."
+        },
+        {
+          "id": "HIPAA.Security-IAMNoInlinePolicy",
+          "reason": "CDK's auto-generated DefaultPolicy grants (DynamoDB read/write on SentinelConnections, apigatewaymanagementapi PostToConnection); splitting each into a managed policy adds indirection without changing the effective grant."
+        },
+        {
+          "id": "HIPAA.Security-DynamoDBInBackupPlan",
+          "reason": "SentinelConnections holds only transient WebSocket connection state (4h TTL, phase-07 \u00a74) -- PITR is enabled, but an org-wide backup plan (FoundationStack's, per ADR 0003/0005) exists to protect durable business data, not ephemeral session rows that expire hours after they are written."
+        },
+        {
+          "applies_to": [
+            "Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AmazonAPIGatewayPushToCloudWatchLogs"
+          ],
+          "id": "AwsSolutions-IAM4",
+          "reason": "AmazonAPIGatewayPushToCloudWatchLogs is the AWS-managed policy CDK's own `cloud_watch_role=True` attaches to the account-level API Gateway CloudWatch role; API Gateway does not support a customer-managed replacement for this specific integration."
+        },
+        {
+          "id": "HIPAA.Security-APIGWCacheEnabledAndEncrypted",
+          "reason": "Every route proxies straight through to `backend`'s per-caller, per-request FastAPI responses (findings/decisions lists, chat turns) -- stage-level response caching would either serve stale or cross-caller data; disabled by design, not omitted by oversight."
+        },
+        {
+          "id": "HIPAA.Security-APIGWSSLEnabled",
+          "reason": "This control is about a custom-domain SSL certificate; ADR 0017 explicitly scopes the optional custom domain (phase-07 \u00a72) out -- no domain/ACM cert exists yet (frontend phase-00 hasn't landed). The default `execute-api` endpoint is already TLS-only."
+        },
+        {
+          "id": "AwsSolutions-APIG4",
+          "reason": "`GET /health` is explicitly unauthenticated per phase-07 \u00a76 ('Cognito JWT authorizer on every path except /health') and backend phase-00's own `create_app()`; WebSocket's `$disconnect`/`$default` routes operate on a connection API Gateway v2 already authenticated once, at `$connect` -- WebSocket APIs only support an authorizer on that one route, by AWS design."
+        }
+      ]
+    }
+  },
+  "Outputs": {
+    "SentinelApiEndpoint997B0C6C": {
+      "Value": {
+        "Fn::Join": [
+          "",
+          [
+            "https://",
+            {
+              "Ref": "SentinelApiCF9F8BFF"
+            },
+            ".execute-api.us-east-1.",
+            {
+              "Ref": "AWS::URLSuffix"
+            },
+            "/",
+            {
+              "Ref": "SentinelApiDeploymentStagedev870612C0"
+            },
+            "/"
+          ]
+        ]
+      }
+    }
+  },
   "Parameters": {
     "BootstrapVersion": {
       "Default": "/cdk-bootstrap/hnb659fds/version",
       "Description": "Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]",
       "Type": "AWS::SSM::Parameter::Value<String>"
+    }
+  },
+  "Resources": {
+    "ApiAccessLogsE9DF007D": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "KmsKeyId": {
+          "Fn::ImportValue": "SentinelSecurity:ExportsOutputFnGetAttDataKey17AFBB84ArnCE2A1BC6"
+        },
+        "RetentionInDays": 14,
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ]
+      },
+      "Type": "AWS::Logs::LogGroup",
+      "UpdateReplacePolicy": "Delete"
+    },
+    "ApiAuthorizerFnDlqAEF018CC": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "MessageRetentionPeriod": 1209600,
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ]
+      },
+      "Type": "AWS::SQS::Queue",
+      "UpdateReplacePolicy": "Delete"
+    },
+    "ApiAuthorizerFnDlqPolicy1B282881": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sqs:*",
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false"
+                }
+              },
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": "*"
+              },
+              "Resource": {
+                "Fn::GetAtt": [
+                  "ApiAuthorizerFnDlqAEF018CC",
+                  "Arn"
+                ]
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "Queues": [
+          {
+            "Ref": "ApiAuthorizerFnDlqAEF018CC"
+          }
+        ]
+      },
+      "Type": "AWS::SQS::QueuePolicy"
+    },
+    "ApiAuthorizerFnDurationAnomalyAlarmD42C7DE5": {
+      "Properties": {
+        "AlarmActions": [
+          {
+            "Fn::ImportValue": "SentinelSecurity:ExportsOutputRefSecurityTopic077AEA2CE5C0B04D"
+          }
+        ],
+        "AlarmDescription": {
+          "Fn::Join": [
+            "",
+            [
+              {
+                "Ref": "ApiAuthorizerFnFunction89031626"
+              },
+              ": p95 Duration outside its normal anomaly-detection band."
+            ]
+          ]
+        },
+        "ComparisonOperator": "LessThanLowerOrGreaterThanUpperThreshold",
+        "EvaluationPeriods": 3,
+        "Metrics": [
+          {
+            "Id": "m1",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "FunctionName",
+                    "Value": {
+                      "Ref": "ApiAuthorizerFnFunction89031626"
+                    }
+                  }
+                ],
+                "MetricName": "Duration",
+                "Namespace": "AWS/Lambda"
+              },
+              "Period": 300,
+              "Stat": "p95"
+            },
+            "ReturnData": true
+          },
+          {
+            "Expression": "ANOMALY_DETECTION_BAND(m1, 2)",
+            "Id": "ad1",
+            "Label": {
+              "Fn::Join": [
+                "",
+                [
+                  {
+                    "Ref": "ApiAuthorizerFnFunction89031626"
+                  },
+                  " Duration (expected)"
+                ]
+              ]
+            }
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "ThresholdMetricId": "ad1",
+        "TreatMissingData": "notBreaching"
+      },
+      "Type": "AWS::CloudWatch::Alarm"
+    },
+    "ApiAuthorizerFnErrorAlarm2AB62CCB": {
+      "Properties": {
+        "AlarmActions": [
+          {
+            "Fn::ImportValue": "SentinelSecurity:ExportsOutputRefSecurityTopic077AEA2CE5C0B04D"
+          }
+        ],
+        "AlarmDescription": {
+          "Fn::Join": [
+            "",
+            [
+              {
+                "Ref": "ApiAuthorizerFnFunction89031626"
+              },
+              ": more than 5 errors in 5 minutes."
+            ]
+          ]
+        },
+        "ComparisonOperator": "GreaterThanThreshold",
+        "Dimensions": [
+          {
+            "Name": "FunctionName",
+            "Value": {
+              "Ref": "ApiAuthorizerFnFunction89031626"
+            }
+          }
+        ],
+        "EvaluationPeriods": 1,
+        "MetricName": "Errors",
+        "Namespace": "AWS/Lambda",
+        "Period": 300,
+        "Statistic": "Sum",
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "Threshold": 5,
+        "TreatMissingData": "notBreaching"
+      },
+      "Type": "AWS::CloudWatch::Alarm"
+    },
+    "ApiAuthorizerFnFunction89031626": {
+      "DependsOn": [
+        "ApiAuthorizerFnRoleDefaultPolicy458ED204",
+        "ApiAuthorizerFnRole068D9E79"
+      ],
+      "Properties": {
+        "Architectures": [
+          "arm64"
+        ],
+        "Code": {
+          "S3Bucket": "cdk-hnb659fds-assets-111111111111-us-east-1",
+          "S3Key": "6d5782b82874cdb7227ee239e06bc24599610717ccbf9598ce360d18138bc032.zip"
+        },
+        "DeadLetterConfig": {
+          "TargetArn": {
+            "Fn::GetAtt": [
+              "ApiAuthorizerFnDlqAEF018CC",
+              "Arn"
+            ]
+          }
+        },
+        "Environment": {
+          "Variables": {
+            "POWERTOOLS_METRICS_NAMESPACE": "IAMSentinel",
+            "SENTINEL_CROSS_ACCOUNT_ROLE_NAME": "SentinelCrossAccountRole",
+            "SENTINEL_EVIDENCE_BUCKET": {
+              "Fn::ImportValue": "SentinelFoundation:ExportsOutputRefEvidenceBucketC67FF7689705A422"
+            },
+            "SENTINEL_FINDINGS_TABLE": {
+              "Fn::ImportValue": "SentinelFoundation:ExportsOutputRefSentinelFindings041A34810F713541"
+            },
+            "SENTINEL_KMS_KEY_ARN": {
+              "Fn::ImportValue": "SentinelSecurity:ExportsOutputFnGetAttEvidenceKey167D8F4DArnE1F27A98"
+            },
+            "SENTINEL_LOG_LEVEL": "INFO",
+            "SENTINEL_METRIC_NAMESPACE": "IAMSentinel",
+            "SENTINEL_REGION": "us-east-1",
+            "SENTINEL_STAGE": "dev"
+          }
+        },
+        "Handler": "handler.handler",
+        "Layers": [
+          {
+            "Fn::ImportValue": "SentinelLambda:ExportsOutputRefPowertoolsLayer17979D4BF1F19FF3"
+          },
+          {
+            "Fn::ImportValue": "SentinelLambda:ExportsOutputRefBoto3Layer463A0AEAFC52CB63"
+          }
+        ],
+        "MemorySize": 256,
+        "ReservedConcurrentExecutions": 10,
+        "Role": {
+          "Fn::GetAtt": [
+            "ApiAuthorizerFnRole068D9E79",
+            "Arn"
+          ]
+        },
+        "Runtime": "python3.12",
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "Timeout": 10,
+        "TracingConfig": {
+          "Mode": "Active"
+        }
+      },
+      "Type": "AWS::Lambda::Function"
+    },
+    "ApiAuthorizerFnFunctionLogRetention2E359679": {
+      "Properties": {
+        "LogGroupName": {
+          "Fn::Join": [
+            "",
+            [
+              "/aws/lambda/",
+              {
+                "Ref": "ApiAuthorizerFnFunction89031626"
+              }
+            ]
+          ]
+        },
+        "RetentionInDays": 14,
+        "ServiceToken": {
+          "Fn::GetAtt": [
+            "LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aFD4BFC8A",
+            "Arn"
+          ]
+        }
+      },
+      "Type": "Custom::LogRetention"
+    },
+    "ApiAuthorizerFnFunctionSentinelApiHybridRequestAuthorizerE6B4C462PermissionsD8FDAC6B": {
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "ApiAuthorizerFnFunction89031626",
+            "Arn"
+          ]
+        },
+        "Principal": "apigateway.amazonaws.com",
+        "SourceArn": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:",
+              {
+                "Ref": "AWS::Partition"
+              },
+              ":execute-api:us-east-1:111111111111:",
+              {
+                "Ref": "SentinelApiCF9F8BFF"
+              },
+              "/authorizers/",
+              {
+                "Ref": "HybridRequestAuthorizerBE2EB515"
+              }
+            ]
+          ]
+        }
+      },
+      "Type": "AWS::Lambda::Permission"
+    },
+    "ApiAuthorizerFnRole068D9E79": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com"
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition"
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+              ]
+            ]
+          }
+        ],
+        "PermissionsBoundary": {
+          "Fn::ImportValue": "SentinelSecurity:ExportsOutputRefPermissionBoundary5A5E688699C146B3"
+        },
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ]
+      },
+      "Type": "AWS::IAM::Role"
+    },
+    "ApiAuthorizerFnRoleDefaultPolicy458ED204": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sqs:SendMessage",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "ApiAuthorizerFnDlqAEF018CC",
+                  "Arn"
+                ]
+              }
+            },
+            {
+              "Action": [
+                "xray:PutTraceSegments",
+                "xray:PutTelemetryRecords"
+              ],
+              "Effect": "Allow",
+              "Resource": "*"
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "PolicyName": "ApiAuthorizerFnRoleDefaultPolicy458ED204",
+        "Roles": [
+          {
+            "Ref": "ApiAuthorizerFnRole068D9E79"
+          }
+        ]
+      },
+      "Type": "AWS::IAM::Policy"
+    },
+    "BackendApiFnDlqB0AF9E91": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "MessageRetentionPeriod": 1209600,
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ]
+      },
+      "Type": "AWS::SQS::Queue",
+      "UpdateReplacePolicy": "Delete"
+    },
+    "BackendApiFnDlqPolicy469AB1CA": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sqs:*",
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false"
+                }
+              },
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": "*"
+              },
+              "Resource": {
+                "Fn::GetAtt": [
+                  "BackendApiFnDlqB0AF9E91",
+                  "Arn"
+                ]
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "Queues": [
+          {
+            "Ref": "BackendApiFnDlqB0AF9E91"
+          }
+        ]
+      },
+      "Type": "AWS::SQS::QueuePolicy"
+    },
+    "BackendApiFnDurationAnomalyAlarm6D208186": {
+      "Properties": {
+        "AlarmActions": [
+          {
+            "Fn::ImportValue": "SentinelSecurity:ExportsOutputRefSecurityTopic077AEA2CE5C0B04D"
+          }
+        ],
+        "AlarmDescription": {
+          "Fn::Join": [
+            "",
+            [
+              {
+                "Ref": "BackendApiFnFunctionE76936B1"
+              },
+              ": p95 Duration outside its normal anomaly-detection band."
+            ]
+          ]
+        },
+        "ComparisonOperator": "LessThanLowerOrGreaterThanUpperThreshold",
+        "EvaluationPeriods": 3,
+        "Metrics": [
+          {
+            "Id": "m1",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "FunctionName",
+                    "Value": {
+                      "Ref": "BackendApiFnFunctionE76936B1"
+                    }
+                  }
+                ],
+                "MetricName": "Duration",
+                "Namespace": "AWS/Lambda"
+              },
+              "Period": 300,
+              "Stat": "p95"
+            },
+            "ReturnData": true
+          },
+          {
+            "Expression": "ANOMALY_DETECTION_BAND(m1, 2)",
+            "Id": "ad1",
+            "Label": {
+              "Fn::Join": [
+                "",
+                [
+                  {
+                    "Ref": "BackendApiFnFunctionE76936B1"
+                  },
+                  " Duration (expected)"
+                ]
+              ]
+            }
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "ThresholdMetricId": "ad1",
+        "TreatMissingData": "notBreaching"
+      },
+      "Type": "AWS::CloudWatch::Alarm"
+    },
+    "BackendApiFnErrorAlarm4853F6D7": {
+      "Properties": {
+        "AlarmActions": [
+          {
+            "Fn::ImportValue": "SentinelSecurity:ExportsOutputRefSecurityTopic077AEA2CE5C0B04D"
+          }
+        ],
+        "AlarmDescription": {
+          "Fn::Join": [
+            "",
+            [
+              {
+                "Ref": "BackendApiFnFunctionE76936B1"
+              },
+              ": more than 5 errors in 5 minutes."
+            ]
+          ]
+        },
+        "ComparisonOperator": "GreaterThanThreshold",
+        "Dimensions": [
+          {
+            "Name": "FunctionName",
+            "Value": {
+              "Ref": "BackendApiFnFunctionE76936B1"
+            }
+          }
+        ],
+        "EvaluationPeriods": 1,
+        "MetricName": "Errors",
+        "Namespace": "AWS/Lambda",
+        "Period": 300,
+        "Statistic": "Sum",
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "Threshold": 5,
+        "TreatMissingData": "notBreaching"
+      },
+      "Type": "AWS::CloudWatch::Alarm"
+    },
+    "BackendApiFnFunctionE76936B1": {
+      "DependsOn": [
+        "BackendApiFnRoleDefaultPolicyC289AB00",
+        "BackendApiFnRole5E81502F"
+      ],
+      "Properties": {
+        "Architectures": [
+          "arm64"
+        ],
+        "Code": {
+          "S3Bucket": "cdk-hnb659fds-assets-111111111111-us-east-1",
+          "S3Key": "4329be52274190109327a33d9c00eb585067d7bafccc2221f70ded6aaec34e61.zip"
+        },
+        "DeadLetterConfig": {
+          "TargetArn": {
+            "Fn::GetAtt": [
+              "BackendApiFnDlqB0AF9E91",
+              "Arn"
+            ]
+          }
+        },
+        "Environment": {
+          "Variables": {
+            "POWERTOOLS_METRICS_NAMESPACE": "IAMSentinel",
+            "SENTINEL_AWS_ACCOUNT_ID": "111111111111",
+            "SENTINEL_BEDROCK_PRIME_AGENT_ID": {
+              "Fn::ImportValue": "SentinelBedrock:ExportsOutputFnGetAttSentinelPrimeAgent5A6F0676AgentIdE5147438"
+            },
+            "SENTINEL_COGNITO_APP_CLIENT_ID": {
+              "Ref": "SentinelUserPoolSentinelUserPoolClient7552D681"
+            },
+            "SENTINEL_COGNITO_USER_POOL_ID": {
+              "Ref": "SentinelUserPool830D7B2C"
+            },
+            "SENTINEL_CROSS_ACCOUNT_ROLE_NAME": "SentinelCrossAccountRole",
+            "SENTINEL_EVIDENCE_BUCKET": {
+              "Fn::ImportValue": "SentinelFoundation:ExportsOutputRefEvidenceBucketC67FF7689705A422"
+            },
+            "SENTINEL_FINDINGS_TABLE": {
+              "Fn::ImportValue": "SentinelFoundation:ExportsOutputRefSentinelFindings041A34810F713541"
+            },
+            "SENTINEL_KMS_KEY_ARN": {
+              "Fn::ImportValue": "SentinelSecurity:ExportsOutputFnGetAttEvidenceKey167D8F4DArnE1F27A98"
+            },
+            "SENTINEL_LOG_LEVEL": "INFO",
+            "SENTINEL_METRIC_NAMESPACE": "IAMSentinel",
+            "SENTINEL_REGION": "us-east-1",
+            "SENTINEL_STAGE": "dev"
+          }
+        },
+        "Handler": "handler.handler",
+        "Layers": [
+          {
+            "Fn::ImportValue": "SentinelLambda:ExportsOutputRefPowertoolsLayer17979D4BF1F19FF3"
+          },
+          {
+            "Fn::ImportValue": "SentinelLambda:ExportsOutputRefBoto3Layer463A0AEAFC52CB63"
+          }
+        ],
+        "MemorySize": 1024,
+        "ReservedConcurrentExecutions": 10,
+        "Role": {
+          "Fn::GetAtt": [
+            "BackendApiFnRole5E81502F",
+            "Arn"
+          ]
+        },
+        "Runtime": "python3.12",
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "Timeout": 29,
+        "TracingConfig": {
+          "Mode": "Active"
+        }
+      },
+      "Type": "AWS::Lambda::Function"
+    },
+    "BackendApiFnFunctionLogRetention152293B2": {
+      "Properties": {
+        "LogGroupName": {
+          "Fn::Join": [
+            "",
+            [
+              "/aws/lambda/",
+              {
+                "Ref": "BackendApiFnFunctionE76936B1"
+              }
+            ]
+          ]
+        },
+        "RetentionInDays": 14,
+        "ServiceToken": {
+          "Fn::GetAtt": [
+            "LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aFD4BFC8A",
+            "Arn"
+          ]
+        }
+      },
+      "Type": "Custom::LogRetention"
+    },
+    "BackendApiFnRole5E81502F": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com"
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition"
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+              ]
+            ]
+          }
+        ],
+        "PermissionsBoundary": {
+          "Fn::ImportValue": "SentinelSecurity:ExportsOutputRefPermissionBoundary5A5E688699C146B3"
+        },
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ]
+      },
+      "Type": "AWS::IAM::Role"
+    },
+    "BackendApiFnRoleDefaultPolicyC289AB00": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "bedrock:InvokeAgent",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::ImportValue": "SentinelBedrock:ExportsOutputFnGetAttSentinelPrimeAgent5A6F0676AgentArnE1B985D5"
+              }
+            },
+            {
+              "Action": "sts:GetCallerIdentity",
+              "Effect": "Allow",
+              "Resource": "*"
+            },
+            {
+              "Action": "sqs:SendMessage",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "BackendApiFnDlqB0AF9E91",
+                  "Arn"
+                ]
+              }
+            },
+            {
+              "Action": [
+                "xray:PutTraceSegments",
+                "xray:PutTelemetryRecords"
+              ],
+              "Effect": "Allow",
+              "Resource": "*"
+            },
+            {
+              "Action": [
+                "kms:Decrypt",
+                "kms:DescribeKey",
+                "kms:Encrypt",
+                "kms:ReEncrypt*",
+                "kms:GenerateDataKey*"
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::ImportValue": "SentinelSecurity:ExportsOutputFnGetAttDataKey17AFBB84ArnCE2A1BC6"
+              }
+            },
+            {
+              "Action": [
+                "dynamodb:BatchGetItem",
+                "dynamodb:GetRecords",
+                "dynamodb:GetShardIterator",
+                "dynamodb:Query",
+                "dynamodb:GetItem",
+                "dynamodb:Scan",
+                "dynamodb:ConditionCheckItem",
+                "dynamodb:BatchWriteItem",
+                "dynamodb:PutItem",
+                "dynamodb:UpdateItem",
+                "dynamodb:DeleteItem",
+                "dynamodb:DescribeTable"
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::ImportValue": "SentinelFoundation:ExportsOutputFnGetAttSentinelFindings041A3481ArnEA94ECC3"
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::ImportValue": "SentinelFoundation:ExportsOutputFnGetAttSentinelFindings041A3481ArnEA94ECC3"
+                      },
+                      "/index/*"
+                    ]
+                  ]
+                }
+              ]
+            },
+            {
+              "Action": [
+                "dynamodb:BatchGetItem",
+                "dynamodb:GetRecords",
+                "dynamodb:GetShardIterator",
+                "dynamodb:Query",
+                "dynamodb:GetItem",
+                "dynamodb:Scan",
+                "dynamodb:ConditionCheckItem",
+                "dynamodb:BatchWriteItem",
+                "dynamodb:PutItem",
+                "dynamodb:UpdateItem",
+                "dynamodb:DeleteItem",
+                "dynamodb:DescribeTable"
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::ImportValue": "SentinelFoundation:ExportsOutputFnGetAttSentinelDecisions59DED8EBArn92497C69"
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::ImportValue": "SentinelFoundation:ExportsOutputFnGetAttSentinelDecisions59DED8EBArn92497C69"
+                      },
+                      "/index/*"
+                    ]
+                  ]
+                }
+              ]
+            },
+            {
+              "Action": [
+                "dynamodb:BatchGetItem",
+                "dynamodb:GetRecords",
+                "dynamodb:GetShardIterator",
+                "dynamodb:Query",
+                "dynamodb:GetItem",
+                "dynamodb:Scan",
+                "dynamodb:ConditionCheckItem",
+                "dynamodb:BatchWriteItem",
+                "dynamodb:PutItem",
+                "dynamodb:UpdateItem",
+                "dynamodb:DeleteItem",
+                "dynamodb:DescribeTable"
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::ImportValue": "SentinelFoundation:ExportsOutputFnGetAttSentinelDecisionsInFlight67F5F530Arn441E96C2"
+                },
+                {
+                  "Ref": "AWS::NoValue"
+                }
+              ]
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "PolicyName": "BackendApiFnRoleDefaultPolicyC289AB00",
+        "Roles": [
+          {
+            "Ref": "BackendApiFnRole5E81502F"
+          }
+        ]
+      },
+      "Type": "AWS::IAM::Policy"
+    },
+    "HybridRequestAuthorizerBE2EB515": {
+      "Properties": {
+        "AuthorizerResultTtlInSeconds": 0,
+        "AuthorizerUri": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:",
+              {
+                "Fn::Select": [
+                  1,
+                  {
+                    "Fn::Split": [
+                      ":",
+                      {
+                        "Fn::GetAtt": [
+                          "ApiAuthorizerFnFunction89031626",
+                          "Arn"
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              ":apigateway:",
+              {
+                "Fn::Select": [
+                  3,
+                  {
+                    "Fn::Split": [
+                      ":",
+                      {
+                        "Fn::GetAtt": [
+                          "ApiAuthorizerFnFunction89031626",
+                          "Arn"
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              ":lambda:path/2015-03-31/functions/",
+              {
+                "Fn::GetAtt": [
+                  "ApiAuthorizerFnFunction89031626",
+                  "Arn"
+                ]
+              },
+              "/invocations"
+            ]
+          ]
+        },
+        "IdentitySource": "method.request.header.Authorization",
+        "Name": "SentinelApiHybridRequestAuthorizerE6B4C462",
+        "RestApiId": {
+          "Ref": "SentinelApiCF9F8BFF"
+        },
+        "Type": "REQUEST"
+      },
+      "Type": "AWS::ApiGateway::Authorizer"
+    },
+    "LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aFD4BFC8A": {
+      "DependsOn": [
+        "LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aServiceRoleDefaultPolicyADDA7DEB",
+        "LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aServiceRole9741ECFB"
+      ],
+      "Properties": {
+        "Code": {
+          "S3Bucket": "cdk-hnb659fds-assets-111111111111-us-east-1",
+          "S3Key": "2819175352ad1ce0dae768e83fc328fb70fb5f10b4a8ff0ccbcb791f02b0716d.zip"
+        },
+        "Handler": "index.handler",
+        "Role": {
+          "Fn::GetAtt": [
+            "LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aServiceRole9741ECFB",
+            "Arn"
+          ]
+        },
+        "Runtime": "nodejs20.x",
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "Timeout": 900
+      },
+      "Type": "AWS::Lambda::Function"
+    },
+    "LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aServiceRole9741ECFB": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com"
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition"
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+              ]
+            ]
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ]
+      },
+      "Type": "AWS::IAM::Role"
+    },
+    "LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aServiceRoleDefaultPolicyADDA7DEB": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "logs:PutRetentionPolicy",
+                "logs:DeleteRetentionPolicy"
+              ],
+              "Effect": "Allow",
+              "Resource": "*"
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "PolicyName": "LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aServiceRoleDefaultPolicyADDA7DEB",
+        "Roles": [
+          {
+            "Ref": "LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aServiceRole9741ECFB"
+          }
+        ]
+      },
+      "Type": "AWS::IAM::Policy"
+    },
+    "ParamApiid73C7C83C": {
+      "Properties": {
+        "Name": "/sentinel/dev/api/id",
+        "Tags": {
+          "Owner": "iam-sentinel@customer.com",
+          "Project": "IAMSentinel",
+          "Stage": "dev"
+        },
+        "Type": "String",
+        "Value": {
+          "Ref": "SentinelApiCF9F8BFF"
+        }
+      },
+      "Type": "AWS::SSM::Parameter"
+    },
+    "ParamApiurl7ECCA323": {
+      "Properties": {
+        "Name": "/sentinel/dev/api/url",
+        "Tags": {
+          "Owner": "iam-sentinel@customer.com",
+          "Project": "IAMSentinel",
+          "Stage": "dev"
+        },
+        "Type": "String",
+        "Value": {
+          "Fn::Join": [
+            "",
+            [
+              "https://",
+              {
+                "Ref": "SentinelApiCF9F8BFF"
+              },
+              ".execute-api.us-east-1.",
+              {
+                "Ref": "AWS::URLSuffix"
+              },
+              "/",
+              {
+                "Ref": "SentinelApiDeploymentStagedev870612C0"
+              },
+              "/"
+            ]
+          ]
+        }
+      },
+      "Type": "AWS::SSM::Parameter"
+    },
+    "ParamCognitoappClientIdB65C8ED6": {
+      "Properties": {
+        "Name": "/sentinel/dev/cognito/app_client_id",
+        "Tags": {
+          "Owner": "iam-sentinel@customer.com",
+          "Project": "IAMSentinel",
+          "Stage": "dev"
+        },
+        "Type": "String",
+        "Value": {
+          "Ref": "SentinelUserPoolSentinelUserPoolClient7552D681"
+        }
+      },
+      "Type": "AWS::SSM::Parameter"
+    },
+    "ParamCognitodomain368C14CF": {
+      "Properties": {
+        "Name": "/sentinel/dev/cognito/domain",
+        "Tags": {
+          "Owner": "iam-sentinel@customer.com",
+          "Project": "IAMSentinel",
+          "Stage": "dev"
+        },
+        "Type": "String",
+        "Value": {
+          "Ref": "SentinelUserPoolSentinelUserPoolDomain272B0063"
+        }
+      },
+      "Type": "AWS::SSM::Parameter"
+    },
+    "ParamCognitouserPoolId1171644F": {
+      "Properties": {
+        "Name": "/sentinel/dev/cognito/user_pool_id",
+        "Tags": {
+          "Owner": "iam-sentinel@customer.com",
+          "Project": "IAMSentinel",
+          "Stage": "dev"
+        },
+        "Type": "String",
+        "Value": {
+          "Ref": "SentinelUserPool830D7B2C"
+        }
+      },
+      "Type": "AWS::SSM::Parameter"
+    },
+    "ParamWebsocketurlA0C8D6C4": {
+      "Properties": {
+        "Name": "/sentinel/dev/websocket/url",
+        "Tags": {
+          "Owner": "iam-sentinel@customer.com",
+          "Project": "IAMSentinel",
+          "Stage": "dev"
+        },
+        "Type": "String",
+        "Value": {
+          "Fn::Join": [
+            "",
+            [
+              "wss://",
+              {
+                "Ref": "SentinelStream2F547021"
+              },
+              ".execute-api.us-east-1.",
+              {
+                "Ref": "AWS::URLSuffix"
+              },
+              "/dev"
+            ]
+          ]
+        }
+      },
+      "Type": "AWS::SSM::Parameter"
+    },
+    "SentinelApiAccountED9E3C56": {
+      "DeletionPolicy": "Retain",
+      "DependsOn": [
+        "SentinelApiCF9F8BFF"
+      ],
+      "Properties": {
+        "CloudWatchRoleArn": {
+          "Fn::GetAtt": [
+            "SentinelApiCloudWatchRole01E0AB6E",
+            "Arn"
+          ]
+        }
+      },
+      "Type": "AWS::ApiGateway::Account",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "SentinelApiCF9F8BFF": {
+      "Properties": {
+        "Name": "SentinelApi-dev",
+        "Policy": {
+          "Statement": [
+            {
+              "Action": "execute-api:Invoke",
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": "*"
+              },
+              "Resource": "execute-api:/*",
+              "Sid": "AllowInvokeByDefault"
+            },
+            {
+              "Action": "execute-api:Invoke",
+              "Condition": {
+                "StringNotEquals": {
+                  "aws:PrincipalTag/BreakGlass": "IAMSentinel-Two-Signer"
+                }
+              },
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": "*"
+              },
+              "Resource": "execute-api:/*/*/emergency/*",
+              "Sid": "DenyEmergencyWithoutBreakGlassTag"
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ]
+      },
+      "Type": "AWS::ApiGateway::RestApi"
+    },
+    "SentinelApiCloudWatchRole01E0AB6E": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "apigateway.amazonaws.com"
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition"
+                },
+                ":iam::aws:policy/service-role/AmazonAPIGatewayPushToCloudWatchLogs"
+              ]
+            ]
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ]
+      },
+      "Type": "AWS::IAM::Role",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "SentinelApiDeployment9BBCD2EB7656d4bccf90d44a9d2cb10be78f488e": {
+      "DependsOn": [
+        "SentinelApiproxyANYB36EFEA2",
+        "SentinelApiproxyDF9C1A0F",
+        "SentinelApiemergencyproxyANY04A2D3CF",
+        "SentinelApiemergencyproxy13F6E8D2",
+        "SentinelApiemergencyFE00970E",
+        "SentinelApihealthGETD7CD450D",
+        "SentinelApihealth641C4F19"
+      ],
+      "Properties": {
+        "Description": "Automatically created by the RestApi construct",
+        "RestApiId": {
+          "Ref": "SentinelApiCF9F8BFF"
+        }
+      },
+      "Type": "AWS::ApiGateway::Deployment"
+    },
+    "SentinelApiDeploymentStagedev870612C0": {
+      "DependsOn": [
+        "SentinelApiAccountED9E3C56"
+      ],
+      "Properties": {
+        "AccessLogSetting": {
+          "DestinationArn": {
+            "Fn::GetAtt": [
+              "ApiAccessLogsE9DF007D",
+              "Arn"
+            ]
+          },
+          "Format": "{\"requestId\":\"$context.requestId\",\"ip\":\"$context.identity.sourceIp\",\"user\":\"$context.identity.user\",\"caller\":\"$context.identity.caller\",\"requestTime\":\"$context.requestTime\",\"httpMethod\":\"$context.httpMethod\",\"resourcePath\":\"$context.resourcePath\",\"status\":\"$context.status\",\"protocol\":\"$context.protocol\",\"responseLength\":\"$context.responseLength\"}"
+        },
+        "DeploymentId": {
+          "Ref": "SentinelApiDeployment9BBCD2EB7656d4bccf90d44a9d2cb10be78f488e"
+        },
+        "MethodSettings": [
+          {
+            "DataTraceEnabled": true,
+            "HttpMethod": "*",
+            "LoggingLevel": "INFO",
+            "ResourcePath": "/*",
+            "ThrottlingBurstLimit": 20,
+            "ThrottlingRateLimit": 100
+          }
+        ],
+        "RestApiId": {
+          "Ref": "SentinelApiCF9F8BFF"
+        },
+        "StageName": "dev",
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "TracingEnabled": true
+      },
+      "Type": "AWS::ApiGateway::Stage"
+    },
+    "SentinelApiInteractiveApiKey61B2EB2F": {
+      "Properties": {
+        "Enabled": true,
+        "StageKeys": [
+          {
+            "RestApiId": {
+              "Ref": "SentinelApiCF9F8BFF"
+            },
+            "StageName": {
+              "Ref": "SentinelApiDeploymentStagedev870612C0"
+            }
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ]
+      },
+      "Type": "AWS::ApiGateway::ApiKey"
+    },
+    "SentinelApiInteractiveUsagePlan37DEC455": {
+      "Properties": {
+        "ApiStages": [
+          {
+            "ApiId": {
+              "Ref": "SentinelApiCF9F8BFF"
+            },
+            "Stage": {
+              "Ref": "SentinelApiDeploymentStagedev870612C0"
+            },
+            "Throttle": {}
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "Throttle": {
+          "BurstLimit": 20,
+          "RateLimit": 100
+        },
+        "UsagePlanName": "interactive-dev"
+      },
+      "Type": "AWS::ApiGateway::UsagePlan"
+    },
+    "SentinelApiInteractiveUsagePlanUsagePlanKeyResourceSentinelApiInteractiveApiKey49D6AF2E6B9C7CB7": {
+      "Properties": {
+        "KeyId": {
+          "Ref": "SentinelApiInteractiveApiKey61B2EB2F"
+        },
+        "KeyType": "API_KEY",
+        "UsagePlanId": {
+          "Ref": "SentinelApiInteractiveUsagePlan37DEC455"
+        }
+      },
+      "Type": "AWS::ApiGateway::UsagePlanKey"
+    },
+    "SentinelApiMachineUsagePlanB8C429EF": {
+      "Properties": {
+        "ApiStages": [
+          {
+            "ApiId": {
+              "Ref": "SentinelApiCF9F8BFF"
+            },
+            "Stage": {
+              "Ref": "SentinelApiDeploymentStagedev870612C0"
+            },
+            "Throttle": {}
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "Throttle": {
+          "BurstLimit": 5,
+          "RateLimit": 5
+        },
+        "UsagePlanName": "machine-dev"
+      },
+      "Type": "AWS::ApiGateway::UsagePlan"
+    },
+    "SentinelApiemergencyFE00970E": {
+      "Properties": {
+        "ParentId": {
+          "Fn::GetAtt": [
+            "SentinelApiCF9F8BFF",
+            "RootResourceId"
+          ]
+        },
+        "PathPart": "emergency",
+        "RestApiId": {
+          "Ref": "SentinelApiCF9F8BFF"
+        }
+      },
+      "Type": "AWS::ApiGateway::Resource"
+    },
+    "SentinelApiemergencyproxy13F6E8D2": {
+      "Properties": {
+        "ParentId": {
+          "Ref": "SentinelApiemergencyFE00970E"
+        },
+        "PathPart": "{proxy+}",
+        "RestApiId": {
+          "Ref": "SentinelApiCF9F8BFF"
+        }
+      },
+      "Type": "AWS::ApiGateway::Resource"
+    },
+    "SentinelApiemergencyproxyANY04A2D3CF": {
+      "Properties": {
+        "AuthorizationType": "AWS_IAM",
+        "HttpMethod": "ANY",
+        "Integration": {
+          "IntegrationHttpMethod": "POST",
+          "Type": "AWS_PROXY",
+          "Uri": {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition"
+                },
+                ":apigateway:us-east-1:lambda:path/2015-03-31/functions/",
+                {
+                  "Fn::GetAtt": [
+                    "BackendApiFnFunctionE76936B1",
+                    "Arn"
+                  ]
+                },
+                "/invocations"
+              ]
+            ]
+          }
+        },
+        "ResourceId": {
+          "Ref": "SentinelApiemergencyproxy13F6E8D2"
+        },
+        "RestApiId": {
+          "Ref": "SentinelApiCF9F8BFF"
+        }
+      },
+      "Type": "AWS::ApiGateway::Method"
+    },
+    "SentinelApiemergencyproxyANYApiPermissionSentinelApiC148948BANYemergencyproxy0EA61ADF": {
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "BackendApiFnFunctionE76936B1",
+            "Arn"
+          ]
+        },
+        "Principal": "apigateway.amazonaws.com",
+        "SourceArn": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:",
+              {
+                "Ref": "AWS::Partition"
+              },
+              ":execute-api:us-east-1:111111111111:",
+              {
+                "Ref": "SentinelApiCF9F8BFF"
+              },
+              "/",
+              {
+                "Ref": "SentinelApiDeploymentStagedev870612C0"
+              },
+              "/*/emergency/*"
+            ]
+          ]
+        }
+      },
+      "Type": "AWS::Lambda::Permission"
+    },
+    "SentinelApiemergencyproxyANYApiPermissionTestSentinelApiC148948BANYemergencyproxy84C0A362": {
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "BackendApiFnFunctionE76936B1",
+            "Arn"
+          ]
+        },
+        "Principal": "apigateway.amazonaws.com",
+        "SourceArn": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:",
+              {
+                "Ref": "AWS::Partition"
+              },
+              ":execute-api:us-east-1:111111111111:",
+              {
+                "Ref": "SentinelApiCF9F8BFF"
+              },
+              "/test-invoke-stage/*/emergency/*"
+            ]
+          ]
+        }
+      },
+      "Type": "AWS::Lambda::Permission"
+    },
+    "SentinelApihealth641C4F19": {
+      "Properties": {
+        "ParentId": {
+          "Fn::GetAtt": [
+            "SentinelApiCF9F8BFF",
+            "RootResourceId"
+          ]
+        },
+        "PathPart": "health",
+        "RestApiId": {
+          "Ref": "SentinelApiCF9F8BFF"
+        }
+      },
+      "Type": "AWS::ApiGateway::Resource"
+    },
+    "SentinelApihealthGETApiPermissionSentinelApiC148948BGEThealth3FEEA6FE": {
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "BackendApiFnFunctionE76936B1",
+            "Arn"
+          ]
+        },
+        "Principal": "apigateway.amazonaws.com",
+        "SourceArn": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:",
+              {
+                "Ref": "AWS::Partition"
+              },
+              ":execute-api:us-east-1:111111111111:",
+              {
+                "Ref": "SentinelApiCF9F8BFF"
+              },
+              "/",
+              {
+                "Ref": "SentinelApiDeploymentStagedev870612C0"
+              },
+              "/GET/health"
+            ]
+          ]
+        }
+      },
+      "Type": "AWS::Lambda::Permission"
+    },
+    "SentinelApihealthGETApiPermissionTestSentinelApiC148948BGEThealth1B9491CF": {
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "BackendApiFnFunctionE76936B1",
+            "Arn"
+          ]
+        },
+        "Principal": "apigateway.amazonaws.com",
+        "SourceArn": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:",
+              {
+                "Ref": "AWS::Partition"
+              },
+              ":execute-api:us-east-1:111111111111:",
+              {
+                "Ref": "SentinelApiCF9F8BFF"
+              },
+              "/test-invoke-stage/GET/health"
+            ]
+          ]
+        }
+      },
+      "Type": "AWS::Lambda::Permission"
+    },
+    "SentinelApihealthGETD7CD450D": {
+      "Properties": {
+        "AuthorizationType": "NONE",
+        "HttpMethod": "GET",
+        "Integration": {
+          "IntegrationHttpMethod": "POST",
+          "Type": "AWS_PROXY",
+          "Uri": {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition"
+                },
+                ":apigateway:us-east-1:lambda:path/2015-03-31/functions/",
+                {
+                  "Fn::GetAtt": [
+                    "BackendApiFnFunctionE76936B1",
+                    "Arn"
+                  ]
+                },
+                "/invocations"
+              ]
+            ]
+          }
+        },
+        "ResourceId": {
+          "Ref": "SentinelApihealth641C4F19"
+        },
+        "RestApiId": {
+          "Ref": "SentinelApiCF9F8BFF"
+        }
+      },
+      "Type": "AWS::ApiGateway::Method"
+    },
+    "SentinelApiproxyANYApiPermissionSentinelApiC148948BANYproxyB3A14498": {
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "BackendApiFnFunctionE76936B1",
+            "Arn"
+          ]
+        },
+        "Principal": "apigateway.amazonaws.com",
+        "SourceArn": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:",
+              {
+                "Ref": "AWS::Partition"
+              },
+              ":execute-api:us-east-1:111111111111:",
+              {
+                "Ref": "SentinelApiCF9F8BFF"
+              },
+              "/",
+              {
+                "Ref": "SentinelApiDeploymentStagedev870612C0"
+              },
+              "/*/*"
+            ]
+          ]
+        }
+      },
+      "Type": "AWS::Lambda::Permission"
+    },
+    "SentinelApiproxyANYApiPermissionTestSentinelApiC148948BANYproxy162F1582": {
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "BackendApiFnFunctionE76936B1",
+            "Arn"
+          ]
+        },
+        "Principal": "apigateway.amazonaws.com",
+        "SourceArn": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:",
+              {
+                "Ref": "AWS::Partition"
+              },
+              ":execute-api:us-east-1:111111111111:",
+              {
+                "Ref": "SentinelApiCF9F8BFF"
+              },
+              "/test-invoke-stage/*/*"
+            ]
+          ]
+        }
+      },
+      "Type": "AWS::Lambda::Permission"
+    },
+    "SentinelApiproxyANYB36EFEA2": {
+      "Properties": {
+        "AuthorizationType": "CUSTOM",
+        "AuthorizerId": {
+          "Ref": "HybridRequestAuthorizerBE2EB515"
+        },
+        "HttpMethod": "ANY",
+        "Integration": {
+          "IntegrationHttpMethod": "POST",
+          "Type": "AWS_PROXY",
+          "Uri": {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition"
+                },
+                ":apigateway:us-east-1:lambda:path/2015-03-31/functions/",
+                {
+                  "Fn::GetAtt": [
+                    "BackendApiFnFunctionE76936B1",
+                    "Arn"
+                  ]
+                },
+                "/invocations"
+              ]
+            ]
+          }
+        },
+        "ResourceId": {
+          "Ref": "SentinelApiproxyDF9C1A0F"
+        },
+        "RestApiId": {
+          "Ref": "SentinelApiCF9F8BFF"
+        }
+      },
+      "Type": "AWS::ApiGateway::Method"
+    },
+    "SentinelApiproxyDF9C1A0F": {
+      "Properties": {
+        "ParentId": {
+          "Fn::GetAtt": [
+            "SentinelApiCF9F8BFF",
+            "RootResourceId"
+          ]
+        },
+        "PathPart": "{proxy+}",
+        "RestApiId": {
+          "Ref": "SentinelApiCF9F8BFF"
+        }
+      },
+      "Type": "AWS::ApiGateway::Resource"
+    },
+    "SentinelAuditorsGroup": {
+      "Properties": {
+        "GroupName": "SentinelAuditors",
+        "UserPoolId": {
+          "Ref": "SentinelUserPool830D7B2C"
+        }
+      },
+      "Type": "AWS::Cognito::UserPoolGroup"
+    },
+    "SentinelBreakGlassInitiatorsGroup": {
+      "Properties": {
+        "GroupName": "SentinelBreakGlassInitiators",
+        "UserPoolId": {
+          "Ref": "SentinelUserPool830D7B2C"
+        }
+      },
+      "Type": "AWS::Cognito::UserPoolGroup"
+    },
+    "SentinelConnectionsB4285A05": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "AttributeDefinitions": [
+          {
+            "AttributeName": "connection_id",
+            "AttributeType": "S"
+          }
+        ],
+        "BillingMode": "PAY_PER_REQUEST",
+        "KeySchema": [
+          {
+            "AttributeName": "connection_id",
+            "KeyType": "HASH"
+          }
+        ],
+        "PointInTimeRecoverySpecification": {
+          "PointInTimeRecoveryEnabled": true
+        },
+        "SSESpecification": {
+          "KMSMasterKeyId": {
+            "Fn::ImportValue": "SentinelSecurity:ExportsOutputFnGetAttDataKey17AFBB84ArnCE2A1BC6"
+          },
+          "SSEEnabled": true,
+          "SSEType": "KMS"
+        },
+        "TableName": "SentinelConnections-dev",
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "TimeToLiveSpecification": {
+          "AttributeName": "expires_at",
+          "Enabled": true
+        }
+      },
+      "Type": "AWS::DynamoDB::Table",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "SentinelOperatorsGroup": {
+      "Properties": {
+        "GroupName": "SentinelOperators",
+        "UserPoolId": {
+          "Ref": "SentinelUserPool830D7B2C"
+        }
+      },
+      "Type": "AWS::Cognito::UserPoolGroup"
+    },
+    "SentinelStream2F547021": {
+      "Properties": {
+        "Name": "SentinelStream-dev",
+        "ProtocolType": "WEBSOCKET",
+        "RouteSelectionExpression": "$request.body.action",
+        "Tags": {
+          "Owner": "iam-sentinel@customer.com",
+          "Project": "IAMSentinel",
+          "Stage": "dev"
+        }
+      },
+      "Type": "AWS::ApiGatewayV2::Api"
+    },
+    "SentinelStreamSentinelApiSentinelStreamWsAuthorizer2A910D5BPermission0327E50D": {
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "ApiAuthorizerFnFunction89031626",
+            "Arn"
+          ]
+        },
+        "Principal": "apigateway.amazonaws.com",
+        "SourceArn": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:",
+              {
+                "Ref": "AWS::Partition"
+              },
+              ":execute-api:us-east-1:111111111111:",
+              {
+                "Ref": "SentinelStream2F547021"
+              },
+              "/authorizers/",
+              {
+                "Ref": "SentinelStreamWsAuthorizer0C986EC0"
+              }
+            ]
+          ]
+        }
+      },
+      "Type": "AWS::Lambda::Permission"
+    },
+    "SentinelStreamStage310C6C1D": {
+      "Properties": {
+        "ApiId": {
+          "Ref": "SentinelStream2F547021"
+        },
+        "AutoDeploy": true,
+        "StageName": "dev",
+        "Tags": {
+          "Owner": "iam-sentinel@customer.com",
+          "Project": "IAMSentinel",
+          "Stage": "dev"
+        }
+      },
+      "Type": "AWS::ApiGatewayV2::Stage"
+    },
+    "SentinelStreamWsAuthorizer0C986EC0": {
+      "Properties": {
+        "ApiId": {
+          "Ref": "SentinelStream2F547021"
+        },
+        "AuthorizerType": "REQUEST",
+        "AuthorizerUri": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:",
+              {
+                "Ref": "AWS::Partition"
+              },
+              ":apigateway:us-east-1:lambda:path/2015-03-31/functions/",
+              {
+                "Fn::GetAtt": [
+                  "ApiAuthorizerFnFunction89031626",
+                  "Arn"
+                ]
+              },
+              "/invocations"
+            ]
+          ]
+        },
+        "IdentitySource": [
+          "route.request.header.Authorization"
+        ],
+        "Name": "WsAuthorizer"
+      },
+      "Type": "AWS::ApiGatewayV2::Authorizer"
+    },
+    "SentinelStreamconnectRoute4D3DD429": {
+      "Properties": {
+        "ApiId": {
+          "Ref": "SentinelStream2F547021"
+        },
+        "AuthorizationType": "CUSTOM",
+        "AuthorizerId": {
+          "Ref": "SentinelStreamWsAuthorizer0C986EC0"
+        },
+        "RouteKey": "$connect",
+        "Target": {
+          "Fn::Join": [
+            "",
+            [
+              "integrations/",
+              {
+                "Ref": "SentinelStreamconnectRouteConnectIntegrationE8303DE5"
+              }
+            ]
+          ]
+        }
+      },
+      "Type": "AWS::ApiGatewayV2::Route"
+    },
+    "SentinelStreamconnectRouteConnectIntegrationE8303DE5": {
+      "Properties": {
+        "ApiId": {
+          "Ref": "SentinelStream2F547021"
+        },
+        "IntegrationType": "AWS_PROXY",
+        "IntegrationUri": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:",
+              {
+                "Ref": "AWS::Partition"
+              },
+              ":apigateway:us-east-1:lambda:path/2015-03-31/functions/",
+              {
+                "Fn::GetAtt": [
+                  "WsConnectFnFunctionF70AEED1",
+                  "Arn"
+                ]
+              },
+              "/invocations"
+            ]
+          ]
+        }
+      },
+      "Type": "AWS::ApiGatewayV2::Integration"
+    },
+    "SentinelStreamconnectRouteConnectIntegrationPermissionC34AB5DE": {
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "WsConnectFnFunctionF70AEED1",
+            "Arn"
+          ]
+        },
+        "Principal": "apigateway.amazonaws.com",
+        "SourceArn": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:",
+              {
+                "Ref": "AWS::Partition"
+              },
+              ":execute-api:us-east-1:111111111111:",
+              {
+                "Ref": "SentinelStream2F547021"
+              },
+              "/*$connect"
+            ]
+          ]
+        }
+      },
+      "Type": "AWS::Lambda::Permission"
+    },
+    "SentinelStreamdefaultRoute89DDF992": {
+      "Properties": {
+        "ApiId": {
+          "Ref": "SentinelStream2F547021"
+        },
+        "AuthorizationType": "NONE",
+        "RouteKey": "$default",
+        "Target": {
+          "Fn::Join": [
+            "",
+            [
+              "integrations/",
+              {
+                "Ref": "SentinelStreamdefaultRouteDefaultIntegration8EB9C7B1"
+              }
+            ]
+          ]
+        }
+      },
+      "Type": "AWS::ApiGatewayV2::Route"
+    },
+    "SentinelStreamdefaultRouteDefaultIntegration8EB9C7B1": {
+      "Properties": {
+        "ApiId": {
+          "Ref": "SentinelStream2F547021"
+        },
+        "IntegrationType": "AWS_PROXY",
+        "IntegrationUri": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:",
+              {
+                "Ref": "AWS::Partition"
+              },
+              ":apigateway:us-east-1:lambda:path/2015-03-31/functions/",
+              {
+                "Fn::GetAtt": [
+                  "WsDefaultFnFunctionD21B4DC3",
+                  "Arn"
+                ]
+              },
+              "/invocations"
+            ]
+          ]
+        }
+      },
+      "Type": "AWS::ApiGatewayV2::Integration"
+    },
+    "SentinelStreamdefaultRouteDefaultIntegrationPermission22A95463": {
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "WsDefaultFnFunctionD21B4DC3",
+            "Arn"
+          ]
+        },
+        "Principal": "apigateway.amazonaws.com",
+        "SourceArn": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:",
+              {
+                "Ref": "AWS::Partition"
+              },
+              ":execute-api:us-east-1:111111111111:",
+              {
+                "Ref": "SentinelStream2F547021"
+              },
+              "/*$default"
+            ]
+          ]
+        }
+      },
+      "Type": "AWS::Lambda::Permission"
+    },
+    "SentinelStreamdisconnectRouteAD70A1DE": {
+      "Properties": {
+        "ApiId": {
+          "Ref": "SentinelStream2F547021"
+        },
+        "AuthorizationType": "NONE",
+        "RouteKey": "$disconnect",
+        "Target": {
+          "Fn::Join": [
+            "",
+            [
+              "integrations/",
+              {
+                "Ref": "SentinelStreamdisconnectRouteDisconnectIntegration1B4442DE"
+              }
+            ]
+          ]
+        }
+      },
+      "Type": "AWS::ApiGatewayV2::Route"
+    },
+    "SentinelStreamdisconnectRouteDisconnectIntegration1B4442DE": {
+      "Properties": {
+        "ApiId": {
+          "Ref": "SentinelStream2F547021"
+        },
+        "IntegrationType": "AWS_PROXY",
+        "IntegrationUri": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:",
+              {
+                "Ref": "AWS::Partition"
+              },
+              ":apigateway:us-east-1:lambda:path/2015-03-31/functions/",
+              {
+                "Fn::GetAtt": [
+                  "WsDisconnectFnFunction0612B226",
+                  "Arn"
+                ]
+              },
+              "/invocations"
+            ]
+          ]
+        }
+      },
+      "Type": "AWS::ApiGatewayV2::Integration"
+    },
+    "SentinelStreamdisconnectRouteDisconnectIntegrationPermissionDCAE89A5": {
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "WsDisconnectFnFunction0612B226",
+            "Arn"
+          ]
+        },
+        "Principal": "apigateway.amazonaws.com",
+        "SourceArn": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:",
+              {
+                "Ref": "AWS::Partition"
+              },
+              ":execute-api:us-east-1:111111111111:",
+              {
+                "Ref": "SentinelStream2F547021"
+              },
+              "/*$disconnect"
+            ]
+          ]
+        }
+      },
+      "Type": "AWS::Lambda::Permission"
+    },
+    "SentinelUserPool830D7B2C": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "AccountRecoverySetting": {
+          "RecoveryMechanisms": [
+            {
+              "Name": "verified_email",
+              "Priority": 1
+            }
+          ]
+        },
+        "AdminCreateUserConfig": {
+          "AllowAdminCreateUserOnly": true
+        },
+        "AutoVerifiedAttributes": [
+          "email"
+        ],
+        "EmailVerificationMessage": "The verification code to your new account is {####}",
+        "EmailVerificationSubject": "Verify your new account",
+        "EnabledMfas": [
+          "SOFTWARE_TOKEN_MFA"
+        ],
+        "MfaConfiguration": "ON",
+        "Policies": {
+          "PasswordPolicy": {
+            "MinimumLength": 14,
+            "RequireLowercase": true,
+            "RequireNumbers": true,
+            "RequireSymbols": true,
+            "RequireUppercase": true
+          }
+        },
+        "Schema": [
+          {
+            "Mutable": false,
+            "Name": "email",
+            "Required": true
+          }
+        ],
+        "SmsVerificationMessage": "The verification code to your new account is {####}",
+        "UserPoolAddOns": {
+          "AdvancedSecurityMode": "ENFORCED"
+        },
+        "UserPoolName": "SentinelUserPool-dev",
+        "UserPoolTags": {
+          "Owner": "iam-sentinel@customer.com",
+          "Project": "IAMSentinel",
+          "Stage": "dev"
+        },
+        "UsernameAttributes": [
+          "email"
+        ],
+        "VerificationMessageTemplate": {
+          "DefaultEmailOption": "CONFIRM_WITH_CODE",
+          "EmailMessage": "The verification code to your new account is {####}",
+          "EmailSubject": "Verify your new account",
+          "SmsMessage": "The verification code to your new account is {####}"
+        }
+      },
+      "Type": "AWS::Cognito::UserPool",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "SentinelUserPoolSentinelUserPoolClient7552D681": {
+      "Properties": {
+        "AllowedOAuthFlows": [
+          "code"
+        ],
+        "AllowedOAuthFlowsUserPoolClient": true,
+        "AllowedOAuthScopes": [
+          "openid",
+          "email",
+          "profile"
+        ],
+        "CallbackURLs": [
+          "https://dev.iam-sentinel.internal/callback"
+        ],
+        "ExplicitAuthFlows": [
+          "ALLOW_USER_SRP_AUTH",
+          "ALLOW_REFRESH_TOKEN_AUTH"
+        ],
+        "GenerateSecret": false,
+        "SupportedIdentityProviders": [
+          "COGNITO"
+        ],
+        "UserPoolId": {
+          "Ref": "SentinelUserPool830D7B2C"
+        }
+      },
+      "Type": "AWS::Cognito::UserPoolClient"
+    },
+    "SentinelUserPoolSentinelUserPoolDomain272B0063": {
+      "Properties": {
+        "Domain": "iam-sentinel-dev-111111",
+        "UserPoolId": {
+          "Ref": "SentinelUserPool830D7B2C"
+        }
+      },
+      "Type": "AWS::Cognito::UserPoolDomain"
+    },
+    "SentinelWebAcl": {
+      "Properties": {
+        "DefaultAction": {
+          "Allow": {}
+        },
+        "Name": "SentinelWebAcl-dev",
+        "Rules": [
+          {
+            "Name": "AWSManagedRulesCommonRuleSet",
+            "OverrideAction": {
+              "None": {}
+            },
+            "Priority": 0,
+            "Statement": {
+              "ManagedRuleGroupStatement": {
+                "Name": "AWSManagedRulesCommonRuleSet",
+                "VendorName": "AWS"
+              }
+            },
+            "VisibilityConfig": {
+              "CloudWatchMetricsEnabled": true,
+              "MetricName": "AWSManagedRulesCommonRuleSet",
+              "SampledRequestsEnabled": true
+            }
+          },
+          {
+            "Name": "AWSManagedRulesKnownBadInputsRuleSet",
+            "OverrideAction": {
+              "None": {}
+            },
+            "Priority": 1,
+            "Statement": {
+              "ManagedRuleGroupStatement": {
+                "Name": "AWSManagedRulesKnownBadInputsRuleSet",
+                "VendorName": "AWS"
+              }
+            },
+            "VisibilityConfig": {
+              "CloudWatchMetricsEnabled": true,
+              "MetricName": "AWSManagedRulesKnownBadInputsRuleSet",
+              "SampledRequestsEnabled": true
+            }
+          },
+          {
+            "Action": {
+              "Block": {}
+            },
+            "Name": "RateLimitPerIp",
+            "Priority": 2,
+            "Statement": {
+              "RateBasedStatement": {
+                "AggregateKeyType": "IP",
+                "Limit": 500
+              }
+            },
+            "VisibilityConfig": {
+              "CloudWatchMetricsEnabled": true,
+              "MetricName": "RateLimitPerIp",
+              "SampledRequestsEnabled": true
+            }
+          },
+          {
+            "Action": {
+              "Block": {}
+            },
+            "Name": "PromptInjectionCommonPayloads",
+            "Priority": 3,
+            "Statement": {
+              "OrStatement": {
+                "Statements": [
+                  {
+                    "ByteMatchStatement": {
+                      "FieldToMatch": {
+                        "Body": {}
+                      },
+                      "PositionalConstraint": "CONTAINS",
+                      "SearchString": "ignore previous instructions",
+                      "TextTransformations": [
+                        {
+                          "Priority": 0,
+                          "Type": "LOWERCASE"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "ByteMatchStatement": {
+                      "FieldToMatch": {
+                        "Body": {}
+                      },
+                      "PositionalConstraint": "CONTAINS",
+                      "SearchString": "ignore all previous instructions",
+                      "TextTransformations": [
+                        {
+                          "Priority": 0,
+                          "Type": "LOWERCASE"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "ByteMatchStatement": {
+                      "FieldToMatch": {
+                        "Body": {}
+                      },
+                      "PositionalConstraint": "CONTAINS",
+                      "SearchString": "disregard your instructions",
+                      "TextTransformations": [
+                        {
+                          "Priority": 0,
+                          "Type": "LOWERCASE"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "ByteMatchStatement": {
+                      "FieldToMatch": {
+                        "Body": {}
+                      },
+                      "PositionalConstraint": "CONTAINS",
+                      "SearchString": "you are now in developer mode",
+                      "TextTransformations": [
+                        {
+                          "Priority": 0,
+                          "Type": "LOWERCASE"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            },
+            "VisibilityConfig": {
+              "CloudWatchMetricsEnabled": true,
+              "MetricName": "PromptInjectionCommonPayloads",
+              "SampledRequestsEnabled": true
+            }
+          }
+        ],
+        "Scope": "REGIONAL",
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "VisibilityConfig": {
+          "CloudWatchMetricsEnabled": true,
+          "MetricName": "SentinelWebAcl",
+          "SampledRequestsEnabled": true
+        }
+      },
+      "Type": "AWS::WAFv2::WebACL"
+    },
+    "SentinelWebAclAssociation": {
+      "Properties": {
+        "ResourceArn": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:",
+              {
+                "Ref": "AWS::Partition"
+              },
+              ":apigateway:us-east-1::/restapis/",
+              {
+                "Ref": "SentinelApiCF9F8BFF"
+              },
+              "/stages/",
+              {
+                "Ref": "SentinelApiDeploymentStagedev870612C0"
+              }
+            ]
+          ]
+        },
+        "WebACLArn": {
+          "Fn::GetAtt": [
+            "SentinelWebAcl",
+            "Arn"
+          ]
+        }
+      },
+      "Type": "AWS::WAFv2::WebACLAssociation"
+    },
+    "WafLoggingConfig": {
+      "Properties": {
+        "LogDestinationConfigs": [
+          {
+            "Fn::GetAtt": [
+              "WafLogsF9F75746",
+              "Arn"
+            ]
+          }
+        ],
+        "ResourceArn": {
+          "Fn::GetAtt": [
+            "SentinelWebAcl",
+            "Arn"
+          ]
+        }
+      },
+      "Type": "AWS::WAFv2::LoggingConfiguration"
+    },
+    "WafLogsF9F75746": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "KmsKeyId": {
+          "Fn::ImportValue": "SentinelSecurity:ExportsOutputFnGetAttDataKey17AFBB84ArnCE2A1BC6"
+        },
+        "LogGroupName": "aws-waf-logs-sentinel-dev",
+        "RetentionInDays": 14,
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ]
+      },
+      "Type": "AWS::Logs::LogGroup",
+      "UpdateReplacePolicy": "Delete"
+    },
+    "WsConnectFnDlq387D54F0": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "MessageRetentionPeriod": 1209600,
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ]
+      },
+      "Type": "AWS::SQS::Queue",
+      "UpdateReplacePolicy": "Delete"
+    },
+    "WsConnectFnDlqPolicy253604A6": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sqs:*",
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false"
+                }
+              },
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": "*"
+              },
+              "Resource": {
+                "Fn::GetAtt": [
+                  "WsConnectFnDlq387D54F0",
+                  "Arn"
+                ]
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "Queues": [
+          {
+            "Ref": "WsConnectFnDlq387D54F0"
+          }
+        ]
+      },
+      "Type": "AWS::SQS::QueuePolicy"
+    },
+    "WsConnectFnDurationAnomalyAlarm37AB690E": {
+      "Properties": {
+        "AlarmActions": [
+          {
+            "Fn::ImportValue": "SentinelSecurity:ExportsOutputRefSecurityTopic077AEA2CE5C0B04D"
+          }
+        ],
+        "AlarmDescription": {
+          "Fn::Join": [
+            "",
+            [
+              {
+                "Ref": "WsConnectFnFunctionF70AEED1"
+              },
+              ": p95 Duration outside its normal anomaly-detection band."
+            ]
+          ]
+        },
+        "ComparisonOperator": "LessThanLowerOrGreaterThanUpperThreshold",
+        "EvaluationPeriods": 3,
+        "Metrics": [
+          {
+            "Id": "m1",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "FunctionName",
+                    "Value": {
+                      "Ref": "WsConnectFnFunctionF70AEED1"
+                    }
+                  }
+                ],
+                "MetricName": "Duration",
+                "Namespace": "AWS/Lambda"
+              },
+              "Period": 300,
+              "Stat": "p95"
+            },
+            "ReturnData": true
+          },
+          {
+            "Expression": "ANOMALY_DETECTION_BAND(m1, 2)",
+            "Id": "ad1",
+            "Label": {
+              "Fn::Join": [
+                "",
+                [
+                  {
+                    "Ref": "WsConnectFnFunctionF70AEED1"
+                  },
+                  " Duration (expected)"
+                ]
+              ]
+            }
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "ThresholdMetricId": "ad1",
+        "TreatMissingData": "notBreaching"
+      },
+      "Type": "AWS::CloudWatch::Alarm"
+    },
+    "WsConnectFnErrorAlarm68BA7A6C": {
+      "Properties": {
+        "AlarmActions": [
+          {
+            "Fn::ImportValue": "SentinelSecurity:ExportsOutputRefSecurityTopic077AEA2CE5C0B04D"
+          }
+        ],
+        "AlarmDescription": {
+          "Fn::Join": [
+            "",
+            [
+              {
+                "Ref": "WsConnectFnFunctionF70AEED1"
+              },
+              ": more than 5 errors in 5 minutes."
+            ]
+          ]
+        },
+        "ComparisonOperator": "GreaterThanThreshold",
+        "Dimensions": [
+          {
+            "Name": "FunctionName",
+            "Value": {
+              "Ref": "WsConnectFnFunctionF70AEED1"
+            }
+          }
+        ],
+        "EvaluationPeriods": 1,
+        "MetricName": "Errors",
+        "Namespace": "AWS/Lambda",
+        "Period": 300,
+        "Statistic": "Sum",
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "Threshold": 5,
+        "TreatMissingData": "notBreaching"
+      },
+      "Type": "AWS::CloudWatch::Alarm"
+    },
+    "WsConnectFnFunctionF70AEED1": {
+      "DependsOn": [
+        "WsConnectFnRoleDefaultPolicyFFDB2CCD",
+        "WsConnectFnRoleB0118BAC"
+      ],
+      "Properties": {
+        "Architectures": [
+          "arm64"
+        ],
+        "Code": {
+          "S3Bucket": "cdk-hnb659fds-assets-111111111111-us-east-1",
+          "S3Key": "1d3b4e87e1fb9f4fac202df18f7980c4e0643b0b26cfe171703717bb22a6c449.zip"
+        },
+        "DeadLetterConfig": {
+          "TargetArn": {
+            "Fn::GetAtt": [
+              "WsConnectFnDlq387D54F0",
+              "Arn"
+            ]
+          }
+        },
+        "Environment": {
+          "Variables": {
+            "POWERTOOLS_METRICS_NAMESPACE": "IAMSentinel",
+            "SENTINEL_CONNECTIONS_TABLE": {
+              "Ref": "SentinelConnectionsB4285A05"
+            },
+            "SENTINEL_CROSS_ACCOUNT_ROLE_NAME": "SentinelCrossAccountRole",
+            "SENTINEL_EVIDENCE_BUCKET": {
+              "Fn::ImportValue": "SentinelFoundation:ExportsOutputRefEvidenceBucketC67FF7689705A422"
+            },
+            "SENTINEL_FINDINGS_TABLE": {
+              "Fn::ImportValue": "SentinelFoundation:ExportsOutputRefSentinelFindings041A34810F713541"
+            },
+            "SENTINEL_KMS_KEY_ARN": {
+              "Fn::ImportValue": "SentinelSecurity:ExportsOutputFnGetAttEvidenceKey167D8F4DArnE1F27A98"
+            },
+            "SENTINEL_LOG_LEVEL": "INFO",
+            "SENTINEL_METRIC_NAMESPACE": "IAMSentinel",
+            "SENTINEL_REGION": "us-east-1",
+            "SENTINEL_STAGE": "dev"
+          }
+        },
+        "Handler": "handler.handler",
+        "Layers": [
+          {
+            "Fn::ImportValue": "SentinelLambda:ExportsOutputRefPowertoolsLayer17979D4BF1F19FF3"
+          },
+          {
+            "Fn::ImportValue": "SentinelLambda:ExportsOutputRefBoto3Layer463A0AEAFC52CB63"
+          }
+        ],
+        "MemorySize": 256,
+        "ReservedConcurrentExecutions": 10,
+        "Role": {
+          "Fn::GetAtt": [
+            "WsConnectFnRoleB0118BAC",
+            "Arn"
+          ]
+        },
+        "Runtime": "python3.12",
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "Timeout": 10,
+        "TracingConfig": {
+          "Mode": "Active"
+        }
+      },
+      "Type": "AWS::Lambda::Function"
+    },
+    "WsConnectFnFunctionLogRetention16E92B16": {
+      "Properties": {
+        "LogGroupName": {
+          "Fn::Join": [
+            "",
+            [
+              "/aws/lambda/",
+              {
+                "Ref": "WsConnectFnFunctionF70AEED1"
+              }
+            ]
+          ]
+        },
+        "RetentionInDays": 14,
+        "ServiceToken": {
+          "Fn::GetAtt": [
+            "LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aFD4BFC8A",
+            "Arn"
+          ]
+        }
+      },
+      "Type": "Custom::LogRetention"
+    },
+    "WsConnectFnRoleB0118BAC": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com"
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition"
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+              ]
+            ]
+          }
+        ],
+        "PermissionsBoundary": {
+          "Fn::ImportValue": "SentinelSecurity:ExportsOutputRefPermissionBoundary5A5E688699C146B3"
+        },
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ]
+      },
+      "Type": "AWS::IAM::Role"
+    },
+    "WsConnectFnRoleDefaultPolicyFFDB2CCD": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sqs:SendMessage",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "WsConnectFnDlq387D54F0",
+                  "Arn"
+                ]
+              }
+            },
+            {
+              "Action": [
+                "xray:PutTraceSegments",
+                "xray:PutTelemetryRecords"
+              ],
+              "Effect": "Allow",
+              "Resource": "*"
+            },
+            {
+              "Action": [
+                "kms:Decrypt",
+                "kms:DescribeKey",
+                "kms:Encrypt",
+                "kms:ReEncrypt*",
+                "kms:GenerateDataKey*"
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::ImportValue": "SentinelSecurity:ExportsOutputFnGetAttDataKey17AFBB84ArnCE2A1BC6"
+              }
+            },
+            {
+              "Action": [
+                "dynamodb:BatchGetItem",
+                "dynamodb:GetRecords",
+                "dynamodb:GetShardIterator",
+                "dynamodb:Query",
+                "dynamodb:GetItem",
+                "dynamodb:Scan",
+                "dynamodb:ConditionCheckItem",
+                "dynamodb:BatchWriteItem",
+                "dynamodb:PutItem",
+                "dynamodb:UpdateItem",
+                "dynamodb:DeleteItem",
+                "dynamodb:DescribeTable"
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "SentinelConnectionsB4285A05",
+                    "Arn"
+                  ]
+                },
+                {
+                  "Ref": "AWS::NoValue"
+                }
+              ]
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "PolicyName": "WsConnectFnRoleDefaultPolicyFFDB2CCD",
+        "Roles": [
+          {
+            "Ref": "WsConnectFnRoleB0118BAC"
+          }
+        ]
+      },
+      "Type": "AWS::IAM::Policy"
+    },
+    "WsDefaultFnDlqB6D401A8": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "MessageRetentionPeriod": 1209600,
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ]
+      },
+      "Type": "AWS::SQS::Queue",
+      "UpdateReplacePolicy": "Delete"
+    },
+    "WsDefaultFnDlqPolicy1F90134E": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sqs:*",
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false"
+                }
+              },
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": "*"
+              },
+              "Resource": {
+                "Fn::GetAtt": [
+                  "WsDefaultFnDlqB6D401A8",
+                  "Arn"
+                ]
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "Queues": [
+          {
+            "Ref": "WsDefaultFnDlqB6D401A8"
+          }
+        ]
+      },
+      "Type": "AWS::SQS::QueuePolicy"
+    },
+    "WsDefaultFnDurationAnomalyAlarm58D9EA65": {
+      "Properties": {
+        "AlarmActions": [
+          {
+            "Fn::ImportValue": "SentinelSecurity:ExportsOutputRefSecurityTopic077AEA2CE5C0B04D"
+          }
+        ],
+        "AlarmDescription": {
+          "Fn::Join": [
+            "",
+            [
+              {
+                "Ref": "WsDefaultFnFunctionD21B4DC3"
+              },
+              ": p95 Duration outside its normal anomaly-detection band."
+            ]
+          ]
+        },
+        "ComparisonOperator": "LessThanLowerOrGreaterThanUpperThreshold",
+        "EvaluationPeriods": 3,
+        "Metrics": [
+          {
+            "Id": "m1",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "FunctionName",
+                    "Value": {
+                      "Ref": "WsDefaultFnFunctionD21B4DC3"
+                    }
+                  }
+                ],
+                "MetricName": "Duration",
+                "Namespace": "AWS/Lambda"
+              },
+              "Period": 300,
+              "Stat": "p95"
+            },
+            "ReturnData": true
+          },
+          {
+            "Expression": "ANOMALY_DETECTION_BAND(m1, 2)",
+            "Id": "ad1",
+            "Label": {
+              "Fn::Join": [
+                "",
+                [
+                  {
+                    "Ref": "WsDefaultFnFunctionD21B4DC3"
+                  },
+                  " Duration (expected)"
+                ]
+              ]
+            }
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "ThresholdMetricId": "ad1",
+        "TreatMissingData": "notBreaching"
+      },
+      "Type": "AWS::CloudWatch::Alarm"
+    },
+    "WsDefaultFnErrorAlarm1D70971B": {
+      "Properties": {
+        "AlarmActions": [
+          {
+            "Fn::ImportValue": "SentinelSecurity:ExportsOutputRefSecurityTopic077AEA2CE5C0B04D"
+          }
+        ],
+        "AlarmDescription": {
+          "Fn::Join": [
+            "",
+            [
+              {
+                "Ref": "WsDefaultFnFunctionD21B4DC3"
+              },
+              ": more than 5 errors in 5 minutes."
+            ]
+          ]
+        },
+        "ComparisonOperator": "GreaterThanThreshold",
+        "Dimensions": [
+          {
+            "Name": "FunctionName",
+            "Value": {
+              "Ref": "WsDefaultFnFunctionD21B4DC3"
+            }
+          }
+        ],
+        "EvaluationPeriods": 1,
+        "MetricName": "Errors",
+        "Namespace": "AWS/Lambda",
+        "Period": 300,
+        "Statistic": "Sum",
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "Threshold": 5,
+        "TreatMissingData": "notBreaching"
+      },
+      "Type": "AWS::CloudWatch::Alarm"
+    },
+    "WsDefaultFnFunctionD21B4DC3": {
+      "DependsOn": [
+        "WsDefaultFnRoleDefaultPolicy685627DE",
+        "WsDefaultFnRole6FD55864"
+      ],
+      "Properties": {
+        "Architectures": [
+          "arm64"
+        ],
+        "Code": {
+          "S3Bucket": "cdk-hnb659fds-assets-111111111111-us-east-1",
+          "S3Key": "e48e027e2302a4704cad9fde1a088220d9b5e26a004e47f5143bcc6d28a27a5f.zip"
+        },
+        "DeadLetterConfig": {
+          "TargetArn": {
+            "Fn::GetAtt": [
+              "WsDefaultFnDlqB6D401A8",
+              "Arn"
+            ]
+          }
+        },
+        "Environment": {
+          "Variables": {
+            "POWERTOOLS_METRICS_NAMESPACE": "IAMSentinel",
+            "SENTINEL_CONNECTIONS_TABLE": {
+              "Ref": "SentinelConnectionsB4285A05"
+            },
+            "SENTINEL_CROSS_ACCOUNT_ROLE_NAME": "SentinelCrossAccountRole",
+            "SENTINEL_EVIDENCE_BUCKET": {
+              "Fn::ImportValue": "SentinelFoundation:ExportsOutputRefEvidenceBucketC67FF7689705A422"
+            },
+            "SENTINEL_FINDINGS_TABLE": {
+              "Fn::ImportValue": "SentinelFoundation:ExportsOutputRefSentinelFindings041A34810F713541"
+            },
+            "SENTINEL_KMS_KEY_ARN": {
+              "Fn::ImportValue": "SentinelSecurity:ExportsOutputFnGetAttEvidenceKey167D8F4DArnE1F27A98"
+            },
+            "SENTINEL_LOG_LEVEL": "INFO",
+            "SENTINEL_METRIC_NAMESPACE": "IAMSentinel",
+            "SENTINEL_REGION": "us-east-1",
+            "SENTINEL_STAGE": "dev"
+          }
+        },
+        "Handler": "handler.handler",
+        "Layers": [
+          {
+            "Fn::ImportValue": "SentinelLambda:ExportsOutputRefPowertoolsLayer17979D4BF1F19FF3"
+          },
+          {
+            "Fn::ImportValue": "SentinelLambda:ExportsOutputRefBoto3Layer463A0AEAFC52CB63"
+          }
+        ],
+        "MemorySize": 256,
+        "ReservedConcurrentExecutions": 10,
+        "Role": {
+          "Fn::GetAtt": [
+            "WsDefaultFnRole6FD55864",
+            "Arn"
+          ]
+        },
+        "Runtime": "python3.12",
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "Timeout": 10,
+        "TracingConfig": {
+          "Mode": "Active"
+        }
+      },
+      "Type": "AWS::Lambda::Function"
+    },
+    "WsDefaultFnFunctionLogRetentionBDFE6141": {
+      "Properties": {
+        "LogGroupName": {
+          "Fn::Join": [
+            "",
+            [
+              "/aws/lambda/",
+              {
+                "Ref": "WsDefaultFnFunctionD21B4DC3"
+              }
+            ]
+          ]
+        },
+        "RetentionInDays": 14,
+        "ServiceToken": {
+          "Fn::GetAtt": [
+            "LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aFD4BFC8A",
+            "Arn"
+          ]
+        }
+      },
+      "Type": "Custom::LogRetention"
+    },
+    "WsDefaultFnRole6FD55864": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com"
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition"
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+              ]
+            ]
+          }
+        ],
+        "PermissionsBoundary": {
+          "Fn::ImportValue": "SentinelSecurity:ExportsOutputRefPermissionBoundary5A5E688699C146B3"
+        },
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ]
+      },
+      "Type": "AWS::IAM::Role"
+    },
+    "WsDefaultFnRoleDefaultPolicy685627DE": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sqs:SendMessage",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "WsDefaultFnDlqB6D401A8",
+                  "Arn"
+                ]
+              }
+            },
+            {
+              "Action": [
+                "xray:PutTraceSegments",
+                "xray:PutTelemetryRecords"
+              ],
+              "Effect": "Allow",
+              "Resource": "*"
+            },
+            {
+              "Action": "execute-api:ManageConnections",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition"
+                    },
+                    ":execute-api:us-east-1:111111111111:",
+                    {
+                      "Ref": "SentinelStream2F547021"
+                    },
+                    "/*/*/@connections/*"
+                  ]
+                ]
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "PolicyName": "WsDefaultFnRoleDefaultPolicy685627DE",
+        "Roles": [
+          {
+            "Ref": "WsDefaultFnRole6FD55864"
+          }
+        ]
+      },
+      "Type": "AWS::IAM::Policy"
+    },
+    "WsDisconnectFnDlq3839ED45": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "MessageRetentionPeriod": 1209600,
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ]
+      },
+      "Type": "AWS::SQS::Queue",
+      "UpdateReplacePolicy": "Delete"
+    },
+    "WsDisconnectFnDlqPolicy05908B17": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sqs:*",
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false"
+                }
+              },
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": "*"
+              },
+              "Resource": {
+                "Fn::GetAtt": [
+                  "WsDisconnectFnDlq3839ED45",
+                  "Arn"
+                ]
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "Queues": [
+          {
+            "Ref": "WsDisconnectFnDlq3839ED45"
+          }
+        ]
+      },
+      "Type": "AWS::SQS::QueuePolicy"
+    },
+    "WsDisconnectFnDurationAnomalyAlarm9DAE17D1": {
+      "Properties": {
+        "AlarmActions": [
+          {
+            "Fn::ImportValue": "SentinelSecurity:ExportsOutputRefSecurityTopic077AEA2CE5C0B04D"
+          }
+        ],
+        "AlarmDescription": {
+          "Fn::Join": [
+            "",
+            [
+              {
+                "Ref": "WsDisconnectFnFunction0612B226"
+              },
+              ": p95 Duration outside its normal anomaly-detection band."
+            ]
+          ]
+        },
+        "ComparisonOperator": "LessThanLowerOrGreaterThanUpperThreshold",
+        "EvaluationPeriods": 3,
+        "Metrics": [
+          {
+            "Id": "m1",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "FunctionName",
+                    "Value": {
+                      "Ref": "WsDisconnectFnFunction0612B226"
+                    }
+                  }
+                ],
+                "MetricName": "Duration",
+                "Namespace": "AWS/Lambda"
+              },
+              "Period": 300,
+              "Stat": "p95"
+            },
+            "ReturnData": true
+          },
+          {
+            "Expression": "ANOMALY_DETECTION_BAND(m1, 2)",
+            "Id": "ad1",
+            "Label": {
+              "Fn::Join": [
+                "",
+                [
+                  {
+                    "Ref": "WsDisconnectFnFunction0612B226"
+                  },
+                  " Duration (expected)"
+                ]
+              ]
+            }
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "ThresholdMetricId": "ad1",
+        "TreatMissingData": "notBreaching"
+      },
+      "Type": "AWS::CloudWatch::Alarm"
+    },
+    "WsDisconnectFnErrorAlarmFBFBECFB": {
+      "Properties": {
+        "AlarmActions": [
+          {
+            "Fn::ImportValue": "SentinelSecurity:ExportsOutputRefSecurityTopic077AEA2CE5C0B04D"
+          }
+        ],
+        "AlarmDescription": {
+          "Fn::Join": [
+            "",
+            [
+              {
+                "Ref": "WsDisconnectFnFunction0612B226"
+              },
+              ": more than 5 errors in 5 minutes."
+            ]
+          ]
+        },
+        "ComparisonOperator": "GreaterThanThreshold",
+        "Dimensions": [
+          {
+            "Name": "FunctionName",
+            "Value": {
+              "Ref": "WsDisconnectFnFunction0612B226"
+            }
+          }
+        ],
+        "EvaluationPeriods": 1,
+        "MetricName": "Errors",
+        "Namespace": "AWS/Lambda",
+        "Period": 300,
+        "Statistic": "Sum",
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "Threshold": 5,
+        "TreatMissingData": "notBreaching"
+      },
+      "Type": "AWS::CloudWatch::Alarm"
+    },
+    "WsDisconnectFnFunction0612B226": {
+      "DependsOn": [
+        "WsDisconnectFnRoleDefaultPolicy4A2BB9D3",
+        "WsDisconnectFnRole1D2C8656"
+      ],
+      "Properties": {
+        "Architectures": [
+          "arm64"
+        ],
+        "Code": {
+          "S3Bucket": "cdk-hnb659fds-assets-111111111111-us-east-1",
+          "S3Key": "2d2e34945343aa09894a86ff43ff0a563105cac1eebd53148bc67ea2f48ecf89.zip"
+        },
+        "DeadLetterConfig": {
+          "TargetArn": {
+            "Fn::GetAtt": [
+              "WsDisconnectFnDlq3839ED45",
+              "Arn"
+            ]
+          }
+        },
+        "Environment": {
+          "Variables": {
+            "POWERTOOLS_METRICS_NAMESPACE": "IAMSentinel",
+            "SENTINEL_CONNECTIONS_TABLE": {
+              "Ref": "SentinelConnectionsB4285A05"
+            },
+            "SENTINEL_CROSS_ACCOUNT_ROLE_NAME": "SentinelCrossAccountRole",
+            "SENTINEL_EVIDENCE_BUCKET": {
+              "Fn::ImportValue": "SentinelFoundation:ExportsOutputRefEvidenceBucketC67FF7689705A422"
+            },
+            "SENTINEL_FINDINGS_TABLE": {
+              "Fn::ImportValue": "SentinelFoundation:ExportsOutputRefSentinelFindings041A34810F713541"
+            },
+            "SENTINEL_KMS_KEY_ARN": {
+              "Fn::ImportValue": "SentinelSecurity:ExportsOutputFnGetAttEvidenceKey167D8F4DArnE1F27A98"
+            },
+            "SENTINEL_LOG_LEVEL": "INFO",
+            "SENTINEL_METRIC_NAMESPACE": "IAMSentinel",
+            "SENTINEL_REGION": "us-east-1",
+            "SENTINEL_STAGE": "dev"
+          }
+        },
+        "Handler": "handler.handler",
+        "Layers": [
+          {
+            "Fn::ImportValue": "SentinelLambda:ExportsOutputRefPowertoolsLayer17979D4BF1F19FF3"
+          },
+          {
+            "Fn::ImportValue": "SentinelLambda:ExportsOutputRefBoto3Layer463A0AEAFC52CB63"
+          }
+        ],
+        "MemorySize": 256,
+        "ReservedConcurrentExecutions": 10,
+        "Role": {
+          "Fn::GetAtt": [
+            "WsDisconnectFnRole1D2C8656",
+            "Arn"
+          ]
+        },
+        "Runtime": "python3.12",
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "Timeout": 10,
+        "TracingConfig": {
+          "Mode": "Active"
+        }
+      },
+      "Type": "AWS::Lambda::Function"
+    },
+    "WsDisconnectFnFunctionLogRetention330F8D80": {
+      "Properties": {
+        "LogGroupName": {
+          "Fn::Join": [
+            "",
+            [
+              "/aws/lambda/",
+              {
+                "Ref": "WsDisconnectFnFunction0612B226"
+              }
+            ]
+          ]
+        },
+        "RetentionInDays": 14,
+        "ServiceToken": {
+          "Fn::GetAtt": [
+            "LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aFD4BFC8A",
+            "Arn"
+          ]
+        }
+      },
+      "Type": "Custom::LogRetention"
+    },
+    "WsDisconnectFnRole1D2C8656": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com"
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition"
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+              ]
+            ]
+          }
+        ],
+        "PermissionsBoundary": {
+          "Fn::ImportValue": "SentinelSecurity:ExportsOutputRefPermissionBoundary5A5E688699C146B3"
+        },
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ]
+      },
+      "Type": "AWS::IAM::Role"
+    },
+    "WsDisconnectFnRoleDefaultPolicy4A2BB9D3": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sqs:SendMessage",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "WsDisconnectFnDlq3839ED45",
+                  "Arn"
+                ]
+              }
+            },
+            {
+              "Action": [
+                "xray:PutTraceSegments",
+                "xray:PutTelemetryRecords"
+              ],
+              "Effect": "Allow",
+              "Resource": "*"
+            },
+            {
+              "Action": [
+                "kms:Decrypt",
+                "kms:DescribeKey",
+                "kms:Encrypt",
+                "kms:ReEncrypt*",
+                "kms:GenerateDataKey*"
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::ImportValue": "SentinelSecurity:ExportsOutputFnGetAttDataKey17AFBB84ArnCE2A1BC6"
+              }
+            },
+            {
+              "Action": [
+                "dynamodb:BatchWriteItem",
+                "dynamodb:PutItem",
+                "dynamodb:UpdateItem",
+                "dynamodb:DeleteItem",
+                "dynamodb:DescribeTable"
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "SentinelConnectionsB4285A05",
+                    "Arn"
+                  ]
+                },
+                {
+                  "Ref": "AWS::NoValue"
+                }
+              ]
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "PolicyName": "WsDisconnectFnRoleDefaultPolicy4A2BB9D3",
+        "Roles": [
+          {
+            "Ref": "WsDisconnectFnRole1D2C8656"
+          }
+        ]
+      },
+      "Type": "AWS::IAM::Policy"
     }
   },
   "Rules": {

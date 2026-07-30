@@ -67,6 +67,39 @@
         ]
       }
     },
+    "ExportsOutputFnGetAttSentinelDecisions59DED8EBArn92497C69": {
+      "Export": {
+        "Name": "SentinelFoundation:ExportsOutputFnGetAttSentinelDecisions59DED8EBArn92497C69"
+      },
+      "Value": {
+        "Fn::GetAtt": [
+          "SentinelDecisions59DED8EB",
+          "Arn"
+        ]
+      }
+    },
+    "ExportsOutputFnGetAttSentinelDecisionsInFlight67F5F530Arn441E96C2": {
+      "Export": {
+        "Name": "SentinelFoundation:ExportsOutputFnGetAttSentinelDecisionsInFlight67F5F530Arn441E96C2"
+      },
+      "Value": {
+        "Fn::GetAtt": [
+          "SentinelDecisionsInFlight67F5F530",
+          "Arn"
+        ]
+      }
+    },
+    "ExportsOutputFnGetAttSentinelFindings041A3481ArnEA94ECC3": {
+      "Export": {
+        "Name": "SentinelFoundation:ExportsOutputFnGetAttSentinelFindings041A3481ArnEA94ECC3"
+      },
+      "Value": {
+        "Fn::GetAtt": [
+          "SentinelFindings041A3481",
+          "Arn"
+        ]
+      }
+    },
     "ExportsOutputRefAthenaResults99A601264C50DC7A": {
       "Export": {
         "Name": "SentinelFoundation:ExportsOutputRefAthenaResults99A601264C50DC7A"

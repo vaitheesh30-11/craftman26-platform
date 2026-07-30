@@ -65,6 +65,7 @@ def build_app(stage: Stage, *, app: cdk.App | None = None) -> cdk.App:
         lambdas=lambdas,
         bedrock=bedrock,
         security=security,
+        foundation=foundation,
         env=env,
     )
     crossaccount = CrossAccountStack(

@@ -24,6 +24,30 @@
       ]
     }
   },
+  "Outputs": {
+    "ExportsOutputFnGetAttSentinelPrimeAgent5A6F0676AgentArnE1B985D5": {
+      "Export": {
+        "Name": "SentinelBedrock:ExportsOutputFnGetAttSentinelPrimeAgent5A6F0676AgentArnE1B985D5"
+      },
+      "Value": {
+        "Fn::GetAtt": [
+          "SentinelPrimeAgent5A6F0676",
+          "AgentArn"
+        ]
+      }
+    },
+    "ExportsOutputFnGetAttSentinelPrimeAgent5A6F0676AgentIdE5147438": {
+      "Export": {
+        "Name": "SentinelBedrock:ExportsOutputFnGetAttSentinelPrimeAgent5A6F0676AgentIdE5147438"
+      },
+      "Value": {
+        "Fn::GetAtt": [
+          "SentinelPrimeAgent5A6F0676",
+          "AgentId"
+        ]
+      }
+    }
+  },
   "Parameters": {
     "BootstrapVersion": {
       "Default": "/cdk-bootstrap/hnb659fds/version",
@@ -998,7 +1022,7 @@
         ],
         "Code": {
           "S3Bucket": "cdk-hnb659fds-assets-111111111111-us-east-1",
-          "S3Key": "7452d56bfe6d8963411ae3809dedf7d025a4f5dc993fab14c3bb5c32d8617ecd.zip"
+          "S3Key": "7996fb527e86a6be8e4c5e3d8d0025cf6f31462749895f82b57243c3cc81c04d.zip"
         },
         "DeadLetterConfig": {
           "TargetArn": {
