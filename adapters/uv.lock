@@ -137,6 +137,9 @@ iam = [
 kms = [
     { name = "mypy-boto3-kms" },
 ]
+lambda = [
+    { name = "mypy-boto3-lambda" },
+]
 s3 = [
     { name = "mypy-boto3-s3" },
 ]
@@ -382,7 +385,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "boto3-stubs", extra = ["bedrock-agent-runtime", "bedrock-runtime", "dynamodb", "iam", "kms", "s3", "securityhub", "sns", "ssm", "sts"] },
+    { name = "boto3-stubs", extra = ["bedrock-agent-runtime", "bedrock-runtime", "dynamodb", "iam", "kms", "lambda", "s3", "securityhub", "sns", "ssm", "sts"] },
     { name = "hypothesis" },
     { name = "moto", extra = ["all"] },
     { name = "mypy" },
@@ -406,7 +409,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "boto3-stubs", extras = ["dynamodb", "kms", "s3", "iam", "ssm", "bedrock-runtime", "bedrock-agent-runtime", "securityhub", "sns", "sts"], specifier = "==1.35.36" },
+    { name = "boto3-stubs", extras = ["dynamodb", "kms", "s3", "iam", "ssm", "bedrock-runtime", "bedrock-agent-runtime", "securityhub", "sns", "sts", "lambda"], specifier = "==1.35.36" },
     { name = "hypothesis", specifier = "==6.112.4" },
     { name = "moto", extras = ["all"], specifier = "==5.0.16" },
     { name = "mypy", specifier = "==1.11.2" },
@@ -702,6 +705,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/bc/bd/87309e03edf4e525134dc7e0d1bfb97e9d50c2c2d5400ecd0c08d0fd7d1d/mypy_boto3_kms-1.35.93.tar.gz", hash = "sha256:929361394886cc6668ab24ea525d08947a0d49ca3ad2eb6d9fd3c2e8b462f3a6", size = 29842, upload-time = "2025-01-07T00:30:03.875Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/79/a8/d557bb61e59bfaa0db9fb18091171af5a6f1c9a45b0ec30e5d0a85791f80/mypy_boto3_kms-1.35.93-py3-none-any.whl", hash = "sha256:b69e3442388e7218635a8df24c1ba9d3540f08b5e206dc1245bc8f29d3641f62", size = 37414, upload-time = "2025-01-07T00:29:59.468Z" },
+]
+
+[[package]]
+name = "mypy-boto3-lambda"
+version = "1.35.93"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/f0/ef/b90e51be87b5c226005c765a7109a26b5ce39cf349f2603336bd5c365863/mypy_boto3_lambda-1.35.93.tar.gz", hash = "sha256:c11b047743c7635ea8385abffaf97788a108b71479612e9b5e7d0bb19029d7a4", size = 41120, upload-time = "2025-01-07T00:30:26.033Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6c/f0/3c03cc63c157046106f59768e915c21377a372be6bc9f079601dd646cf4d/mypy_boto3_lambda-1.35.93-py3-none-any.whl", hash = "sha256:6bcd623c827724cde0b21b30c328515811b178763b75f0701a641cc7aa3aa414", size = 47708, upload-time = "2025-01-07T00:30:22.763Z" },
 ]
 
 [[package]]

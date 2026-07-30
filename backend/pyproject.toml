@@ -78,14 +78,25 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101", "S105", "S106", "PLR2004", "ARG", "N803", "N818"]
+# FastAPI resolves route-parameter annotations at runtime (request-body
+# models, query-param types like `datetime`) to do validation/coercion --
+# `TCH001`/`TCH003` would move those behind `TYPE_CHECKING`, which breaks
+# route registration, not just static analysis (backend phase-01).
+"**/routers/**" = ["TCH001", "TCH002", "TCH003"]
 
 [tool.ruff.lint.flake8-type-checking]
 # Pydantic resolves field annotations EAGERLY at class-definition time
 # (same note as agents/pyproject.toml) -- don't move field-type imports
-# behind TYPE_CHECKING for our own Base/Settings classes.
+# behind TYPE_CHECKING for our own Base/Settings classes. `ResponseBase`
+# subclasses `pydantic.BaseModel` transitively (via `schemas/common.py`),
+# which ruff's static analysis doesn't always resolve across module
+# boundaries -- `schemas/decision.py`'s `FindingOut` import needs the same
+# treatment explicitly.
 runtime-evaluated-base-classes = [
     "pydantic.BaseModel",
     "pydantic_settings.BaseSettings",
+    "iam_sentinel_backend.schemas.common.ResponseBase",
+    "iam_sentinel_backend.schemas.common.RequestBase",
 ]
 
 [tool.ruff.lint.isort]

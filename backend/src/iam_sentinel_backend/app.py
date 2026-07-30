@@ -15,6 +15,14 @@ from mangum import Mangum
 
 from iam_sentinel_backend.errors import register_exception_handlers
 from iam_sentinel_backend.middleware import CorrelationIdMiddleware
+from iam_sentinel_backend.routers import (
+    approvals,
+    chat,
+    decisions,
+    findings,
+    operations,
+    router_bridge,
+)
 from iam_sentinel_backend.settings import settings
 
 _SERVICE_TITLE = "IAM Sentinel Management API"
@@ -37,6 +45,14 @@ def create_app() -> FastAPI:
     @app.get("/health", tags=["operations"])
     def health() -> dict[str, Any]:
         return {"ok": True, "data": {"stage": settings.stage, "commit": settings.commit_sha}}
+
+    # backend phase-01 §2/§3: one router per route-table group.
+    app.include_router(chat.router)
+    app.include_router(router_bridge.router)
+    app.include_router(findings.router)
+    app.include_router(decisions.router)
+    app.include_router(approvals.router)
+    app.include_router(operations.router)
 
     return app
 

@@ -10,9 +10,13 @@ from functools import lru_cache
 from typing import TYPE_CHECKING
 
 from fastapi import Depends, Request, status
+from iam_sentinel_adapters.compute.lambda_client import LambdaInvokeClient
 from iam_sentinel_adapters.ddb.decisions import DecisionsClient
+from iam_sentinel_adapters.ddb.faults import FaultsClient
 from iam_sentinel_adapters.ddb.findings import FindingsClient
 from iam_sentinel_adapters.llm.factory import get_provider
+from iam_sentinel_adapters.s3.reports import ReportsClient
+from iam_sentinel_adapters.settings import settings as adapter_settings
 
 from iam_sentinel_backend.auth.breakglass import (
     BreakGlassVerificationError,
@@ -25,6 +29,12 @@ from iam_sentinel_backend.auth.sigv4 import (
     SigV4Verifier,
 )
 from iam_sentinel_backend.errors import SentinelHTTPException
+from iam_sentinel_backend.services.approval_service import ApprovalService
+from iam_sentinel_backend.services.chat_service import ChatService
+from iam_sentinel_backend.services.decisions_service import DecisionsService
+from iam_sentinel_backend.services.findings_service import FindingsService
+from iam_sentinel_backend.services.operations_service import OperationsService
+from iam_sentinel_backend.services.router_bridge_service import RouterBridgeService
 from iam_sentinel_backend.settings import settings
 
 if TYPE_CHECKING:
@@ -127,3 +137,56 @@ def get_decisions_client() -> DecisionsClient:
 @lru_cache(maxsize=1)
 def get_llm_provider() -> LLMProvider:
     return get_provider()
+
+
+@lru_cache(maxsize=1)
+def get_faults_client() -> FaultsClient:
+    return FaultsClient()
+
+
+@lru_cache(maxsize=1)
+def get_reports_client() -> ReportsClient:
+    return ReportsClient()
+
+
+@lru_cache(maxsize=1)
+def get_lambda_invoke_client() -> LambdaInvokeClient:
+    return LambdaInvokeClient()
+
+
+def get_findings_service(
+    findings_client: FindingsClient = Depends(get_findings_client),
+) -> FindingsService:
+    return FindingsService(findings_client)
+
+
+def get_decisions_service(
+    decisions_client: DecisionsClient = Depends(get_decisions_client),
+) -> DecisionsService:
+    return DecisionsService(decisions_client)
+
+
+def get_operations_service(
+    faults_client: FaultsClient = Depends(get_faults_client),
+    reports_client: ReportsClient = Depends(get_reports_client),
+) -> OperationsService:
+    return OperationsService(faults_client, reports_client)
+
+
+def get_router_bridge_service(
+    lambda_client: LambdaInvokeClient = Depends(get_lambda_invoke_client),
+) -> RouterBridgeService:
+    return RouterBridgeService(lambda_client, function_name=adapter_settings.router_function_name)
+
+
+def get_chat_service(
+    provider: LLMProvider = Depends(get_llm_provider),
+    decisions_client: DecisionsClient = Depends(get_decisions_client),
+) -> ChatService:
+    return ChatService(provider=provider, decisions_client=decisions_client)
+
+
+def get_approval_service(
+    decisions_client: DecisionsClient = Depends(get_decisions_client),
+) -> ApprovalService:
+    return ApprovalService(decisions_client)
