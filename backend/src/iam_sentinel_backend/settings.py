@@ -58,5 +58,17 @@ class BackendSettings(BaseSettings):
     chat_poll_initial_delay_seconds: float = 0.5
     chat_poll_max_delay_seconds: float = 5.0
 
+    # backend phase-02 §4 step 2/§6: once `invoke_agent_stream`'s final chunk
+    # arrives, the same out-of-band-poll pattern as `chat_poll_budget_seconds`
+    # applies, but bounded much tighter -- the client is already watching a
+    # live socket, so there is no REST-style "come back later" fallback.
+    ws_result_poll_budget_seconds: float = 5.0
+    ws_result_poll_initial_delay_seconds: float = 0.2
+    ws_result_poll_max_delay_seconds: float = 1.0
+    # phase-02 §4 step 4: ~50 msgs/s per connection to avoid API GW throttling.
+    ws_rate_limit_per_second: float = 50.0
+    # phase-02 §4 step 4: 128 KB per WebSocket frame.
+    ws_max_frame_bytes: int = 128 * 1024
+
 
 settings = BackendSettings()

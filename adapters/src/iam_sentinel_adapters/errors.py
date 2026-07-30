@@ -69,3 +69,10 @@ class EvidenceVerificationError(SentinelAdapterError):
 
 class ManifestVerificationError(SentinelAdapterError):
     """The KB quote manifest failed KMS signature verification or is not valid JSON."""
+
+
+class ConnectionGoneError(NonRetryableError):
+    """`apigatewaymanagementapi:PostToConnection` returned `GoneException` --
+    the client disconnected mid-stream; the caller's own connection record
+    should be cleaned up rather than retried (backend phase-02 §4 step 4).
+    """

@@ -10,8 +10,11 @@ from functools import lru_cache
 from typing import TYPE_CHECKING
 
 from fastapi import Depends, Request, status
+from iam_sentinel_adapters.apigw.management import ManagementApiClient
 from iam_sentinel_adapters.compute.lambda_client import LambdaInvokeClient
+from iam_sentinel_adapters.ddb.connections import ConnectionsClient
 from iam_sentinel_adapters.ddb.decisions import DecisionsClient
+from iam_sentinel_adapters.ddb.decisions_in_flight import DecisionsInFlightClient
 from iam_sentinel_adapters.ddb.faults import FaultsClient
 from iam_sentinel_adapters.ddb.findings import FindingsClient
 from iam_sentinel_adapters.llm.factory import get_provider
@@ -36,6 +39,7 @@ from iam_sentinel_backend.services.findings_service import FindingsService
 from iam_sentinel_backend.services.operations_service import OperationsService
 from iam_sentinel_backend.services.router_bridge_service import RouterBridgeService
 from iam_sentinel_backend.settings import settings
+from iam_sentinel_backend.ws.fanout import StreamFanoutService
 
 if TYPE_CHECKING:
     from iam_sentinel_adapters.llm.types import LLMProvider
@@ -154,6 +158,21 @@ def get_lambda_invoke_client() -> LambdaInvokeClient:
     return LambdaInvokeClient()
 
 
+@lru_cache(maxsize=1)
+def get_decisions_in_flight_client() -> DecisionsInFlightClient:
+    return DecisionsInFlightClient()
+
+
+@lru_cache(maxsize=1)
+def get_connections_client() -> ConnectionsClient:
+    return ConnectionsClient()
+
+
+@lru_cache(maxsize=1)
+def get_management_client() -> ManagementApiClient:
+    return ManagementApiClient()
+
+
 def get_findings_service(
     findings_client: FindingsClient = Depends(get_findings_client),
 ) -> FindingsService:
@@ -190,3 +209,19 @@ def get_approval_service(
     decisions_client: DecisionsClient = Depends(get_decisions_client),
 ) -> ApprovalService:
     return ApprovalService(decisions_client)
+
+
+@lru_cache(maxsize=1)
+def get_stream_fanout_service() -> StreamFanoutService:
+    """Plain composition, not a FastAPI `Depends()` chain: `ws/default.py`'s
+    Lambda `handler()` is invoked directly by API Gateway WebSocket, never
+    through `create_app()`'s FastAPI/Mangum request cycle (phase-02's three
+    routes are their own Lambdas per §2, not REST proxy routes) -- so there
+    is no per-request dependency graph for this to plug into.
+    """
+    return StreamFanoutService(
+        provider=get_llm_provider(),
+        decisions_client=get_decisions_client(),
+        decisions_in_flight_client=get_decisions_in_flight_client(),
+        management_client=get_management_client(),
+    )
