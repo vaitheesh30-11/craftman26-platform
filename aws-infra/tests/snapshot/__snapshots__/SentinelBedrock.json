@@ -1,9 +1,640 @@
 {
+  "Metadata": {
+    "cdk_nag": {
+      "rules_to_suppress": [
+        {
+          "applies_to": [
+            "Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+          ],
+          "id": "AwsSolutions-IAM4",
+          "reason": "AWSLambdaBasicExecutionRole is CDK's default Lambda execution role addition (CloudWatch Logs only, scoped to the function's own log group)."
+        },
+        {
+          "id": "AwsSolutions-IAM5",
+          "reason": "Guardrail/Collaborator/Agent-settings custom-resource Lambdas call bedrock-agent APIs (AssociateAgentCollaborator, UpdateAgent, GetAgentCollaborator) whose resource identifiers do not exist before AWS assigns them at call time -- the same shape of necessary wildcard already justified for SecurityStack's GuardrailCustomResource (aws-infra phase-01)."
+        },
+        {
+          "id": "HIPAA.Security-LambdaInsideVPC",
+          "reason": "docs/ARCHITECTURE.md \u00a7Networking: IAM Sentinel is deliberately VPC-less across the whole platform."
+        },
+        {
+          "id": "HIPAA.Security-IAMNoInlinePolicy",
+          "reason": "CDK's auto-generated DefaultPolicy grants (aoss:APIAccessAll scoped to the KB's own collection ARN, s3:GetObject/ListBucket scoped to the KB source bucket); splitting these into managed policies adds indirection with no security benefit, matching the FoundationStack precedent (aws-infra phase-02)."
+        }
+      ]
+    }
+  },
   "Parameters": {
     "BootstrapVersion": {
       "Default": "/cdk-bootstrap/hnb659fds/version",
       "Description": "Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]",
       "Type": "AWS::SSM::Parameter::Value<String>"
+    }
+  },
+  "Resources": {
+    "KbDataSourceIamUserGuide": {
+      "Properties": {
+        "DataSourceConfiguration": {
+          "S3Configuration": {
+            "BucketArn": {
+              "Fn::ImportValue": "SentinelFoundation:ExportsOutputFnGetAttKbSource2D3A83B9ArnC1B3D0FA"
+            },
+            "InclusionPrefixes": [
+              "iam-user-guide/"
+            ]
+          },
+          "Type": "S3"
+        },
+        "KnowledgeBaseId": {
+          "Fn::GetAtt": [
+            "SentinelKB",
+            "KnowledgeBaseId"
+          ]
+        },
+        "Name": "SentinelKB-IamUserGuide-dev",
+        "VectorIngestionConfiguration": {
+          "ChunkingConfiguration": {
+            "ChunkingStrategy": "FIXED_SIZE",
+            "FixedSizeChunkingConfiguration": {
+              "MaxTokens": 512,
+              "OverlapPercentage": 20
+            }
+          }
+        }
+      },
+      "Type": "AWS::Bedrock::DataSource"
+    },
+    "KbDataSourceIdcUserGuide": {
+      "Properties": {
+        "DataSourceConfiguration": {
+          "S3Configuration": {
+            "BucketArn": {
+              "Fn::ImportValue": "SentinelFoundation:ExportsOutputFnGetAttKbSource2D3A83B9ArnC1B3D0FA"
+            },
+            "InclusionPrefixes": [
+              "identity-center-user-guide/"
+            ]
+          },
+          "Type": "S3"
+        },
+        "KnowledgeBaseId": {
+          "Fn::GetAtt": [
+            "SentinelKB",
+            "KnowledgeBaseId"
+          ]
+        },
+        "Name": "SentinelKB-IdcUserGuide-dev",
+        "VectorIngestionConfiguration": {
+          "ChunkingConfiguration": {
+            "ChunkingStrategy": "FIXED_SIZE",
+            "FixedSizeChunkingConfiguration": {
+              "MaxTokens": 512,
+              "OverlapPercentage": 20
+            }
+          }
+        }
+      },
+      "Type": "AWS::Bedrock::DataSource"
+    },
+    "KbDataSourceOrgUserGuide": {
+      "Properties": {
+        "DataSourceConfiguration": {
+          "S3Configuration": {
+            "BucketArn": {
+              "Fn::ImportValue": "SentinelFoundation:ExportsOutputFnGetAttKbSource2D3A83B9ArnC1B3D0FA"
+            },
+            "InclusionPrefixes": [
+              "organizations-user-guide/"
+            ]
+          },
+          "Type": "S3"
+        },
+        "KnowledgeBaseId": {
+          "Fn::GetAtt": [
+            "SentinelKB",
+            "KnowledgeBaseId"
+          ]
+        },
+        "Name": "SentinelKB-OrgUserGuide-dev",
+        "VectorIngestionConfiguration": {
+          "ChunkingConfiguration": {
+            "ChunkingStrategy": "FIXED_SIZE",
+            "FixedSizeChunkingConfiguration": {
+              "MaxTokens": 512,
+              "OverlapPercentage": 20
+            }
+          }
+        }
+      },
+      "Type": "AWS::Bedrock::DataSource"
+    },
+    "KbDataSourceServiceAuthorizationReference": {
+      "Properties": {
+        "DataSourceConfiguration": {
+          "S3Configuration": {
+            "BucketArn": {
+              "Fn::ImportValue": "SentinelFoundation:ExportsOutputFnGetAttKbSource2D3A83B9ArnC1B3D0FA"
+            },
+            "InclusionPrefixes": [
+              "service-authorization-reference/"
+            ]
+          },
+          "Type": "S3"
+        },
+        "KnowledgeBaseId": {
+          "Fn::GetAtt": [
+            "SentinelKB",
+            "KnowledgeBaseId"
+          ]
+        },
+        "Name": "SentinelKB-ServiceAuthorizationReference-dev",
+        "VectorIngestionConfiguration": {
+          "ChunkingConfiguration": {
+            "ChunkingStrategy": "FIXED_SIZE",
+            "FixedSizeChunkingConfiguration": {
+              "MaxTokens": 512,
+              "OverlapPercentage": 20
+            }
+          }
+        }
+      },
+      "Type": "AWS::Bedrock::DataSource"
+    },
+    "KbIdParam4D3A9394": {
+      "Properties": {
+        "Name": "/sentinel/dev/kb/id",
+        "Tags": {
+          "Owner": "iam-sentinel@customer.com",
+          "Project": "IAMSentinel",
+          "Stage": "dev"
+        },
+        "Type": "String",
+        "Value": {
+          "Fn::GetAtt": [
+            "SentinelKB",
+            "KnowledgeBaseId"
+          ]
+        }
+      },
+      "Type": "AWS::SSM::Parameter"
+    },
+    "KbIndexBootstrap": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "CollectionEndpoint": {
+          "Fn::GetAtt": [
+            "KbVectorCollection",
+            "CollectionEndpoint"
+          ]
+        },
+        "ServiceToken": {
+          "Fn::GetAtt": [
+            "KbIndexBootstrapFnFE231B12",
+            "Arn"
+          ]
+        }
+      },
+      "Type": "AWS::CloudFormation::CustomResource",
+      "UpdateReplacePolicy": "Delete"
+    },
+    "KbIndexBootstrapDlq65652E6E": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "MessageRetentionPeriod": 1209600,
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ]
+      },
+      "Type": "AWS::SQS::Queue",
+      "UpdateReplacePolicy": "Delete"
+    },
+    "KbIndexBootstrapDlqPolicy46EE2572": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sqs:*",
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false"
+                }
+              },
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": "*"
+              },
+              "Resource": {
+                "Fn::GetAtt": [
+                  "KbIndexBootstrapDlq65652E6E",
+                  "Arn"
+                ]
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "Queues": [
+          {
+            "Ref": "KbIndexBootstrapDlq65652E6E"
+          }
+        ]
+      },
+      "Type": "AWS::SQS::QueuePolicy"
+    },
+    "KbIndexBootstrapFnFE231B12": {
+      "DependsOn": [
+        "KbIndexBootstrapFnServiceRoleDefaultPolicyB86034FD",
+        "KbIndexBootstrapFnServiceRole558DCD42"
+      ],
+      "Properties": {
+        "Architectures": [
+          "arm64"
+        ],
+        "Code": {
+          "S3Bucket": "cdk-hnb659fds-assets-111111111111-us-east-1",
+          "S3Key": "8d324cc0067ac0d2e57814a9c6c66295eef6db3a6aab10bdc7b74b7439a93e48.zip"
+        },
+        "DeadLetterConfig": {
+          "TargetArn": {
+            "Fn::GetAtt": [
+              "KbIndexBootstrapDlq65652E6E",
+              "Arn"
+            ]
+          }
+        },
+        "Handler": "handler.handler",
+        "ReservedConcurrentExecutions": 2,
+        "Role": {
+          "Fn::GetAtt": [
+            "KbIndexBootstrapFnServiceRole558DCD42",
+            "Arn"
+          ]
+        },
+        "Runtime": "python3.12",
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "Timeout": 60
+      },
+      "Type": "AWS::Lambda::Function"
+    },
+    "KbIndexBootstrapFnServiceRole558DCD42": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com"
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition"
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+              ]
+            ]
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ]
+      },
+      "Type": "AWS::IAM::Role"
+    },
+    "KbIndexBootstrapFnServiceRoleDefaultPolicyB86034FD": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sqs:SendMessage",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "KbIndexBootstrapDlq65652E6E",
+                  "Arn"
+                ]
+              }
+            },
+            {
+              "Action": "aoss:APIAccessAll",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "KbVectorCollection",
+                  "Arn"
+                ]
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "PolicyName": "KbIndexBootstrapFnServiceRoleDefaultPolicyB86034FD",
+        "Roles": [
+          {
+            "Ref": "KbIndexBootstrapFnServiceRole558DCD42"
+          }
+        ]
+      },
+      "Type": "AWS::IAM::Policy"
+    },
+    "KbOssAccessPolicy": {
+      "DependsOn": [
+        "KbVectorCollection"
+      ],
+      "Properties": {
+        "Name": "sentinel-kb-vector-access-dev",
+        "Policy": {
+          "Fn::Join": [
+            "",
+            [
+              "[{\"Rules\":[{\"ResourceType\":\"collection\",\"Resource\":[\"collection/sentinel-kb-vector\"],\"Permission\":[\"aoss:*\"]},{\"ResourceType\":\"index\",\"Resource\":[\"index/sentinel-kb-vector/*\"],\"Permission\":[\"aoss:*\"]}],\"Principal\":[\"arn:",
+              {
+                "Ref": "AWS::Partition"
+              },
+              ":iam::111111111111:root\"]}]"
+            ]
+          ]
+        },
+        "Type": "data"
+      },
+      "Type": "AWS::OpenSearchServerless::AccessPolicy"
+    },
+    "KbOssEncryptionPolicy": {
+      "Properties": {
+        "Name": "sentinel-kb-vector-enc-dev",
+        "Policy": {
+          "Fn::Join": [
+            "",
+            [
+              "{\"Rules\":[{\"ResourceType\":\"collection\",\"Resource\":[\"collection/sentinel-kb-vector\"]}],\"AWSOwnedKey\":false,\"KmsARN\":\"",
+              {
+                "Fn::ImportValue": "SentinelSecurity:ExportsOutputFnGetAttKbKeyB9BF363EArn5DFF8B0E"
+              },
+              "\"}"
+            ]
+          ]
+        },
+        "Type": "encryption"
+      },
+      "Type": "AWS::OpenSearchServerless::SecurityPolicy"
+    },
+    "KbOssNetworkPolicy": {
+      "Properties": {
+        "Name": "sentinel-kb-vector-net-dev",
+        "Policy": "[{\"Rules\":[{\"ResourceType\":\"collection\",\"Resource\":[\"collection/sentinel-kb-vector\"]}],\"AllowFromPublic\":true}]",
+        "Type": "network"
+      },
+      "Type": "AWS::OpenSearchServerless::SecurityPolicy"
+    },
+    "KbRoleDE09CC9A": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Condition": {
+                "ArnLike": {
+                  "aws:SourceArn": {
+                    "Fn::Join": [
+                      "",
+                      [
+                        "arn:",
+                        {
+                          "Ref": "AWS::Partition"
+                        },
+                        ":bedrock:us-east-1:111111111111:knowledge-base/*"
+                      ]
+                    ]
+                  }
+                },
+                "StringEquals": {
+                  "aws:SourceAccount": "111111111111"
+                }
+              },
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "bedrock.amazonaws.com"
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ]
+      },
+      "Type": "AWS::IAM::Role"
+    },
+    "KbRoleDefaultPolicy43751C83": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "s3:GetObject",
+                "s3:ListBucket"
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::ImportValue": "SentinelFoundation:ExportsOutputFnGetAttKbSource2D3A83B9ArnC1B3D0FA"
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::ImportValue": "SentinelFoundation:ExportsOutputFnGetAttKbSource2D3A83B9ArnC1B3D0FA"
+                      },
+                      "/*"
+                    ]
+                  ]
+                }
+              ]
+            },
+            {
+              "Action": "kms:Decrypt",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::ImportValue": "SentinelSecurity:ExportsOutputFnGetAttDataKey17AFBB84ArnCE2A1BC6"
+              }
+            },
+            {
+              "Action": "aoss:APIAccessAll",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "KbVectorCollection",
+                  "Arn"
+                ]
+              }
+            },
+            {
+              "Action": "bedrock:InvokeModel",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition"
+                    },
+                    ":bedrock:us-east-1::foundation-model/amazon.titan-embed-text-v2:0"
+                  ]
+                ]
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "PolicyName": "KbRoleDefaultPolicy43751C83",
+        "Roles": [
+          {
+            "Ref": "KbRoleDE09CC9A"
+          }
+        ]
+      },
+      "Type": "AWS::IAM::Policy"
+    },
+    "KbVectorCollection": {
+      "DependsOn": [
+        "KbOssEncryptionPolicy",
+        "KbOssNetworkPolicy"
+      ],
+      "Properties": {
+        "Name": "sentinel-kb-vector",
+        "Tags": [
+          {
+            "Key": "Owner",
+            "Value": "iam-sentinel@customer.com"
+          },
+          {
+            "Key": "Project",
+            "Value": "IAMSentinel"
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev"
+          }
+        ],
+        "Type": "VECTORSEARCH"
+      },
+      "Type": "AWS::OpenSearchServerless::Collection"
+    },
+    "SentinelKB": {
+      "DependsOn": [
+        "KbIndexBootstrap"
+      ],
+      "Properties": {
+        "KnowledgeBaseConfiguration": {
+          "Type": "VECTOR",
+          "VectorKnowledgeBaseConfiguration": {
+            "EmbeddingModelArn": {
+              "Fn::Join": [
+                "",
+                [
+                  "arn:",
+                  {
+                    "Ref": "AWS::Partition"
+                  },
+                  ":bedrock:us-east-1::foundation-model/amazon.titan-embed-text-v2:0"
+                ]
+              ]
+            },
+            "EmbeddingModelConfiguration": {
+              "BedrockEmbeddingModelConfiguration": {
+                "Dimensions": 256
+              }
+            }
+          }
+        },
+        "Name": "SentinelKB-dev",
+        "RoleArn": {
+          "Fn::GetAtt": [
+            "KbRoleDE09CC9A",
+            "Arn"
+          ]
+        },
+        "StorageConfiguration": {
+          "OpensearchServerlessConfiguration": {
+            "CollectionArn": {
+              "Fn::GetAtt": [
+                "KbVectorCollection",
+                "Arn"
+              ]
+            },
+            "FieldMapping": {
+              "MetadataField": "AMAZON_BEDROCK_METADATA",
+              "TextField": "AMAZON_BEDROCK_TEXT_CHUNK",
+              "VectorField": "bedrock-knowledge-base-default-vector"
+            },
+            "VectorIndexName": "bedrock-knowledge-base-default-index"
+          },
+          "Type": "OPENSEARCH_SERVERLESS"
+        },
+        "Tags": {
+          "Owner": "iam-sentinel@customer.com",
+          "Project": "IAMSentinel",
+          "Stage": "dev"
+        }
+      },
+      "Type": "AWS::Bedrock::KnowledgeBase"
     }
   },
   "Rules": {

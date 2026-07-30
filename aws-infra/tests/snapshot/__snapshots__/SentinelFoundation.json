@@ -45,6 +45,17 @@
         ]
       }
     },
+    "ExportsOutputFnGetAttKbSource2D3A83B9ArnC1B3D0FA": {
+      "Export": {
+        "Name": "SentinelFoundation:ExportsOutputFnGetAttKbSource2D3A83B9ArnC1B3D0FA"
+      },
+      "Value": {
+        "Fn::GetAtt": [
+          "KbSource2D3A83B9",
+          "Arn"
+        ]
+      }
+    },
     "ExportsOutputFnGetAttReports65402A0AArn549BAC56": {
       "Export": {
         "Name": "SentinelFoundation:ExportsOutputFnGetAttReports65402A0AArn549BAC56"

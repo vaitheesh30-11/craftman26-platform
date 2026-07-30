@@ -35,6 +35,9 @@ def test_create_publishes_a_guardrail_version(_mock_bedrock: MagicMock) -> None:
 
 
 def test_update_bumps_a_new_version_without_deleting_the_prior_one(_mock_bedrock: MagicMock) -> None:
+    _mock_bedrock.update_guardrail.return_value = {
+        "guardrailArn": "arn:aws:bedrock:us-east-1:111111111111:guardrail/gr-123"
+    }
     _mock_bedrock.create_guardrail_version.return_value = {"version": "2"}
 
     result = guardrail_handler.route_request(
@@ -48,6 +51,7 @@ def test_update_bumps_a_new_version_without_deleting_the_prior_one(_mock_bedrock
     )
 
     assert result["Data"]["GuardrailVersion"] == "2"
+    assert result["Data"]["GuardrailArn"] == "arn:aws:bedrock:us-east-1:111111111111:guardrail/gr-123"
     _mock_bedrock.delete_guardrail.assert_not_called()
 
 

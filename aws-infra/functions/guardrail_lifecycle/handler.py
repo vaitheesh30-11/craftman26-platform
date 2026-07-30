@@ -56,7 +56,7 @@ def route_request(
     if request_type == "Update":
         if physical_id is None:
             raise ValueError("Update requested without a physical resource id")
-        _bedrock.update_guardrail(
+        updated = _bedrock.update_guardrail(
             guardrailIdentifier=physical_id,
             name=properties["GuardrailName"],
             blockedInputMessaging=properties["BlockedInputMessaging"],
@@ -64,7 +64,17 @@ def route_request(
             **_policy_kwargs(properties),
         )
         version = _bedrock.create_guardrail_version(guardrailIdentifier=physical_id)
-        return {"PhysicalResourceId": physical_id, "Data": {"GuardrailVersion": version["version"]}}
+        # CFN custom-resource attributes are replaced wholesale by each
+        # response's `Data`, not merged across calls -- omitting
+        # `GuardrailArn` here (it doesn't change on update, but any
+        # `Fn::GetAtt` reference to it still resolves against the *last*
+        # response) would silently break every consumer that reads it
+        # after the first update. adapters phase-01 (`GuardrailAccessor`)
+        # and aws-infra phase-05 (`BedrockStack.new_agent`) both need it.
+        return {
+            "PhysicalResourceId": physical_id,
+            "Data": {"GuardrailArn": updated["guardrailArn"], "GuardrailVersion": version["version"]},
+        }
 
     if request_type == "Delete":
         if physical_id is not None:
