@@ -6,7 +6,7 @@ from typing import Any, Literal
 
 from pydantic import AwareDatetime, Field
 
-from iam_sentinel_agents.contracts.common import SHA256_PATTERN, ULID_PATTERN, Base, FeatureID
+from iam_sentinel_agents.contracts.common import Base, FeatureID, SHA256_PATTERN, ULID_PATTERN
 
 EvidenceKind = Literal[
     "specialist_input",

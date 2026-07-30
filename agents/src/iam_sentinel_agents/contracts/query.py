@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from pydantic import AwareDatetime, Field, field_validator
 
-from iam_sentinel_agents.contracts.common import ARN_PATTERN, ULID_PATTERN, Base
+from iam_sentinel_agents.contracts.common import ARN_PATTERN, Base, ULID_PATTERN
 
 
 class SentinelQuery(Base):
@@ -30,8 +30,6 @@ class SentinelQuery(Base):
     @field_validator("submitted_at")
     @classmethod
     def _submitted_not_in_future(cls, value: datetime) -> datetime:
-        from datetime import timedelta, timezone
-
         now = datetime.now(timezone.utc)
         if value > now + timedelta(minutes=5):
             raise ValueError("submitted_at cannot be more than 5 minutes in the future")

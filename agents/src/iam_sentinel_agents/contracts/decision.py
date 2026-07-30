@@ -6,7 +6,7 @@ from typing import Literal
 
 from pydantic import AwareDatetime, Field
 
-from iam_sentinel_agents.contracts.common import ARN_PATTERN, ULID_PATTERN, Base
+from iam_sentinel_agents.contracts.common import ARN_PATTERN, Base, ULID_PATTERN
 from iam_sentinel_agents.contracts.evidence import EvidenceRef
 from iam_sentinel_agents.contracts.finding import Finding
 from iam_sentinel_agents.contracts.query import SentinelQuery

@@ -4,7 +4,13 @@ from __future__ import annotations
 
 from pydantic import Field, model_validator
 
-from iam_sentinel_agents.contracts.common import SHA256_PATTERN, ULID_PATTERN, Base, FeatureID, Verdict
+from iam_sentinel_agents.contracts.common import (
+    Base,
+    FeatureID,
+    SHA256_PATTERN,
+    ULID_PATTERN,
+    Verdict,
+)
 from iam_sentinel_agents.contracts.finding import Finding
 from iam_sentinel_agents.contracts.remediation import RemediationPlan, ZelkovaCheck
 
@@ -34,7 +40,8 @@ class SpecialistVerdict(Base):
         if self.remediation.dry_run:
             return self
         mutating_calls = [t for t in self.tool_invocations if t.zelkova_check is not None]
-        if not mutating_calls or not all(t.zelkova_check and t.zelkova_check.pass_ for t in mutating_calls):
+        all_passed = all(call.zelkova_check.pass_ for call in mutating_calls if call.zelkova_check)
+        if not mutating_calls or not all_passed:
             raise ValueError(
                 "CONFIRM with a non-dry-run remediation requires every mutating "
                 "tool invocation to carry a passing Zelkova check"

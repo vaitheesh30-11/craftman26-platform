@@ -7,7 +7,6 @@ from pydantic import ValidationError
 
 from iam_sentinel_agents.contracts import AwsDocCitation, Finding
 from iam_sentinel_agents.contracts.finding import _canonical_quote_hash
-
 from tests.contract._factories import make_citation, make_finding
 
 pytestmark = pytest.mark.contract

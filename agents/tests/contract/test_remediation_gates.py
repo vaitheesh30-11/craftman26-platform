@@ -8,15 +8,14 @@ import pytest
 from pydantic import ValidationError
 
 from iam_sentinel_agents.contracts import RemediationPlan, SpecialistVerdict, ZelkovaCheck
-
 from tests.contract._factories import (
-    SHA256_ONES,
-    SHA256_TWOS,
-    VALID_ROLE_ARN,
     make_finding,
     make_tool_invocation,
     make_verdict,
     make_zelkova_pass,
+    SHA256_ONES,
+    SHA256_TWOS,
+    VALID_ROLE_ARN,
 )
 
 pytestmark = pytest.mark.contract

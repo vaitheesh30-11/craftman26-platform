@@ -10,20 +10,28 @@ from __future__ import annotations
 
 import hashlib
 import unicodedata
-from typing import Any, Callable, Protocol
+from typing import Any, Protocol, TYPE_CHECKING
 
 from pydantic import AwareDatetime, Field, field_validator, model_validator
 
 from iam_sentinel_agents.contracts.common import (
     ACCOUNT_ID_PATTERN,
     ARN_PATTERN,
-    ISO_DATE_PATTERN,
-    ULID_PATTERN,
     Base,
     FeatureID,
+    ISO_DATE_PATTERN,
     Severity,
+    ULID_PATTERN,
 )
 from iam_sentinel_agents.contracts.evidence import EvidenceRef
+
+if TYPE_CHECKING:
+    # `_MANIFEST_PROVIDER`'s annotation and `set_quote_manifest_provider`'s
+    # parameter are both deferred (PEP 563) and never eagerly resolved — this
+    # is a bare module-level callable, not a Pydantic model field, so unlike
+    # every `Any`/`FeatureID` usage inside the classes below, nothing needs
+    # this import to be real at runtime.
+    from collections.abc import Callable
 
 
 class QuoteManifest(Protocol):
@@ -36,7 +44,11 @@ def _canonical_quote_hash(quote: str) -> str:
     return hashlib.sha256(collapsed.encode("utf-8")).hexdigest()
 
 
-_MANIFEST_PROVIDER: Callable[[], QuoteManifest | None] = lambda: None
+def _no_manifest_configured() -> QuoteManifest | None:
+    return None
+
+
+_MANIFEST_PROVIDER: Callable[[], QuoteManifest | None] = _no_manifest_configured
 
 
 def set_quote_manifest_provider(provider: Callable[[], QuoteManifest | None]) -> None:

@@ -6,7 +6,7 @@ from typing import Any, Literal
 
 from pydantic import AwareDatetime, Field, model_validator
 
-from iam_sentinel_agents.contracts.common import SHA256_PATTERN, Base
+from iam_sentinel_agents.contracts.common import Base, SHA256_PATTERN
 
 RemediationAction = Literal[
     "attach_inline_policy",

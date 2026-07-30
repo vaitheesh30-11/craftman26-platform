@@ -18,7 +18,6 @@ from iam_sentinel_agents.contracts import (
     UntrustedContextBlock,
     ZelkovaCheck,
 )
-
 from tests.contract._factories import (
     make_citation,
     make_decision,

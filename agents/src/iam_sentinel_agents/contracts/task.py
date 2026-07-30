@@ -6,7 +6,7 @@ from typing import Any
 
 from pydantic import Field
 
-from iam_sentinel_agents.contracts.common import ULID_PATTERN, Base, FeatureID
+from iam_sentinel_agents.contracts.common import Base, FeatureID, ULID_PATTERN
 
 
 class UntrustedContextBlock(Base):
