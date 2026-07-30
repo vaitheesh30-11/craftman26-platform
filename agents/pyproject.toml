@@ -7,7 +7,7 @@ readme = "README.md"
 authors = [{ name = "IAM Sentinel" }]
 
 dependencies = [
-    "aws-lambda-powertools[all]==2.42.0",
+    "aws-lambda-powertools[all]==3.2.0",
     "pydantic==2.9.2",
     "pydantic-settings==2.5.2",
     "boto3==1.35.36",
