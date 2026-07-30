@@ -28,8 +28,8 @@ jobs:
         with:
           python-version: "3.12"
       - run: uv sync --all-groups
-      - run: uv run ruff check src tests app.py
-      - run: uv run ruff format --check src tests app.py
+      - run: uv run ruff check src tests app.py functions
+      - run: uv run ruff format --check src tests app.py functions
 
   type:
     name: type (mypy --strict)
@@ -40,7 +40,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: uv sync --all-groups
-      - run: uv run mypy --strict src
+      - run: uv run mypy --strict src functions
 
   test:
     name: test (cdk synth + cdk-nag + snapshot + pytest)

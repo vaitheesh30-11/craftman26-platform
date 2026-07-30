@@ -1,12 +1,16 @@
 """Managed policy applied as a permission boundary to every Sentinel role
-(phase-00 §4). No Sentinel-created role can escalate outside Sentinel's own
-resources, even if its inline/attached policies are later widened.
+(phase-00 §4, phase-01 §5). No Sentinel-created role can escalate outside
+Sentinel's own resources or mutate IAM/Organizations/CloudFormation beyond
+its narrow, explicitly-scoped exceptions — even if its own attached
+policies are later widened.
 """
 
 from __future__ import annotations
 
 from aws_cdk import aws_iam as iam
 from constructs import Construct
+
+_F5_SESSION_TERMINATOR_ROLE_PATH = "aws-reserved/sso.amazonaws.com/*"
 
 
 class SentinelPermissionBoundary(Construct):
@@ -27,8 +31,46 @@ class SentinelPermissionBoundary(Construct):
                 iam.PolicyStatement(
                     sid="AllowWithinSentinelResources",
                     effect=iam.Effect.ALLOW,
-                    actions=["*"],
+                    actions=[
+                        "bedrock:*",
+                        "dynamodb:*",
+                        "s3:*",
+                        "kms:*",
+                        "access-analyzer:*",
+                        "organizations:Describe*",
+                        "organizations:List*",
+                    ],
                     resources=resource_prefix_arns,
+                ),
+                iam.PolicyStatement(
+                    sid="AllowCrossAccountRoleAssumption",
+                    effect=iam.Effect.ALLOW,
+                    actions=["sts:AssumeRole"],
+                    resources=["arn:aws:iam::*:role/SentinelCrossAccountRole"],
+                ),
+                iam.PolicyStatement(
+                    sid="AllowF5SessionTerminatorScope",
+                    effect=iam.Effect.ALLOW,
+                    actions=["iam:PutRolePolicy", "iam:DeleteRolePolicy"],
+                    resources=[f"arn:aws:iam::*:role/{_F5_SESSION_TERMINATOR_ROLE_PATH}"],
+                ),
+                iam.PolicyStatement(
+                    sid="DenyIamMutationOutsideF5Scope",
+                    effect=iam.Effect.DENY,
+                    actions=["iam:Create*", "iam:Delete*", "iam:Attach*Policy*"],
+                    not_resources=[f"arn:aws:iam::*:role/{_F5_SESSION_TERMINATOR_ROLE_PATH}"],
+                ),
+                iam.PolicyStatement(
+                    sid="DenyOrganizationsWrites",
+                    effect=iam.Effect.DENY,
+                    actions=["organizations:Update*", "organizations:Delete*"],
+                    resources=["*"],
+                ),
+                iam.PolicyStatement(
+                    sid="DenySelfMutationViaCloudFormation",
+                    effect=iam.Effect.DENY,
+                    actions=["cloudformation:*"],
+                    resources=["*"],
                 ),
                 iam.PolicyStatement(
                     sid="DenyBoundaryEscalation",

@@ -8,10 +8,15 @@ resource calling `bedrock:CreateGuardrail` / `UpdateGuardrail` /
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from aws_cdk import CustomResource, Duration
 from aws_cdk import aws_iam as iam
 from aws_cdk import aws_lambda as lambda_
+from aws_cdk import aws_sqs as sqs
 from constructs import Construct
+
+_FUNCTIONS_DIR = Path(__file__).resolve().parents[3] / "functions"
 
 
 class GuardrailCustomResource(Construct):
@@ -26,17 +31,19 @@ class GuardrailCustomResource(Construct):
     ) -> None:
         super().__init__(scope, construct_id)
 
+        self.dead_letter_queue = sqs.Queue(
+            self, "HandlerDlq", retention_period=Duration.days(14), enforce_ssl=True
+        )
         self.handler = lambda_.Function(
             self,
             "Handler",
             runtime=lambda_.Runtime.PYTHON_3_12,
             architecture=lambda_.Architecture.ARM_64,
-            handler="index.handler",
-            code=lambda_.Code.from_inline(
-                "def handler(event, context):\n"
-                "    raise NotImplementedError('wired in agents phase-11')\n"
-            ),
+            handler="handler.handler",
+            code=lambda_.Code.from_asset(str(_FUNCTIONS_DIR / "guardrail_lifecycle")),
             timeout=Duration.seconds(60),
+            reserved_concurrent_executions=5,
+            dead_letter_queue=self.dead_letter_queue,
         )
         self.handler.add_to_role_policy(
             iam.PolicyStatement(
