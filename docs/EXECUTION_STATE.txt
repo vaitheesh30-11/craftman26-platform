@@ -12,20 +12,21 @@ and this file disagree, this file wins.
 ------------------------------------------------------------------
 CURSOR
 ------------------------------------------------------------------
-CURRENT_PHASE: (none)
-STATUS: not_started
-BRANCH: main
-STARTED_AT: (unset)
-LAST_STEP: baseline canon committed; plan authored; awaiting first "start".
-NEXT_STEP: begin sprint step 01 — adapters phase-00 on feat/adapters-foundation.
+CURRENT_PHASE: agents phase-00 (foundations)
+STATUS: in_progress
+BRANCH: feat/agents-foundation
+STARTED_AT: 2026-07-30
+LAST_STEP: chunk 1 committed (94acd79) — pyproject + tooling + 8 contract modules + 4 contract test files, all passing local validation.
+NEXT_STEP: chunk 2 — tools/common/{runtime,cross_account,event_parser}.py + unit tests + .github/workflows/agents-ci.yml. Then acceptance-gate the phase, tag phase/agents-foundation-done, fast-forward main, advance cursor to sprint step 02 (adapters phase-00 on feat/adapters-foundation, per user's request to start with agents phase-00 first, deviating from the plan's default ordering).
 PREVIOUS_PHASE: (unset)
+DEVIATION_NOTE: user requested "start with feat/agents-foundation" — sprint step 02 (agents phase-00) has been executed before sprint step 01 (adapters phase-00). Dependencies allow this because agents phase-00 defines pure Python contracts with no adapter imports at the contract layer.
 
 ------------------------------------------------------------------
 SPRINT PROGRESS (see EXECUTION_PLAN §6 for the ordered list)
 ------------------------------------------------------------------
 Wave 1 — Substrate:
   [ ] 01. adapters phase-00       feat/adapters-foundation
-  [ ] 02. agents phase-00         feat/agents-foundation
+  [~] 02. agents phase-00         feat/agents-foundation   (in progress; chunk 1/2 done)
   [ ] 03. aws-infra phase-00      feat/aws-infra-foundation
   [ ] 04. aws-infra phase-01      feat/aws-infra-security
   [ ] 05. adapters phase-03       feat/adapters-prompts
@@ -106,3 +107,5 @@ HISTORY (append-only)
 2026-07-30 baseline canon committed to main (commit 3a3e255).
 2026-07-30 43 feat/* branches pushed to origin.
 2026-07-30 EXECUTION_PLAN.txt and EXECUTION_STATE.txt authored.
+2026-07-30 agents phase-00 started on feat/agents-foundation (per user override). Chunk 1 committed at 94acd79 — pyproject, tooling configs, 8 Pydantic contracts, contract tests. Branch pushed to origin.
+2026-07-30 Local toolchain gap noted: Windows machine has Python 3.13 only; uv/ruff/mypy/pytest not installed. Tests will run via CI once .github/workflows/agents-ci.yml lands in chunk 2, and locally after user installs uv.
