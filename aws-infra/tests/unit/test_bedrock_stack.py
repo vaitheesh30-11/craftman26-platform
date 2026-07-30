@@ -87,7 +87,9 @@ def test_new_agent_wires_guardrail_and_kb_and_publishes_alias_ssm() -> None:
         "AWS::Bedrock::Agent",
         {"KnowledgeBases": [{"KnowledgeBaseState": "ENABLED"}]},
     )
-    template.resource_count_is("AWS::SSM::Parameter", 3 + 1)  # 3 aliases + KbIdParam
+    # KbIdParam + Prime's own 3 aliases (agents phase-01 / ADR 0013) + this
+    # test's 3 TestAgent aliases.
+    template.resource_count_is("AWS::SSM::Parameter", 1 + 3 + 3)
 
 
 def test_new_agent_with_collaboration_requires_settings_custom_resource() -> None:
@@ -104,7 +106,9 @@ def test_new_agent_with_collaboration_requires_settings_custom_resource() -> Non
     )
 
     template = Template.from_stack(stack)
-    template.resource_count_is("AWS::CloudFormation::CustomResource", 2)  # KB index bootstrap + settings
+    # KB index bootstrap + Prime's own settings (ADR 0013) + this test's
+    # TestSupervisor settings.
+    template.resource_count_is("AWS::CloudFormation::CustomResource", 3)
 
 
 def test_associate_collaborator_creates_custom_resource() -> None:
@@ -134,7 +138,26 @@ def test_associate_collaborator_creates_custom_resource() -> None:
     )
 
     template = Template.from_stack(stack)
-    template.resource_count_is("AWS::CloudFormation::CustomResource", 2)  # KB index bootstrap + association
+    # KB index bootstrap + Prime's own settings (ADR 0013) + this test's
+    # association.
+    template.resource_count_is("AWS::CloudFormation::CustomResource", 3)
+
+
+def test_prime_is_a_supervisor_agent_with_zero_collaborators() -> None:
+    # ADR 0013: Prime's own CfnAgent is built by this stack now that agents
+    # phase-01 has landed, but with no collaborators associated -- none of
+    # the 8 specialists exist yet.
+    stack = _bedrock_stack()
+    template = Template.from_stack(stack)
+
+    assert set(stack.prime.aliases) == {"dev", "staging", "prod"}
+    template.has_resource_properties(
+        "AWS::Bedrock::Agent",
+        {"AgentName": "sentinel-prime-dev", "KnowledgeBases": [{"KnowledgeBaseState": "ENABLED"}]},
+    )
+    # KB index bootstrap + Prime's own settings custom resource -- no
+    # collaborator-association custom resource, since none is created yet.
+    template.resource_count_is("AWS::CloudFormation::CustomResource", 2)
 
 
 def test_full_app_graph_still_synthesizes_with_bedrock_populated() -> None:

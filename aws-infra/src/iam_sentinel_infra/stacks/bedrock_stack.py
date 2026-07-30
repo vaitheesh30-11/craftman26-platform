@@ -1,13 +1,15 @@
 """Sentinel Prime + the 8 specialist Bedrock Agents, the Knowledge Base,
-and collaborator associations (phase-05). Per ADR 0012, this phase builds
-the Knowledge Base (§3 -- fully independent of any specialist prompt or
-action group) and the reusable agent substrate (`new_agent()`,
-`associate_collaborator()`, analogous to `LambdaStack.new_function()` from
-ADR 0011), but does NOT instantiate Sentinel Prime or the 8 specialists
-themselves: their instruction prompts (`agents/src/iam_sentinel_agents/prompts/`)
-and action-group OpenAPI specs (`agents/src/iam_sentinel_agents/action_groups/`)
-are owned by agents phase-01 (Wave 3) and the Wave-6 specialist phases, none
-of which have landed yet.
+and collaborator associations (phase-05, extended by agents phase-01 / ADR
+0013 for Prime itself). This stack builds the Knowledge Base (§3 --
+fully independent of any specialist prompt or action group), the reusable
+agent substrate (`new_agent()`, `associate_collaborator()`, analogous to
+`LambdaStack.new_function()` from ADR 0011), and now Sentinel Prime's own
+`CfnAgent` (`_build_prime`, per ADR 0013) with zero collaborators
+associated -- none of the 8 specialists exist yet. Each specialist's
+`CfnAgent` and its `associate_collaborator()` call still land with its own
+owning phase (F1 next, Wave 3; F2-F8, Wave 6): their instruction prompts
+and action-group OpenAPI specs
+(`agents/src/iam_sentinel_agents/action_groups/`) don't exist yet.
 """
 
 from __future__ import annotations
@@ -39,6 +41,18 @@ if TYPE_CHECKING:
     from iam_sentinel_infra.stacks.security_stack import SecurityStack
 
 _FUNCTIONS_DIR = Path(__file__).resolve().parents[3] / "functions"
+# Cross-package file read, not an import (aws-infra has no dependency on
+# iam-sentinel-agents; ADR 0013): the prompt is agents/'s reviewed asset,
+# this stack only needs its text at synth time, same shape as
+# SecurityStack reading `config/guardrail_v1.json`.
+_PRIME_PROMPT_PATH = (
+    Path(__file__).resolve().parents[4]
+    / "agents"
+    / "src"
+    / "iam_sentinel_agents"
+    / "prompts"
+    / "prime_supervisor.txt"
+)
 _KB_COLLECTION_NAME = "sentinel-kb-vector"
 _KB_VECTOR_INDEX_NAME = "bedrock-knowledge-base-default-index"
 _KB_VECTOR_FIELD = "bedrock-knowledge-base-default-vector"
@@ -78,6 +92,7 @@ class BedrockStack(Stack):
         self.lambdas = lambdas
 
         self._build_knowledge_base()
+        self._build_prime()
 
         NagSuppressions.add_stack_suppressions(
             self,
@@ -469,3 +484,46 @@ class BedrockStack(Stack):
         )
         association.node.add_dependency(collaborator.agent)
         return association
+
+    # ------------------------------------------------------------------
+    # Sentinel Prime (phase-01 §2, §6) -- built by this stack because
+    # `new_agent()` lives here (ADR 0012), owned by agents phase-01 (ADR
+    # 0013). Zero collaborators associated: none of the 8 specialists
+    # exist yet. Each lands with its own phase, calling
+    # `associate_collaborator()` once it does.
+    # ------------------------------------------------------------------
+    def _build_prime(self) -> None:
+        instruction = _PRIME_PROMPT_PATH.read_text(encoding="utf-8")
+
+        self.prime = self.new_agent(
+            self,
+            "SentinelPrime",
+            agent_name=f"sentinel-prime-{self.stage_config.stage}",
+            foundation_model=self.stage_config.sonnet_model_id,
+            instruction=instruction,
+            agent_collaboration="SUPERVISOR",
+            memory_configuration={"enabledMemoryTypes": ["SESSION_SUMMARY"], "storageDays": 30},
+            idle_session_ttl_in_seconds=1800,
+            role_statements=[
+                # `new_agent()` already grants InvokeModel + ApplyGuardrail +
+                # Retrieve/RetrieveAndGenerate. Prime additionally needs
+                # streaming (phase-01 §5 Step 5) and, once specialists exist,
+                # InvokeAgent on any collaborator alias tagged for this
+                # project (phase-01 §6) -- granted now so associating a
+                # collaborator later needs no role change.
+                iam.PolicyStatement(
+                    sid="InvokeSonnetStreaming",
+                    actions=["bedrock:InvokeModelWithResponseStream"],
+                    resources=[
+                        f"arn:{self.partition}:bedrock:{self.region}::foundation-model/"
+                        f"{self.stage_config.sonnet_model_id}"
+                    ],
+                ),
+                iam.PolicyStatement(
+                    sid="InvokeCollaborators",
+                    actions=["bedrock:InvokeAgent"],
+                    resources=[f"arn:{self.partition}:bedrock:{self.region}:{self.stage_config.account_id}:agent-alias/*/*"],
+                    conditions={"StringEquals": {"aws:ResourceTag/Project": "IAMSentinel"}},
+                ),
+            ],
+        )
