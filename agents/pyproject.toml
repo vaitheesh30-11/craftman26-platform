@@ -1,0 +1,130 @@
+[project]
+name = "iam-sentinel-agents"
+version = "0.1.0"
+description = "Bedrock Agents and Lambda tools for IAM Sentinel"
+requires-python = ">=3.12,<3.13"
+readme = "README.md"
+authors = [{ name = "IAM Sentinel" }]
+
+dependencies = [
+    "aws-lambda-powertools[all]==2.42.0",
+    "pydantic==2.9.2",
+    "pydantic-settings==2.5.2",
+    "boto3==1.35.36",
+    "botocore==1.35.36",
+    "networkx==3.3",
+    "pandas==2.2.3",
+    "pyarrow==17.0.0",
+    "orjson==3.10.7",
+]
+
+[dependency-groups]
+dev = [
+    "pytest==8.3.3",
+    "pytest-cov==5.0.0",
+    "pytest-asyncio==0.24.0",
+    "moto[all]==5.0.16",
+    "hypothesis==6.112.4",
+    "ruff==0.6.9",
+    "mypy==1.11.2",
+    "types-boto3==1.0.2",
+    "boto3-stubs[iam,organizations,accessanalyzer,cloudtrail,dynamodb,s3,sns,sqs,sts,bedrock-agent,bedrock-agent-runtime,bedrock-runtime,kms,athena,glue,securityhub]==1.35.36",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/iam_sentinel_agents"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E", "F", "W",
+    "I",
+    "N",
+    "UP",
+    "B",
+    "SIM",
+    "TCH",
+    "PL",
+    "RUF",
+    "ARG",
+    "ASYNC",
+    "S",
+    "BLE",
+]
+ignore = [
+    "E501",
+    "PLR0913",
+    "S101",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S105", "S106", "PLR2004", "ARG"]
+
+[tool.ruff.lint.flake8-type-checking]
+# Pydantic (and anything deriving from our own Base) resolves field
+# annotations EAGERLY at class-definition time, even under
+# `from __future__ import annotations` — moving a field's type import
+# into `if TYPE_CHECKING:` breaks model construction with a NameError.
+# Ruff's generic TC heuristic doesn't know this without being told.
+runtime-evaluated-base-classes = [
+    "iam_sentinel_agents.contracts.common.Base",
+    "pydantic.BaseModel",
+]
+
+[tool.ruff.lint.isort]
+# Plain alphabetical (case-insensitive), no constants-first grouping —
+# predictable to hand-verify and to review in a diff.
+order-by-type = false
+case-sensitive = false
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unreachable = true
+warn_no_return = true
+disallow_any_unimported = true
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = ["moto.*", "networkx.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
+    "--cov=iam_sentinel_agents",
+    "--cov-report=term-missing:skip-covered",
+    "--cov-fail-under=90",
+]
+testpaths = ["tests"]
+pythonpath = ["src"]
+markers = [
+    "unit: unit tests (fast, no AWS)",
+    "contract: contract round-trip tests",
+    "integration: moto-backed integration tests",
+    "prompt_injection: prompt-injection corpus sweep",
+    "eval: LLM eval harness (slow, requires XAI_API_KEY or AWS creds)",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["src/iam_sentinel_agents"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "\\.\\.\\.",
+]
