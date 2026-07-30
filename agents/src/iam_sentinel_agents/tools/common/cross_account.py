@@ -95,7 +95,7 @@ def _regional_sts_client() -> STSClient:
 
 
 def _assume_role_once(
-    *, account_id: str, role_name: str, role_session_name: str
+    *, account_id: str, role_name: str, role_session_name: str, feature_id: FeatureID
 ) -> _CachedCredentials:
     sts = _regional_sts_client()
     role_arn = f"arn:aws:iam::{account_id}:role/{role_name}"
@@ -103,6 +103,14 @@ def _assume_role_once(
         RoleArn=role_arn,
         RoleSessionName=role_session_name,
         DurationSeconds=3600,
+        # aws-infra ADR 0014 gates F2/F3/F5's mutating cross-account actions
+        # on `aws:PrincipalTag/Feature` (crossaccount_stack.py); without a
+        # session tag here that condition key never exists at runtime, so
+        # every one of those Conditions would silently deny forever. Real
+        # bug found while building F1 (agents phase-02) -- fixed here rather
+        # than left for whichever specialist first tripped over it.
+        Tags=[{"Key": "Feature", "Value": feature_id}],
+        TransitiveTagKeys=["Feature"],
     )
     creds = response["Credentials"]
     return _CachedCredentials(
@@ -148,6 +156,7 @@ def assume(
                 account_id=account_id,
                 role_name=resolved_role_name,
                 role_session_name=role_session_name,
+                feature_id=feature_id,
             )
         except ClientError as exc:
             error_code = exc.response.get("Error", {}).get("Code", "")

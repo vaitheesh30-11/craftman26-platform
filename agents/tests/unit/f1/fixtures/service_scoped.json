@@ -1,0 +1,45 @@
+{
+  "description": "PassRole conditioned on iam:PassedToService=lambda.amazonaws.com; target role is scoped to KMS only.",
+  "users": [
+    {
+      "name": "PipelineDeployer",
+      "inline_policies": [
+        {
+          "name": "PassRoleToLambdaExec",
+          "document": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Sid": "AllowPassLambdaExecRole",
+                "Effect": "Allow",
+                "Action": "iam:PassRole",
+                "Resource": "arn:aws:iam::123456789012:role/LambdaExecRole",
+                "Condition": {
+                  "StringEquals": { "iam:PassedToService": "lambda.amazonaws.com" }
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "roles": [
+    {
+      "name": "LambdaExecRole",
+      "inline_policies": [
+        {
+          "name": "KmsDecryptOnly",
+          "document": {
+            "Version": "2012-10-17",
+            "Statement": [
+              { "Sid": "AllowKmsDecrypt", "Effect": "Allow", "Action": "kms:Decrypt", "Resource": "*" }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "expected_edge_count": 1,
+  "expected_blast_score": "MEDIUM"
+}

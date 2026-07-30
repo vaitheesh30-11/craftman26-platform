@@ -1,0 +1,22 @@
+{
+  "description": "Account with IAM principals but zero iam:PassRole grants anywhere.",
+  "users": [
+    {
+      "name": "ReadOnlyAuditor",
+      "inline_policies": [
+        {
+          "name": "ReadOnly",
+          "document": {
+            "Version": "2012-10-17",
+            "Statement": [
+              { "Sid": "AllowDescribe", "Effect": "Allow", "Action": "iam:GetUser", "Resource": "*" }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "roles": [{ "name": "PlainRole" }],
+  "expected_edge_count": 0,
+  "expected_blast_score": "LOW"
+}

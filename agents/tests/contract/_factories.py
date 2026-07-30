@@ -11,9 +11,12 @@ from typing import Any
 
 from iam_sentinel_agents.contracts import (
     AwsDocCitation,
+    BlastPath,
     DecisionRecord,
     EvidenceRef,
     Finding,
+    PassRoleBlastPayload,
+    PassRoleEdge,
     RemediationPlan,
     SentinelQuery,
     SpecialistTask,
@@ -147,6 +150,36 @@ def make_task() -> SpecialistTask:
             UntrustedContextBlock(type="role_names", body="role/DevOpsEngineer\nrole/PipelineDeployer")
         ],
         retry_count=0,
+    )
+
+
+def make_passrole_edge() -> PassRoleEdge:
+    return PassRoleEdge(
+        from_principal=VALID_PRINCIPAL_ARN,
+        passable_role_pattern="arn:aws:iam::*:role/prod-*",
+        resolved_role_arns=[VALID_ROLE_ARN],
+        condition_summary={"iam:PassedToService": "lambda.amazonaws.com"},
+        grant_source_policy_arn="arn:aws:iam::inline:role/Auditor/PassRoleProd",
+        grant_statement_id="AllowPassProdRole",
+    )
+
+
+def make_blast_path() -> BlastPath:
+    return BlastPath(
+        hops=[VALID_PRINCIPAL_ARN, VALID_ROLE_ARN],
+        reached_privilege="AdministratorAccess",
+        hop_count=1,
+    )
+
+
+def make_passrole_blast_payload() -> PassRoleBlastPayload:
+    return PassRoleBlastPayload(
+        account_id=VALID_ACCOUNT,
+        principal_arn=VALID_PRINCIPAL_ARN,
+        edges_out=[make_passrole_edge()],
+        reachable_paths=[make_blast_path()],
+        blast_score="CRITICAL",
+        graph_stats={"nodes": 2, "edges": 1, "depth": 2, "aborted": 0},
     )
 
 

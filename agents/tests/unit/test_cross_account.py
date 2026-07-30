@@ -141,6 +141,37 @@ def test_throttling_recovers_on_a_later_attempt() -> None:
     assert session.get_credentials() is not None
 
 
+@mock_aws
+def test_assume_sets_feature_principal_tag_as_a_session_tag() -> None:
+    """Real bug found building agents phase-02 (F1): `_assume_role_once`
+    never passed `Tags`/`TransitiveTagKeys`, so `aws:PrincipalTag/Feature`
+    (which aws-infra ADR 0014 gates F2/F3/F5's mutating actions on) never
+    actually existed at runtime. moto's STS mock doesn't validate or echo
+    back `Tags`, so this asserts on the real call kwargs via a spy instead.
+    """
+    _create_assumable_role()
+    captured: dict[str, object] = {}
+    real_client = boto3.client("sts", region_name="us-east-1")
+
+    def _spy_assume_role(**kwargs: object) -> dict[str, Any]:
+        captured.update(kwargs)
+        return dict(
+            real_client.assume_role(
+                RoleArn=kwargs["RoleArn"],  # type: ignore[arg-type]
+                RoleSessionName=kwargs["RoleSessionName"],  # type: ignore[arg-type]
+            )
+        )
+
+    with patch.object(cross_account, "_regional_sts_client") as sts_factory:
+        sts_factory.return_value.assume_role = _spy_assume_role
+        cross_account.assume(
+            ACCOUNT_ID, feature_id="F1", correlation_id="01JBP2VHF9K3Q0Z8R7X6M5N4A3"
+        )
+
+    assert captured["Tags"] == [{"Key": "Feature", "Value": "F1"}]
+    assert captured["TransitiveTagKeys"] == ["Feature"]
+
+
 def _create_assumable_role() -> None:
     """Set up a trust-anything role in the moto-mocked account so AssumeRole succeeds."""
     iam = boto3.client("iam", region_name="us-east-1")

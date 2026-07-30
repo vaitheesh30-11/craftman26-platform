@@ -8,9 +8,12 @@ import pytest
 
 from iam_sentinel_agents.contracts import (
     AwsDocCitation,
+    BlastPath,
     DecisionRecord,
     EvidenceRef,
     Finding,
+    PassRoleBlastPayload,
+    PassRoleEdge,
     RemediationPlan,
     SentinelQuery,
     SpecialistTask,
@@ -20,10 +23,13 @@ from iam_sentinel_agents.contracts import (
     ZelkovaCheck,
 )
 from tests.contract._factories import (
+    make_blast_path,
     make_citation,
     make_decision,
     make_evidence_ref,
     make_finding,
+    make_passrole_blast_payload,
+    make_passrole_edge,
     make_query,
     make_remediation_dry,
     make_task,
@@ -52,6 +58,9 @@ if TYPE_CHECKING:
         (SpecialistTask, make_task),
         (DecisionRecord, make_decision),
         (UntrustedContextBlock, lambda: UntrustedContextBlock(type="role_names", body="role/x")),
+        (PassRoleEdge, make_passrole_edge),
+        (BlastPath, make_blast_path),
+        (PassRoleBlastPayload, make_passrole_blast_payload),
     ],
 )
 def test_roundtrip_is_lossless(model_cls: type[BaseModel], instance_factory: object) -> None:
