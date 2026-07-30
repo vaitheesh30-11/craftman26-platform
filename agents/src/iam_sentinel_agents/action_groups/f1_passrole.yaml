@@ -1,0 +1,84 @@
+openapi: 3.0.3
+info:
+  title: F1 PassRole Actions
+  version: "1.0.0"
+paths:
+  /scan:
+    post:
+      operationId: passrole_scan
+      summary: Enumerate PassRole grants in a target account.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [account_id]
+              properties:
+                account_id: { type: string, pattern: "^[0-9]{12}$" }
+                principal_arn: { type: string, nullable: true }
+      responses:
+        "200":
+          description: Edges enumerated.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [edges, principals_scanned, policies_scanned, scan_duration_ms]
+                properties:
+                  edges: { type: array, items: { $ref: "#/components/schemas/PassRoleEdge" } }
+                  principals_scanned: { type: integer, minimum: 0 }
+                  policies_scanned: { type: integer, minimum: 0 }
+                  scan_duration_ms: { type: integer, minimum: 0 }
+  /graph:
+    post:
+      operationId: passrole_graph
+      summary: Compute blast-radius paths for a set of edges.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [edges]
+              properties:
+                edges: { type: array, items: { $ref: "#/components/schemas/PassRoleEdge" } }
+                depth: { type: integer, minimum: 1, maximum: 2, default: 2 }
+      responses:
+        "200":
+          description: Paths computed.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [paths_by_principal, critical_principals]
+                properties:
+                  paths_by_principal:
+                    type: object
+                    additionalProperties:
+                      type: array
+                      items: { $ref: "#/components/schemas/BlastPath" }
+                  critical_principals:
+                    type: array
+                    items: { type: string }
+components:
+  schemas:
+    PassRoleEdge:
+      type: object
+      required: [from_principal, passable_role_pattern, resolved_role_arns, condition_summary, grant_source_policy_arn]
+      properties:
+        from_principal: { type: string }
+        passable_role_pattern: { type: string }
+        resolved_role_arns: { type: array, items: { type: string } }
+        condition_summary: { type: object, additionalProperties: { type: string } }
+        grant_source_policy_arn: { type: string }
+        grant_statement_id: { type: string, nullable: true }
+    BlastPath:
+      type: object
+      required: [hops, reached_privilege, hop_count]
+      properties:
+        hops: { type: array, items: { type: string } }
+        reached_privilege:
+          type: string
+          enum: [AdministratorAccess, PowerUserAccess, IAMWrite, SensitiveService, Other]
+        hop_count: { type: integer, minimum: 1, maximum: 2 }

@@ -1,0 +1,33 @@
+{
+  "description": "A user can PassRole into a role that has AdministratorAccess attached -- 1 hop to full admin.",
+  "users": [
+    {
+      "name": "Deployer",
+      "inline_policies": [
+        {
+          "name": "PassRoleAdmin",
+          "document": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Sid": "AllowPassAdminRole",
+                "Effect": "Allow",
+                "Action": "iam:PassRole",
+                "Resource": "arn:aws:iam::123456789012:role/AdminRole"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "roles": [
+    {
+      "name": "AdminRole",
+      "attached_policy_arns": ["arn:aws:iam::aws:policy/AdministratorAccess"]
+    }
+  ],
+  "expected_edge_count": 2,
+  "expected_blast_score": "CRITICAL",
+  "_note": "2 edges, not 1: AdminRole's own attached AdministratorAccess policy also grants it iam:PassRole via Action=*/Resource=*, so AdminRole itself becomes a second from_principal alongside Deployer."
+}
