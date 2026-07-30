@@ -61,3 +61,7 @@ class SanitizerRejection(SentinelAdapterError):  # noqa: N818 -- contract name, 
 
 class PromptTooLargeError(SentinelAdapterError):
     """A composed prompt exceeded the Bedrock request-size accommodation cap."""
+
+
+class EvidenceVerificationError(SentinelAdapterError):
+    """Stored evidence failed KMS signature verification or is not valid JSON."""

@@ -24,7 +24,7 @@ dev = [
     "ruff==0.6.9",
     "mypy==1.11.2",
     "types-boto3==1.0.2",
-    "boto3-stubs[dynamodb,kms,s3,iam,ssm,bedrock-runtime,bedrock-agent-runtime]==1.35.36",
+    "boto3-stubs[dynamodb,kms,s3,iam,ssm,bedrock-runtime,bedrock-agent-runtime,securityhub]==1.35.36",
 ]
 
 [build-system]
@@ -62,7 +62,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S101", "S105", "S106", "PLR2004", "ARG"]
+"tests/**" = ["S101", "S105", "S106", "PLR2004", "ARG", "N803", "N818"]
 
 [tool.ruff.lint.flake8-type-checking]
 runtime-evaluated-base-classes = ["pydantic_settings.BaseSettings"]

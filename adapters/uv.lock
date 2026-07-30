@@ -140,6 +140,9 @@ kms = [
 s3 = [
     { name = "mypy-boto3-s3" },
 ]
+securityhub = [
+    { name = "mypy-boto3-securityhub" },
+]
 ssm = [
     { name = "mypy-boto3-ssm" },
 ]
@@ -372,7 +375,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "boto3-stubs", extra = ["bedrock-agent-runtime", "bedrock-runtime", "dynamodb", "iam", "kms", "s3", "ssm"] },
+    { name = "boto3-stubs", extra = ["bedrock-agent-runtime", "bedrock-runtime", "dynamodb", "iam", "kms", "s3", "securityhub", "ssm"] },
     { name = "hypothesis" },
     { name = "moto", extra = ["all"] },
     { name = "mypy" },
@@ -394,7 +397,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "boto3-stubs", extras = ["dynamodb", "kms", "s3", "iam", "ssm", "bedrock-runtime", "bedrock-agent-runtime"], specifier = "==1.35.36" },
+    { name = "boto3-stubs", extras = ["dynamodb", "kms", "s3", "iam", "ssm", "bedrock-runtime", "bedrock-agent-runtime", "securityhub"], specifier = "==1.35.36" },
     { name = "hypothesis", specifier = "==6.112.4" },
     { name = "moto", extras = ["all"], specifier = "==5.0.16" },
     { name = "mypy", specifier = "==1.11.2" },
@@ -698,6 +701,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/15/53/99667aad21b236612ecb50eee09fdc4de6fbe39c3a75a6bad387d108ed1f/mypy_boto3_s3-1.35.93.tar.gz", hash = "sha256:b4529e57a8d5f21d4c61fe650fa6764fee2ba7ab524a455a34ba2698ef6d27a8", size = 72871, upload-time = "2025-01-07T00:46:05.22Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e0/52/9d45db5690eb2b3160c43259d70dd6890d9bc24633848bcb8ef835d44d6c/mypy_boto3_s3-1.35.93-py3-none-any.whl", hash = "sha256:4cd3f1718fa0d8a54212c495cdff493bdcc6a8ae419d95428c60fb6bc7db7980", size = 79501, upload-time = "2025-01-07T00:46:00.918Z" },
+]
+
+[[package]]
+name = "mypy-boto3-securityhub"
+version = "1.35.93"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/0b/07/1f6332dcd555b2140499159859000080e3aa2c0b004930141eaf117ec320/mypy_boto3_securityhub-1.35.93.tar.gz", hash = "sha256:da43ce0f92794cafaf41b41515f2bdcfaf2e4de5cbeb6b23d49a9ed82b81e2cc", size = 135846, upload-time = "2025-01-07T00:47:54.106Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/0e/f0/82931a8fe98b25c55996b068b1460a8527bf4758164adc4f2bb74a1ede15/mypy_boto3_securityhub-1.35.93-py3-none-any.whl", hash = "sha256:a33d31b478a04df6996094177b07144dfaf5df9cc66210dfe8ae8e2d129143bf", size = 143484, upload-time = "2025-01-07T00:47:50.819Z" },
 ]
 
 [[package]]

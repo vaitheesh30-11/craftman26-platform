@@ -1,7 +1,16 @@
-"""KMS-signed evidence primitives. Only `canonicalize.py` exists so far,
-pulled forward from adapters phase-04 because the prompts adapter
-(phase-03) needs a deterministic JSON representation of `trusted_input`
-before it lands here in full.
-"""
+"""KMS-signed, canonicalized evidence primitives (phase-04)."""
 
 from __future__ import annotations
+
+from iam_sentinel_adapters.evidence.canonicalize import canonicalize_json
+from iam_sentinel_adapters.evidence.client import EvidenceClient, EvidenceRef
+from iam_sentinel_adapters.evidence.keys import EvidenceKind, FeatureID, derive_evidence_key
+
+__all__ = [
+    "EvidenceClient",
+    "EvidenceKind",
+    "EvidenceRef",
+    "FeatureID",
+    "canonicalize_json",
+    "derive_evidence_key",
+]
