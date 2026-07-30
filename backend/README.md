@@ -34,6 +34,9 @@ Authoritative canon: `SYSTEM_STATE.md`, `docs/ARCHITECTURE.md`, `docs/AGENTIC_DE
 backend/
 ├── README.md                       this file
 ├── pyproject.toml                  uv-managed, Python 3.12
+├── openapi.golden.json             phase-00: contract-diff baseline (grows with each router phase)
+├── scripts/
+│   └── export_openapi.py           phase-00: regenerates openapi.golden.json
 ├── docs/
 │   ├── README.md                   phase index
 │   ├── phase-00-backend-foundations.txt
@@ -44,14 +47,18 @@ backend/
 ├── src/
 │   └── iam_sentinel_backend/
 │       ├── __init__.py
-│       ├── app.py                  FastAPI factory + Mangum handler
-│       ├── settings.py
-│       ├── deps.py                 dependencies (auth, adapter clients, correlation_id)
+│       ├── app.py                  phase-00: FastAPI factory + Mangum handler + /health
+│       ├── settings.py             phase-00
+│       ├── middleware.py           phase-00: correlation-id + request-timing middleware
+│       ├── ids.py                  phase-00: ULID minting (deliberately duplicated from agents/ids.py, see module docstring)
+│       ├── deps.py                 phase-00: dependencies (auth, adapter clients, correlation_id)
+│       ├── errors.py               phase-00: FastAPI exception handlers → JSON envelopes
 │       ├── auth/
-│       │   ├── cognito.py
-│       │   ├── sigv4.py
-│       │   └── breakglass.py       validates BreakGlass session tag
-│       ├── routers/
+│       │   ├── principal.py        phase-00: shared `Principal` shape
+│       │   ├── cognito.py          phase-00: JWKS-cached RS256 JWT verifier
+│       │   ├── sigv4.py            phase-00: API Gateway pass-through + relayed GetCallerIdentity
+│       │   └── breakglass.py       phase-00: validates BreakGlass session tag
+│       ├── routers/                phase-01
 │       │   ├── chat.py
 │       │   ├── findings.py
 │       │   ├── decisions.py
@@ -59,19 +66,18 @@ backend/
 │       │   ├── reports.py
 │       │   ├── operations.py
 │       │   └── router_bridge.py    fast-path bridges (F1/F2/F3/F4/F7/F8)
-│       ├── services/
+│       ├── services/               phase-01/03/04
 │       │   ├── chat_service.py     Bedrock InvokeAgent orchestration
 │       │   ├── stream_service.py   WebSocket stream fan-out
 │       │   ├── approval_service.py Zelkova pre-check + apply
 │       │   └── report_service.py
-│       ├── ws/
-│       │   ├── connect.py
-│       │   ├── default.py
-│       │   └── disconnect.py
-│       └── errors.py               FastAPI exception handlers → JSON envelopes
+│       └── ws/                     phase-02
+│           ├── connect.py
+│           ├── default.py
+│           └── disconnect.py
 └── tests/
-    ├── unit/
-    ├── integration/                LocalStack + moto
+    ├── unit/                       phase-00: 30 tests, 91% coverage
+    ├── integration/                LocalStack + moto (phase-01+)
     └── contract/
 ```
 
@@ -80,11 +86,12 @@ backend/
 ## 3. Tech Stack
 
 - Python 3.12.
-- `fastapi==0.115.0` + `mangum==0.19` (Lambda + API Gateway adapter).
+- `fastapi==0.115.0` + `mangum==0.17.0` (Lambda + API Gateway adapter).
 - `pydantic==2.9.2`, `pydantic-settings==2.5.2`.
-- `aws-lambda-powertools[all]==2.42.0`.
-- `httpx==0.27.2` for internal calls to fast-path Lambdas (via `lambda:InvokeFunction`, wrapped by the adapter).
-- `pytest`, `moto[all]`, `httpx.MockTransport`, `pytest-asyncio`.
+- `aws-lambda-powertools[all]==3.2.0` -- pinned up from the phase doc's `2.42.0`; that version's `[all]` extra hard-pins `pydantic<2.0.0`, which conflicts with `pydantic==2.9.2` (same conflict adapters/agents hit and fixed; see `docs/EXECUTION_STATE.txt` HISTORY, 2026-07-30 adapters phase-00 entry).
+- `pyjwt[crypto]==2.9.0` for Cognito RS256 JWT verification against the pool's JWKS.
+- `httpx==0.27.2` (dev-only, via `fastapi.testclient.TestClient`) for internal calls to fast-path Lambdas (via `lambda:InvokeFunction`, wrapped by the adapter) once phase-01 lands.
+- `pytest`, `moto[all]`, `pytest-asyncio`.
 
 Forbidden: Django, Flask, generic API-frame-wrappers, LangChain/LangGraph.
 

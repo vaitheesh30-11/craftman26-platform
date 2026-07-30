@@ -1,0 +1,136 @@
+[project]
+name = "iam-sentinel-backend"
+version = "0.1.0"
+description = "FastAPI-on-Lambda management API for IAM Sentinel"
+requires-python = ">=3.12,<3.13"
+readme = "README.md"
+authors = [{ name = "IAM Sentinel" }]
+
+dependencies = [
+    "aws-lambda-powertools[all]==3.2.0",
+    "pydantic==2.9.2",
+    "pydantic-settings==2.5.2",
+    "fastapi==0.115.0",
+    "mangum==0.17.0",
+    "pyjwt[crypto]==2.9.0",
+    "requests==2.32.3",
+    "iam-sentinel-adapters",
+]
+
+[tool.uv.sources]
+# backend/ never calls boto3 directly (module boundary, phase-00 §3) --
+# every AWS call (DDB reads, STS GetCallerIdentity for SigV4 auth) goes
+# through iam-sentinel-adapters. Path dependency, not a published package
+# -- this is a monorepo, not a package registry (same pattern as agents/
+# -> adapters/, agents/pyproject.toml).
+iam-sentinel-adapters = { path = "../adapters", editable = true }
+
+[dependency-groups]
+dev = [
+    "pytest==8.3.3",
+    "pytest-cov==5.0.0",
+    "pytest-asyncio==0.24.0",
+    "httpx==0.27.2",
+    "moto[all]==5.0.16",
+    "ruff==0.6.9",
+    "mypy==1.11.2",
+    "types-requests==2.32.0.20241016",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/iam_sentinel_backend"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E", "F", "W",
+    "I",
+    "N",
+    "UP",
+    "B",
+    "SIM",
+    "TCH",
+    "PL",
+    "RUF",
+    "ARG",
+    "ASYNC",
+    "S",
+    "BLE",
+]
+ignore = [
+    "E501",
+    "PLR0913",
+    "S101",
+    # `Depends(...)` as a parameter default is FastAPI's own documented DI
+    # idiom (https://fastapi.tiangolo.com/tutorial/dependencies/), not the
+    # mutable-default-argument footgun B008 exists to catch -- every router
+    # in phase-01 onward uses this pattern.
+    "B008",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S105", "S106", "PLR2004", "ARG", "N803", "N818"]
+
+[tool.ruff.lint.flake8-type-checking]
+# Pydantic resolves field annotations EAGERLY at class-definition time
+# (same note as agents/pyproject.toml) -- don't move field-type imports
+# behind TYPE_CHECKING for our own Base/Settings classes.
+runtime-evaluated-base-classes = [
+    "pydantic.BaseModel",
+    "pydantic_settings.BaseSettings",
+]
+
+[tool.ruff.lint.isort]
+order-by-type = false
+case-sensitive = false
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unreachable = true
+warn_no_return = true
+disallow_any_unimported = true
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = ["mangum.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
+    "--cov=iam_sentinel_backend",
+    "--cov-report=term-missing:skip-covered",
+    "--cov-fail-under=90",
+]
+testpaths = ["tests"]
+pythonpath = ["src"]
+markers = [
+    "unit: unit tests (fast, no AWS)",
+    "integration: moto-backed integration tests",
+]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.coverage.run]
+branch = true
+source = ["src/iam_sentinel_backend"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "\\.\\.\\.",
+]
