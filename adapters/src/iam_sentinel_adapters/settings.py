@@ -30,6 +30,7 @@ class AdapterSettings(BaseSettings):
     evidence_kms_key_arn: str = ""
     findings_table: str = "SentinelFindings-dev"
     decisions_table: str = "SentinelDecisions-dev"
+    decisions_in_flight_table: str = "SentinelDecisionsInFlight-dev"
     memory_episodic_table: str = "SentinelMemoryEpisodic-dev"
     memory_semantic_table: str = "SentinelMemorySemantic-dev"
     memory_procedural_table: str = "SentinelMemoryProcedural-dev"
