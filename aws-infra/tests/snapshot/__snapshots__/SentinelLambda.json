@@ -1,9 +1,94 @@
 {
+  "Metadata": {
+    "cdk_nag": {
+      "rules_to_suppress": [
+        {
+          "applies_to": [
+            "Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+          ],
+          "id": "AwsSolutions-IAM4",
+          "reason": "AWSLambdaBasicExecutionRole is CDK's default Lambda execution role addition (CloudWatch Logs only, scoped to the function's own log group)."
+        },
+        {
+          "id": "HIPAA.Security-LambdaInsideVPC",
+          "reason": "docs/ARCHITECTURE.md \u00a7Networking: IAM Sentinel is deliberately VPC-less across the whole platform."
+        }
+      ]
+    }
+  },
   "Parameters": {
     "BootstrapVersion": {
       "Default": "/cdk-bootstrap/hnb659fds/version",
       "Description": "Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]",
       "Type": "AWS::SSM::Parameter::Value<String>"
+    }
+  },
+  "Resources": {
+    "Boto3Layer463A0AEA": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "CompatibleArchitectures": [
+          "arm64"
+        ],
+        "CompatibleRuntimes": [
+          "python3.12"
+        ],
+        "Content": {
+          "S3Bucket": "cdk-hnb659fds-assets-111111111111-us-east-1",
+          "S3Key": "7821267514f3e8a1ffbe50ac0230c10f708bcff49fee18a9ba5ddd9e5b71c115.zip"
+        },
+        "Description": "Latest patched boto3, rebuilt monthly per phase-04 \u00a76 -- see ADR 0011."
+      },
+      "Type": "AWS::Lambda::LayerVersion",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "Boto3LayerArnParam3864A9D2": {
+      "Properties": {
+        "Name": "/sentinel/dev/layers/boto3/arn",
+        "Tags": {
+          "Owner": "iam-sentinel@customer.com",
+          "Project": "IAMSentinel",
+          "Stage": "dev"
+        },
+        "Type": "String",
+        "Value": {
+          "Ref": "Boto3Layer463A0AEA"
+        }
+      },
+      "Type": "AWS::SSM::Parameter"
+    },
+    "PowertoolsLayer17979D4B": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "CompatibleArchitectures": [
+          "arm64"
+        ],
+        "CompatibleRuntimes": [
+          "python3.12"
+        ],
+        "Content": {
+          "S3Bucket": "cdk-hnb659fds-assets-111111111111-us-east-1",
+          "S3Key": "7821267514f3e8a1ffbe50ac0230c10f708bcff49fee18a9ba5ddd9e5b71c115.zip"
+        },
+        "Description": "aws-lambda-powertools + pydantic v2, built via CodeBuild at CI time per phase-04 \u00a76 -- see ADR 0011."
+      },
+      "Type": "AWS::Lambda::LayerVersion",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "PowertoolsLayerArnParamCF541075": {
+      "Properties": {
+        "Name": "/sentinel/dev/layers/powertools/arn",
+        "Tags": {
+          "Owner": "iam-sentinel@customer.com",
+          "Project": "IAMSentinel",
+          "Stage": "dev"
+        },
+        "Type": "String",
+        "Value": {
+          "Ref": "PowertoolsLayer17979D4B"
+        }
+      },
+      "Type": "AWS::SSM::Parameter"
     }
   },
   "Rules": {
