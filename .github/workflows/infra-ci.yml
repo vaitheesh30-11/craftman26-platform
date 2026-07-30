@@ -40,7 +40,11 @@ jobs:
         with:
           python-version: "3.12"
       - run: uv sync --all-groups
-      - run: uv run mypy --strict src functions
+      - run: uv run mypy --strict src
+      # Each function dir is checked separately: several share a "handler.py"
+      # filename, which mypy's default (non-package) file discovery treats
+      # as one colliding top-level module if checked together.
+      - run: for d in functions/*/; do uv run mypy --strict "$d"; done
 
   test:
     name: test (cdk synth + cdk-nag + snapshot + pytest)

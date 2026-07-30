@@ -37,6 +37,19 @@
       ]
     }
   },
+  "Outputs": {
+    "ExportsOutputFnGetAttDataKey17AFBB84ArnCE2A1BC6": {
+      "Export": {
+        "Name": "SentinelSecurity:ExportsOutputFnGetAttDataKey17AFBB84ArnCE2A1BC6"
+      },
+      "Value": {
+        "Fn::GetAtt": [
+          "DataKey17AFBB84",
+          "Arn"
+        ]
+      }
+    }
+  },
   "Parameters": {
     "BootstrapVersion": {
       "Default": "/cdk-bootstrap/hnb659fds/version",
@@ -111,7 +124,7 @@
         ],
         "Code": {
           "S3Bucket": "cdk-hnb659fds-assets-111111111111-us-east-1",
-          "S3Key": "e005d1d18ad836783a2e9f3929ee039c8e67c430a950cda4399a6dcf025a79ab.zip"
+          "S3Key": "6e06a39fcc6eeec884e22c8d0dff21c1a0c14a6d25aa99f16e471b6d3790a556.zip"
         },
         "DeadLetterConfig": {
           "TargetArn": {
@@ -337,7 +350,7 @@
         ],
         "Code": {
           "S3Bucket": "cdk-hnb659fds-assets-111111111111-us-east-1",
-          "S3Key": "e005d1d18ad836783a2e9f3929ee039c8e67c430a950cda4399a6dcf025a79ab.zip"
+          "S3Key": "6e06a39fcc6eeec884e22c8d0dff21c1a0c14a6d25aa99f16e471b6d3790a556.zip"
         },
         "DeadLetterConfig": {
           "TargetArn": {
@@ -1164,7 +1177,7 @@
         ],
         "Code": {
           "S3Bucket": "cdk-hnb659fds-assets-111111111111-us-east-1",
-          "S3Key": "45d1a7b1fe40d6c33186d41b9086af22aa18131db08d8363915d0e97223b704a.zip"
+          "S3Key": "4b1aaeb782cde6d1ebc24e02b9026c571ab56c99fedd9cf74ae5da5f98a8c502.zip"
         },
         "DeadLetterConfig": {
           "TargetArn": {

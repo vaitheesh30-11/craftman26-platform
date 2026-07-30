@@ -22,10 +22,11 @@ class SignedObjectLockBucket(Construct):
         kms_key: kms.IKey,
         retention_years: int = 7,
         removal_policy: RemovalPolicy = RemovalPolicy.RETAIN,
+        access_log_bucket: s3.IBucket | None = None,
     ) -> None:
         super().__init__(scope, construct_id)
 
-        self.access_log_bucket = s3.Bucket(
+        self.access_log_bucket = access_log_bucket or s3.Bucket(
             self,
             "AccessLogBucket",
             encryption=s3.BucketEncryption.S3_MANAGED,

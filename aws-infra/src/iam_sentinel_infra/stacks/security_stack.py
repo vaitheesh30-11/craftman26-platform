@@ -318,17 +318,17 @@ class SecurityStack(Stack):
             logs=sfn.LogOptions(destination=workflow_log_group, level=sfn.LogLevel.ALL),
         )
 
-        security_topic = sns.Topic(
+        self.security_topic = sns.Topic(
             self, "SecurityTopic", topic_name="SentinelSecurity", master_key=self.data_key
         )
         self.data_key.grant_encrypt_decrypt(iam.ServicePrincipal("sns.amazonaws.com"))
-        security_topic.add_to_resource_policy(
+        self.security_topic.add_to_resource_policy(
             iam.PolicyStatement(
                 sid="EnforceTLS",
                 effect=iam.Effect.DENY,
                 principals=[iam.AnyPrincipal()],
                 actions=["sns:Publish"],
-                resources=[security_topic.topic_arn],
+                resources=[self.security_topic.topic_arn],
                 conditions={"Bool": {"aws:SecureTransport": "false"}},
             )
         )
@@ -344,7 +344,7 @@ class SecurityStack(Stack):
                 },
             ),
         )
-        assumption_rule.add_target(targets.SnsTopic(security_topic))
+        assumption_rule.add_target(targets.SnsTopic(self.security_topic))
 
         cloudwatch.Alarm(
             self,
@@ -359,4 +359,4 @@ class SecurityStack(Stack):
             threshold=1,
             evaluation_periods=1,
             alarm_description="Recent Break-Glass Sessions",
-        ).add_alarm_action(cloudwatch_actions.SnsAction(security_topic))
+        ).add_alarm_action(cloudwatch_actions.SnsAction(self.security_topic))
