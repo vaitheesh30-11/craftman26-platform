@@ -192,7 +192,7 @@
         ],
         "Code": {
           "S3Bucket": "cdk-hnb659fds-assets-111111111111-us-east-1",
-          "S3Key": "348f484da2ec9e0517e85988f3ca641b82b8a9125912825b6074012592aae88e.zip"
+          "S3Key": "8712c005358030de48fd04c4a36a10f992f4dd21d13594c2f16a57328738bcba.zip"
         },
         "DeadLetterConfig": {
           "TargetArn": {
@@ -418,7 +418,7 @@
         ],
         "Code": {
           "S3Bucket": "cdk-hnb659fds-assets-111111111111-us-east-1",
-          "S3Key": "348f484da2ec9e0517e85988f3ca641b82b8a9125912825b6074012592aae88e.zip"
+          "S3Key": "8712c005358030de48fd04c4a36a10f992f4dd21d13594c2f16a57328738bcba.zip"
         },
         "DeadLetterConfig": {
           "TargetArn": {
@@ -1032,6 +1032,19 @@
                 "Service": "sns.amazonaws.com"
               },
               "Resource": "*"
+            },
+            {
+              "Action": [
+                "kms:Decrypt",
+                "kms:Encrypt",
+                "kms:ReEncrypt*",
+                "kms:GenerateDataKey*"
+              ],
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "delivery.logs.amazonaws.com"
+              },
+              "Resource": "*"
             }
           ],
           "Version": "2012-10-17"
@@ -1245,7 +1258,7 @@
         ],
         "Code": {
           "S3Bucket": "cdk-hnb659fds-assets-111111111111-us-east-1",
-          "S3Key": "2a07ae642dc2a5577d8df2983a67132a673f575805c194ab7848e9ad98352cc8.zip"
+          "S3Key": "3cb9a2376858f83c67768f0f47fbaf8a85272d66b9aa4c02463b199442e57a85.zip"
         },
         "DeadLetterConfig": {
           "TargetArn": {
@@ -1601,6 +1614,18 @@
               "Effect": "Deny",
               "Resource": "*",
               "Sid": "DenyBoundaryEscalation"
+            },
+            {
+              "Action": [
+                "cognito-idp:GetUser",
+                "execute-api:ManageConnections"
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                "arn:aws:cognito-idp:us-east-1:111111111111:userpool/*",
+                "arn:aws:execute-api:us-east-1:111111111111:*/*/POST/@connections/*"
+              ],
+              "Sid": "AllowApiAuthAndWebSocketFanOut"
             }
           ],
           "Version": "2012-10-17"
