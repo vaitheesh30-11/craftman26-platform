@@ -149,6 +149,49 @@ export interface HealthResponse {
   commit: string;
 }
 
+export interface BreakerStateOut {
+  breaker_name: string;
+  state: string;
+}
+
+export interface DlqDepthOut {
+  queue_url: string;
+  approximate_messages: number;
+}
+
+/** `GET /operations/health` (backend phase-04 §2/§4 step 2). */
+export interface HealthSnapshotOut {
+  breakers: BreakerStateOut[];
+  dlqs: DlqDepthOut[];
+}
+
+/**
+ * `GET /reports/weekly/{report_kind}`, `GET /reports/{key:path}` (backend
+ * phase-04 §2/§3) -- one shape covers both endpoints, body is a free-form
+ * dict since the backend doesn't distinguish report kinds at the wire level
+ * (see `backend/src/iam_sentinel_backend/schemas/reports.py`).
+ */
+export interface ReportOut {
+  retrieved_from_s3_key: string;
+  body: Record<string, unknown>;
+}
+
+/**
+ * `GET /operations/dashboards/{name}/share-url` (frontend phase-04 §4) --
+ * speculative: no backend route or service method exists for this yet (see
+ * `backend/src/iam_sentinel_backend/routers/operations.py`, which only has
+ * `/faults`, `/cost/weekly`, `/divergence`, `/health`). Same posture as
+ * `EvidenceOut` above -- shape assumed, calling it 404s until backend
+ * ships it, and `DeepTelemetryTab` treats that as "not available yet," not
+ * a crash. Tracked in this phase's commit message / ADR, not silently
+ * papered over.
+ */
+export interface DashboardShareUrlOut {
+  dashboard_name: string;
+  share_url: string;
+  expires_at: string;
+}
+
 // Request bodies come straight from the generated OpenAPI schema — those
 // ARE correctly typed by openapi-typescript because FastAPI's `body:
 // ChatRequest` parameter annotations produce real `$ref`s, unlike the

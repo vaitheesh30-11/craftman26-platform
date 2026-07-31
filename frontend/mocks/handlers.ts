@@ -259,4 +259,65 @@ export const handlers = [
   http.get(`${BACKEND_ORIGIN}/operations/faults`, () =>
     HttpResponse.json({ ok: true, data: { items: [], next_token: null } }),
   ),
+
+  // Fixtures for the operations dashboard (frontend phase-04).
+  http.get(`${BACKEND_ORIGIN}/operations/health`, () =>
+    HttpResponse.json({
+      ok: true,
+      data: {
+        breakers: [
+          { breaker_name: "bedrock", state: "closed" },
+          { breaker_name: "athena", state: "closed" },
+          { breaker_name: "platform", state: "closed" },
+        ],
+        dlqs: [
+          {
+            queue_url: "https://sqs.us-east-1.amazonaws.com/111122223333/SessionKillDlq",
+            approximate_messages: 0,
+          },
+        ],
+      },
+    }),
+  ),
+
+  http.get(`${BACKEND_ORIGIN}/operations/cost/weekly`, () =>
+    HttpResponse.json({
+      ok: true,
+      data: {
+        report_key: "SentinelReports/cost/2026-W30.json",
+        body: { by_service: { bedrock: 42.1, athena: 5.3, lambda: 1.2 }, previous_week_usd: 40 },
+      },
+    }),
+  ),
+
+  // `/operations/dashboards/:name/share-url` (frontend phase-04 §4) has no
+  // backend route yet -- 404 in local dev too, so `DeepTelemetryTab`'s
+  // "not available yet" state is what developers see, not a silent mock
+  // that would mask the real gap.
+  http.get(`${BACKEND_ORIGIN}/operations/dashboards/:name/share-url`, () =>
+    HttpResponse.json(
+      { ok: false, error: { code: "NOT_FOUND", message: "not implemented", correlation_id: "mock" } },
+      { status: 404 },
+    ),
+  ),
+
+  // `/reports/weekly/:kind` (frontend phase-04 §5) -- only `cost` has a
+  // fixture; the other three kinds 404 so the Reports page's "not
+  // published yet" empty state has something to exercise locally.
+  http.get(`${BACKEND_ORIGIN}/reports/weekly/cost`, () =>
+    HttpResponse.json({
+      ok: true,
+      data: {
+        retrieved_from_s3_key: "SentinelReports/cost/2026-W30.json",
+        body: { by_service: { bedrock: 42.1, athena: 5.3, lambda: 1.2 }, previous_week_usd: 40 },
+      },
+    }),
+  ),
+
+  http.get(`${BACKEND_ORIGIN}/reports/weekly/:kind`, () =>
+    HttpResponse.json(
+      { ok: false, error: { code: "REPORT_NOT_FOUND", message: "no report published yet", correlation_id: "mock" } },
+      { status: 404 },
+    ),
+  ),
 ];

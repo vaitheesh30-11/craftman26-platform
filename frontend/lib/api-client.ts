@@ -9,6 +9,7 @@ import type {
   ApprovalResponse,
   ChatRequest,
   CostReportOut,
+  DashboardShareUrlOut,
   DecisionOut,
   DecisionsPage,
   EvidenceOut,
@@ -16,6 +17,8 @@ import type {
   FindingOut,
   FindingsPage,
   HealthResponse,
+  HealthSnapshotOut,
+  ReportOut,
 } from "@/lib/api-types";
 
 export class ApiError extends Error {
@@ -117,4 +120,18 @@ export const apiClient = {
     }),
 
   latestCostReport: (): Promise<CostReportOut> => request("/operations/cost/weekly"),
+
+  getOperationsHealth: (): Promise<HealthSnapshotOut> => request("/operations/health"),
+
+  latestWeeklyReport: (reportKind: string): Promise<ReportOut> =>
+    request(`/reports/weekly/${encodeURIComponent(reportKind)}`),
+
+  getReportByKey: (key: string): Promise<ReportOut> => request(`/reports/${key}`),
+
+  // `/operations/dashboards/{name}/share-url` (frontend phase-04 §4) has no
+  // backend route yet -- see `DashboardShareUrlOut`'s doc comment. Wired up
+  // now so `DeepTelemetryTab` only needs its `ApiError` catch path deleted
+  // once the real endpoint ships, same precedent as `getEvidence` above.
+  getDashboardShareUrl: (name: string): Promise<DashboardShareUrlOut> =>
+    request(`/operations/dashboards/${encodeURIComponent(name)}/share-url`),
 };
