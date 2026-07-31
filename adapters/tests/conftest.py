@@ -181,6 +181,36 @@ def faults_table(moto_session: None) -> Table:
 
 
 @pytest.fixture
+def divergence_table(moto_session: None) -> Table:
+    ddb = boto3.resource("dynamodb", region_name=_REGION)
+    ddb.create_table(
+        TableName="SentinelDivergence-test",
+        KeySchema=[
+            {"AttributeName": "correlation_id", "KeyType": "HASH"},
+            {"AttributeName": "detected_at", "KeyType": "RANGE"},
+        ],
+        AttributeDefinitions=[
+            {"AttributeName": "correlation_id", "AttributeType": "S"},
+            {"AttributeName": "detected_at", "AttributeType": "S"},
+            {"AttributeName": "feature_id", "AttributeType": "S"},
+            {"AttributeName": "divergence_kind", "AttributeType": "S"},
+        ],
+        GlobalSecondaryIndexes=[
+            {
+                "IndexName": "feature-divergence-index",
+                "KeySchema": [
+                    {"AttributeName": "feature_id", "KeyType": "HASH"},
+                    {"AttributeName": "divergence_kind", "KeyType": "RANGE"},
+                ],
+                "Projection": {"ProjectionType": "ALL"},
+            }
+        ],
+        BillingMode="PAY_PER_REQUEST",
+    )
+    return ddb.Table("SentinelDivergence-test")
+
+
+@pytest.fixture
 def idempotency_table(moto_session: None) -> Table:
     ddb = boto3.resource("dynamodb", region_name=_REGION)
     ddb.create_table(

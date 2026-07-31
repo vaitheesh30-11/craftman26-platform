@@ -149,6 +149,9 @@ securityhub = [
 sns = [
     { name = "mypy-boto3-sns" },
 ]
+sqs = [
+    { name = "mypy-boto3-sqs" },
+]
 ssm = [
     { name = "mypy-boto3-ssm" },
 ]
@@ -388,7 +391,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "boto3-stubs", extra = ["bedrock-agent-runtime", "bedrock-runtime", "dynamodb", "iam", "kms", "lambda", "s3", "securityhub", "sns", "ssm", "stepfunctions", "sts"] },
+    { name = "boto3-stubs", extra = ["bedrock-agent-runtime", "bedrock-runtime", "dynamodb", "iam", "kms", "lambda", "s3", "securityhub", "sns", "sqs", "ssm", "stepfunctions", "sts"] },
     { name = "hypothesis" },
     { name = "moto", extra = ["all"] },
     { name = "mypy" },
@@ -412,7 +415,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "boto3-stubs", extras = ["dynamodb", "kms", "s3", "iam", "ssm", "bedrock-runtime", "bedrock-agent-runtime", "securityhub", "sns", "sts", "lambda", "stepfunctions"], specifier = "==1.35.36" },
+    { name = "boto3-stubs", extras = ["dynamodb", "kms", "s3", "iam", "ssm", "bedrock-runtime", "bedrock-agent-runtime", "securityhub", "sns", "sts", "lambda", "stepfunctions", "sqs"], specifier = "==1.35.36" },
     { name = "hypothesis", specifier = "==6.112.4" },
     { name = "moto", extras = ["all"], specifier = "==5.0.16" },
     { name = "mypy", specifier = "==1.11.2" },
@@ -744,6 +747,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/b1/fd/dceadf2b71f19b9e01b7fb9f80e76c57a38bf53eaea0df05204d42ee1493/mypy_boto3_sns-1.35.93.tar.gz", hash = "sha256:fd17cec410bc477096652431d324881f4d33b89fab7c4c857f3347442354ffa1", size = 32910, upload-time = "2025-01-07T00:49:34.656Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f6/43/503437c8efb6b1bb4e66e11540438876cfffb6561247af52e49ba75c19f9/mypy_boto3_sns-1.35.93-py3-none-any.whl", hash = "sha256:528b0246da33f4f0fce957cbcc844d9df4df372b70229361a0694f125b40dfcc", size = 39975, upload-time = "2025-01-07T00:49:31.793Z" },
+]
+
+[[package]]
+name = "mypy-boto3-sqs"
+version = "1.35.93"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/29/5b/040ba82c53d5edf578ad0aafcac501b91a259b40f296ef6662db975b6595/mypy_boto3_sqs-1.35.93.tar.gz", hash = "sha256:8ea7f63e0878544705c31996ae4c064095fbb4f780f8323a84f7a75281d643fe", size = 23344, upload-time = "2025-01-07T00:49:44.507Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/82/eb/d8c10da3f905921f70f008f3bca092711e316ced49287e42f45309860aca/mypy_boto3_sqs-1.35.93-py3-none-any.whl", hash = "sha256:341974f77e66851b9a4190d0014481e6baabae82d32f9ee559faa823b693609b", size = 33491, upload-time = "2025-01-07T00:49:41.734Z" },
 ]
 
 [[package]]
