@@ -1,0 +1,82 @@
+openapi: 3.0.3
+info:
+  title: F2 OrgContext Actions
+  version: "1.0.0"
+paths:
+  /scan:
+    post:
+      operationId: org_context_scan
+      summary: Fetch active Access Analyzer findings and classify each against real org context.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [analyzer_arn]
+              properties:
+                analyzer_arn: { type: string }
+                max_findings: { type: integer, minimum: 1, maximum: 500, default: 500 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrgContextPayload" }
+  /suppress:
+    post:
+      operationId: org_context_suppress
+      summary: Archive confirmed false-positive findings and upsert the org-scoped archive rule.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [finding_ids, analyzer_arn]
+              properties:
+                finding_ids: { type: array, items: { type: string }, minItems: 1, maxItems: 500 }
+                analyzer_arn: { type: string }
+                create_rule: { type: boolean, default: true }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [archived]
+                properties:
+                  archived: { type: integer, minimum: 0 }
+                  rule_id: { type: string, nullable: true }
+components:
+  schemas:
+    OrgContextClassification:
+      type: object
+      required: [finding_id, analyzer_arn, classification, org_id, real_ou_paths, real_account_ids, rationale]
+      properties:
+        finding_id: { type: string }
+        analyzer_arn: { type: string }
+        classification:
+          type: string
+          enum: [TRUE_POSITIVE, FALSE_POSITIVE_ORG_SCOPED, FALSE_POSITIVE_ACCOUNT_SCOPED, INCONCLUSIVE_UNKNOWN_CONDITION]
+        org_id: { type: string }
+        matched_condition_key:
+          type: string
+          nullable: true
+          enum: [aws:PrincipalOrgId, aws:PrincipalAccount, aws:PrincipalOrgPaths]
+        matched_condition_value: { type: string }
+        real_ou_paths: { type: array, items: { type: string } }
+        real_account_ids: { type: array, items: { type: string, pattern: "^[0-9]{12}$" } }
+        rationale: { type: string }
+    OrgContextPayload:
+      type: object
+      required: [analyzer_arn, total_findings, classifications, archived_count]
+      properties:
+        analyzer_arn: { type: string }
+        total_findings: { type: integer, minimum: 0 }
+        classifications:
+          type: array
+          items: { $ref: "#/components/schemas/OrgContextClassification" }
+        archived_count: { type: integer, minimum: 0 }
+        archive_rule_id: { type: string, nullable: true }

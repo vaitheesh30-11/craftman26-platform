@@ -16,6 +16,14 @@ from iam_sentinel_agents.contracts.decision import DecisionRecord
 from iam_sentinel_agents.contracts.evidence import EvidenceKind, EvidenceRecord, EvidenceRef
 from iam_sentinel_agents.contracts.finding import AwsDocCitation, Finding
 from iam_sentinel_agents.contracts.knowledge_base import Corpus, KbManifest, QuoteHash
+from iam_sentinel_agents.contracts.org_context import (
+    FALSE_POSITIVE_CLASSIFICATIONS,
+    MatchedConditionKey,
+    ORG_ID_PATTERN,
+    OrgContextClassification,
+    OrgContextClassificationKind,
+    OrgContextPayload,
+)
 from iam_sentinel_agents.contracts.passrole import (
     BlastPath,
     PassRoleBlastPayload,
@@ -34,6 +42,8 @@ from iam_sentinel_agents.contracts.verdict import SpecialistVerdict, ToolInvocat
 __all__ = [
     "ACCOUNT_ID_PATTERN",
     "ARN_PATTERN",
+    "FALSE_POSITIVE_CLASSIFICATIONS",
+    "ORG_ID_PATTERN",
     "ULID_PATTERN",
     "AwsDocCitation",
     "Base",
@@ -46,6 +56,10 @@ __all__ = [
     "FeatureID",
     "Finding",
     "KbManifest",
+    "MatchedConditionKey",
+    "OrgContextClassification",
+    "OrgContextClassificationKind",
+    "OrgContextPayload",
     "PassRoleBlastPayload",
     "PassRoleEdge",
     "QuoteHash",

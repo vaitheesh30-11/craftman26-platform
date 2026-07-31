@@ -12,6 +12,8 @@ from iam_sentinel_agents.contracts import (
     DecisionRecord,
     EvidenceRef,
     Finding,
+    OrgContextClassification,
+    OrgContextPayload,
     RemediationPlan,
     SentinelQuery,
     SpecialistTask,
@@ -25,6 +27,8 @@ from tests.contract._factories import (
     make_decision,
     make_evidence_ref,
     make_finding,
+    make_org_context_classification,
+    make_org_context_payload,
     make_query,
     make_remediation_dry,
     make_task,
@@ -47,6 +51,8 @@ _CASES = [
     (SpecialistTask, make_task),
     (DecisionRecord, make_decision),
     (UntrustedContextBlock, lambda: UntrustedContextBlock(type="role_names", body="role/x")),
+    (OrgContextClassification, make_org_context_classification),
+    (OrgContextPayload, make_org_context_payload),
 ]
 
 
