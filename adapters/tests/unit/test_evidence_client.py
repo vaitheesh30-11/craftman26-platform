@@ -13,6 +13,7 @@ import io
 from typing import Any
 
 import pytest
+from botocore.exceptions import ClientError
 
 from iam_sentinel_adapters.errors import EvidenceVerificationError
 from iam_sentinel_adapters.evidence.client import EvidenceClient
@@ -21,11 +22,19 @@ from iam_sentinel_adapters.evidence.kms_verifier import KmsVerifier
 
 
 class _FakeKms:
-    def sign(self, *, KeyId: str, Message: bytes, MessageType: str, SigningAlgorithm: str) -> dict[str, Any]:
+    def sign(
+        self, *, KeyId: str, Message: bytes, MessageType: str, SigningAlgorithm: str
+    ) -> dict[str, Any]:
         return {"Signature": Message}
 
     def verify(
-        self, *, KeyId: str, Message: bytes, MessageType: str, Signature: bytes, SigningAlgorithm: str
+        self,
+        *,
+        KeyId: str,
+        Message: bytes,
+        MessageType: str,
+        Signature: bytes,
+        SigningAlgorithm: str,
     ) -> dict[str, Any]:
         return {"SignatureValid": Signature == Message}
 
@@ -33,6 +42,7 @@ class _FakeKms:
 class _FakeS3:
     def __init__(self) -> None:
         self._objects: dict[tuple[str, str, str], bytes] = {}
+        self._metadata: dict[tuple[str, str, str], dict[str, str]] = {}
         self._counter = 0
 
     def put_object(
@@ -42,11 +52,19 @@ class _FakeS3:
         version_id = f"v{self._counter}"
         self._objects[(Bucket, Key, version_id)] = Body
         self._objects[(Bucket, Key, "")] = Body
+        self._metadata[(Bucket, Key, version_id)] = Metadata
+        self._metadata[(Bucket, Key, "")] = Metadata
         return {"VersionId": version_id}
 
     def get_object(self, *, Bucket: str, Key: str, VersionId: str = "") -> dict[str, Any]:
         body = self._objects[(Bucket, Key, VersionId)]
         return {"Body": io.BytesIO(body)}
+
+    def head_object(self, *, Bucket: str, Key: str, VersionId: str = "") -> dict[str, Any]:
+        key = (Bucket, Key, VersionId)
+        if key not in self._objects:
+            raise ClientError({"Error": {"Code": "404", "Message": "not found"}}, "HeadObject")
+        return {"Metadata": self._metadata[key]}
 
     def corrupt(self, bucket: str, key: str, version_id: str) -> None:
         original = self._objects[(bucket, key, version_id)]
@@ -63,13 +81,18 @@ def evidence_client() -> tuple[EvidenceClient, _FakeS3]:
         bucket="sentinel-evidence-test",
         kms_key_arn="arn:aws:kms:us-east-1:111111111111:key/evidence",
         s3_client=fake_s3,  # type: ignore[arg-type]
-        signer=KmsSigner(key_arn="arn:aws:kms:us-east-1:111111111111:key/evidence", client=fake_kms),  # type: ignore[arg-type]
+        signer=KmsSigner(
+            key_arn="arn:aws:kms:us-east-1:111111111111:key/evidence",
+            client=fake_kms,  # type: ignore[arg-type]
+        ),
         verifier=KmsVerifier(client=fake_kms),  # type: ignore[arg-type]
     )
     return client, fake_s3
 
 
-def test_put_then_verify_round_trips_the_body(evidence_client: tuple[EvidenceClient, _FakeS3]) -> None:
+def test_put_then_verify_round_trips_the_body(
+    evidence_client: tuple[EvidenceClient, _FakeS3],
+) -> None:
     client, _ = evidence_client
     body = {"account_id": "111122223333", "role_arn": "arn:aws:iam::111122223333:role/prod"}
 
@@ -95,7 +118,7 @@ def test_tampered_body_fails_verification(evidence_client: tuple[EvidenceClient,
 
 
 def test_key_is_content_addressed_by_feature_and_hash(
-    evidence_client: tuple[EvidenceClient, _FakeS3]
+    evidence_client: tuple[EvidenceClient, _FakeS3],
 ) -> None:
     client, _ = evidence_client
 
@@ -105,3 +128,29 @@ def test_key_is_content_addressed_by_feature_and_hash(
 
     assert ref.key.startswith("F6/")
     assert ref.key.endswith(f"{ref.sha256}.json")
+
+
+def test_verify_by_location_round_trips_from_bucket_key_version(
+    evidence_client: tuple[EvidenceClient, _FakeS3],
+) -> None:
+    client, _ = evidence_client
+    body = {"role_arn": "arn:aws:iam::111122223333:role/prod"}
+    ref = client.put_signed_evidence(
+        kind="specialist_output", body=body, correlation_id="corr-4", feature_id="F1"
+    )
+
+    result = client.verify_by_location(bucket=ref.bucket, key=ref.key, version_id=ref.version_id)
+
+    assert result == body
+
+
+def test_verify_by_location_returns_none_when_object_missing(
+    evidence_client: tuple[EvidenceClient, _FakeS3],
+) -> None:
+    client, _ = evidence_client
+
+    result = client.verify_by_location(
+        bucket="sentinel-evidence-test", key="F1/nope.json", version_id="v1"
+    )
+
+    assert result is None

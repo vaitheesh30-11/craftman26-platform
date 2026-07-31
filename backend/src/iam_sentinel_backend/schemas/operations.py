@@ -14,6 +14,9 @@ from pydantic import Field
 
 from iam_sentinel_backend.schemas.common import ResponseBase
 
+BreakerState = Literal["closed", "half_open", "open"]
+DivergenceKind = Literal["identical", "semantic_match", "material_disagreement"]
+
 FaultClass = Literal[
     "transient_throttling",
     "transient_network",
@@ -51,3 +54,46 @@ class CostReportOut(ResponseBase):
 
     report_key: str
     body: dict[str, object] = Field(default_factory=dict)
+
+
+class DivergenceRecordOut(ResponseBase):
+    """Mirrors `DivergenceRecord` (`agents/docs/phase-15-dual-mode-execution.
+    txt §5`, not yet built -- see `adapters/ddb/divergence.py`'s module
+    docstring). `feature_id` isn't part of that Pydantic contract but is
+    the GSI partition key `DivergenceClient.list_recent` queries on, so it's
+    modeled here as optional rather than assumed absent.
+    """
+
+    correlation_id: str
+    feature_id: str | None = None
+    input_hash: str
+    divergence_kind: DivergenceKind
+    diff_summary: str
+    reviewed: bool = False
+    detected_at: str
+
+
+class DivergencePage(ResponseBase):
+    items: list[DivergenceRecordOut]
+    next_token: str | None = None
+
+
+class BreakerStateOut(ResponseBase):
+    breaker_name: str
+    state: BreakerState
+
+
+class DlqDepthOut(ResponseBase):
+    queue_url: str
+    approximate_messages: int
+
+
+class HealthSnapshotOut(ResponseBase):
+    """Composite health snapshot (backend phase-04 §2/§4 step 2) -- which
+    breakers/DLQs count as "every known" one is settings-driven, not
+    discovered; see `AdapterSettings.known_breaker_names`/`dlq_queue_urls`
+    and ADR 0023.
+    """
+
+    breakers: list[BreakerStateOut]
+    dlqs: list[DlqDepthOut]

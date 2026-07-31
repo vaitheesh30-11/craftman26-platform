@@ -19,8 +19,9 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 import boto3
+from botocore.exceptions import ClientError
 
-from iam_sentinel_adapters.errors import EvidenceVerificationError
+from iam_sentinel_adapters.errors import EvidenceVerificationError, NonRetryableError
 from iam_sentinel_adapters.evidence.canonicalize import canonicalize_json
 from iam_sentinel_adapters.evidence.keys import EvidenceKind, FeatureID, derive_evidence_key
 from iam_sentinel_adapters.evidence.kms_signer import KmsSigner
@@ -126,3 +127,61 @@ class EvidenceClient:
             )
 
         return parsed
+
+    def resolve_ref(self, *, bucket: str, key: str, version_id: str) -> EvidenceRef | None:
+        """Reconstructs an `EvidenceRef` from just its S3 location (backend
+        phase-04 §4 step 3 -- `GET /evidence/{ref}`'s `<bucket>/<key>@
+        <version_id>` input has no signature attached, unlike the
+        `EvidenceRef` a producer already holds in memory right after
+        `put_signed_evidence`). The signature/sha256/kms_key_arn this needs
+        were written as S3 object metadata by `put_signed_evidence` -- a
+        `head_object` reads them without downloading the body twice.
+        Returns `None` (not an exception) when the object/version does not
+        exist, matching this package's "missing means None" convention
+        (e.g. `ReportsClient.get_latest_cost_report`) so the caller can turn
+        it into a plain 404 rather than a 500.
+        """
+        get_kwargs: dict[str, str] = {"Bucket": bucket, "Key": key}
+        if version_id:
+            get_kwargs["VersionId"] = version_id
+        try:
+            response = self._s3.head_object(**get_kwargs)  # type: ignore[arg-type]
+        except ClientError as exc:
+            error_code = exc.response.get("Error", {}).get("Code", "")
+            if error_code in {"404", "NoSuchKey", "NoSuchVersion", "NotFound"}:
+                return None
+            raise NonRetryableError(f"failed to head s3://{bucket}/{key}: {exc}") from exc
+
+        metadata = response.get("Metadata", {})
+        try:
+            signature = metadata["sentinel-signature"]
+            sha256 = metadata["sentinel-sha256"]
+            kms_key_arn = metadata["sentinel-kms-key-arn"]
+        except KeyError as exc:
+            raise EvidenceVerificationError(
+                f"s3://{bucket}/{key} is missing required signature metadata"
+            ) from exc
+
+        stored_at = response.get("LastModified") or datetime.now(UTC)
+        return EvidenceRef(
+            bucket=bucket,
+            key=key,
+            version_id=version_id,
+            kms_key_arn=kms_key_arn,
+            signature=signature,
+            sha256=sha256,
+            stored_at=stored_at,
+        )
+
+    def verify_by_location(
+        self, *, bucket: str, key: str, version_id: str
+    ) -> dict[str, Any] | None:
+        """Resolves + verifies in one call -- the composition `GET
+        /evidence/{ref}` needs. `None` means "not found" (404); a raised
+        `EvidenceVerificationError` means "found but tampered" (502) -- the
+        two failure modes the spec's endpoint contract distinguishes.
+        """
+        ref = self.resolve_ref(bucket=bucket, key=key, version_id=version_id)
+        if ref is None:
+            return None
+        return self.verify(ref)

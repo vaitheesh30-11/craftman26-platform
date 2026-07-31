@@ -22,6 +22,7 @@ from iam_sentinel_adapters.errors import (
     AccessDeniedError,
     BudgetExceededError,
     CircuitOpenError,
+    EvidenceVerificationError,
     GuardrailInterventionError,
     SanitizerRejection,
     ValidationError,
@@ -57,6 +58,10 @@ _DOMAIN_EXCEPTION_STATUS: dict[type[Exception], tuple[str, int]] = {
     BudgetExceededError: ("BUDGET_EXCEEDED", status.HTTP_429_TOO_MANY_REQUESTS),
     CircuitOpenError: ("CIRCUIT_OPEN", status.HTTP_503_SERVICE_UNAVAILABLE),
     ZelkovaError: ("ZELKOVA_ERROR", status.HTTP_500_INTERNAL_SERVER_ERROR),
+    # backend phase-04 §4 step 3: tampered/corrupt evidence returns 502, not
+    # 500 -- the failure is in the stored artifact/signature, not this
+    # service's own logic.
+    EvidenceVerificationError: ("EVIDENCE_VERIFICATION_FAILED", status.HTTP_502_BAD_GATEWAY),
 }
 
 

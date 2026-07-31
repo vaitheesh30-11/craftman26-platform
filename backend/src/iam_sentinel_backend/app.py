@@ -19,8 +19,10 @@ from iam_sentinel_backend.routers import (
     approvals,
     chat,
     decisions,
+    evidence,
     findings,
     operations,
+    reports,
     router_bridge,
 )
 from iam_sentinel_backend.settings import settings
@@ -53,6 +55,8 @@ def create_app() -> FastAPI:
     app.include_router(decisions.router)
     app.include_router(approvals.router)
     app.include_router(operations.router)
+    app.include_router(reports.router)
+    app.include_router(evidence.router)
 
     return app
 
