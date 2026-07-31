@@ -14,16 +14,11 @@ const checkedIn = path.join(frontendRoot, "lib", "api-types.gen.ts");
 const scratch = path.join(frontendRoot, "lib", "api-types.gen.drift-check.ts");
 const golden = path.join(frontendRoot, "..", "backend", "openapi.golden.json");
 
-execFileSync(
-  "node",
-  [
-    path.join(frontendRoot, "node_modules", ".bin", "openapi-typescript"),
-    golden,
-    "-o",
-    scratch,
-  ],
-  { stdio: "inherit" },
-);
+// Resolve the real JS entry point rather than `node_modules/.bin/`'s shim:
+// on Windows that shim is a POSIX shell script pnpm generates alongside a
+// `.cmd`, which `execFileSync("node", [shimPath])` cannot parse as JS.
+const cliEntry = path.join(frontendRoot, "node_modules", "openapi-typescript", "bin", "cli.js");
+execFileSync(process.execPath, [cliEntry, golden, "-o", scratch], { stdio: "inherit" });
 
 try {
   const expected = readFileSync(checkedIn, "utf8");
