@@ -30,39 +30,94 @@ export const handlers = [
     HttpResponse.json({ ok: true, data: { stage: "dev", commit: "mock" } }),
   ),
 
-  http.get(`${BACKEND_ORIGIN}/findings`, () =>
-    HttpResponse.json({
-      ok: true,
-      data: {
-        items: [
-          {
-            finding_id: "01JBQXMOCK0000000000000001",
-            feature_id: "F1",
-            account_id: "111122223333",
-            principal_arn: "arn:aws:iam::111122223333:role/example-role",
-            resource_arn: null,
-            severity: "HIGH",
-            title: "Wildcard PassRole grant reaches an admin-equivalent role",
-            detail: "example-role can PassRole into blast-radius CRITICAL targets.",
-            aws_doc_citation: {
-              gap_id: "F1",
-              quote:
-                "You must grant iam:PassRole for the specific roles you want to allow.",
-              source: "IAM User Guide",
-              url: "https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_use_passrole.html",
-              retrieved_on: "2026-07-01",
-            },
-            payload: {},
-            detected_at: nowIso(),
-            expires_at: null,
-            evidence_ref: null,
-            status: "OPEN",
-          },
-        ],
-        next_token: null,
+  // Realistic fixture set for the findings inbox (phase-02): spans several
+  // severities/features/accounts so `FindingsFilters`' severity/feature
+  // multi-select and the account/since filters all have something to do in
+  // local dev, and three distinct `evidence_ref` shapes (valid, tampered,
+  // missing) that line up with the `/evidence/:ref` handlers below --
+  // together they cover phase-02 §8's "3 fixture scenarios" criterion.
+  http.get(`${BACKEND_ORIGIN}/findings`, ({ request }) => {
+    const url = new URL(request.url);
+    const severity = url.searchParams.get("severity");
+    const featureId = url.searchParams.get("feature_id");
+    const accountId = url.searchParams.get("account_id");
+
+    const allFindings = [
+      {
+        finding_id: "01JBQXMOCK0000000000000001",
+        feature_id: "F1",
+        account_id: "111122223333",
+        principal_arn: "arn:aws:iam::111122223333:role/example-role",
+        resource_arn: null,
+        severity: "HIGH",
+        title: "Wildcard PassRole grant reaches an admin-equivalent role",
+        detail: "example-role can PassRole into blast-radius CRITICAL targets.",
+        aws_doc_citation: {
+          gap_id: "F1",
+          quote: "You must grant iam:PassRole for the specific roles you want to allow.",
+          source: "IAM User Guide",
+          url: "https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_use_passrole.html",
+          retrieved_on: "2026-07-01",
+        },
+        payload: { blast_path: ["role/example-role", "role/deploy-orchestrator", "role/OrganizationAccountAccessRole"] },
+        detected_at: nowIso(),
+        expires_at: null,
+        evidence_ref: { sha256: "mock-evidence-valid" },
+        status: "OPEN",
       },
-    }),
-  ),
+      {
+        finding_id: "01JBQXMOCK0000000000000002",
+        feature_id: "F6",
+        account_id: "444455556666",
+        principal_arn: "arn:aws:iam::444455556666:role/shadow-admin",
+        resource_arn: null,
+        severity: "CRITICAL",
+        title: "Management account principal bypassed SCP guardrail",
+        detail: "shadow-admin performed an action SCP Sentinel expected to be denied.",
+        aws_doc_citation: {
+          gap_id: "F6",
+          quote: "Service control policies (SCPs) don't affect users or roles in the management account.",
+          source: "AWS Organizations User Guide",
+          url: "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_scps.html",
+          retrieved_on: "2026-07-01",
+        },
+        payload: {},
+        detected_at: nowIso(),
+        expires_at: null,
+        evidence_ref: { sha256: "mock-evidence-tampered" },
+        status: "OPEN",
+      },
+      {
+        finding_id: "01JBQXMOCK0000000000000003",
+        feature_id: "F3",
+        account_id: "111122223333",
+        principal_arn: null,
+        resource_arn: "arn:aws:s3:::example-data-bucket",
+        severity: "MEDIUM",
+        title: "S3 bucket policy merge exceeds recommended size",
+        detail: "example-data-bucket's merged bucket policy is close to the 20 KB service limit.",
+        aws_doc_citation: {
+          gap_id: "F3",
+          quote: "Bucket policies are limited to 20 KB in size.",
+          source: "Amazon S3 User Guide",
+          url: "https://docs.aws.amazon.com/AmazonS3/latest/userguide/bucket-policies.html",
+          retrieved_on: "2026-07-01",
+        },
+        payload: { merged_policy: { Version: "2012-10-17", Statement: [] }, size_bytes: 18432 },
+        detected_at: nowIso(),
+        expires_at: null,
+        evidence_ref: null,
+        status: "OPEN",
+      },
+    ];
+
+    const items = allFindings
+      .filter((f) => !severity || f.severity === severity)
+      .filter((f) => !featureId || f.feature_id === featureId)
+      .filter((f) => !accountId || f.account_id === accountId);
+
+    return HttpResponse.json({ ok: true, data: { items, next_token: null } });
+  }),
 
   http.get(`${BACKEND_ORIGIN}/findings/:findingId`, ({ params }) =>
     HttpResponse.json({
@@ -90,6 +145,50 @@ export const handlers = [
         status: "OPEN",
       },
     }),
+  ),
+
+  // `GET /evidence/:ref` (backend phase-04) doesn't exist yet -- these two
+  // fixture refs give `EvidenceViewer` something to exercise the "verified"
+  // and "TAMPERED" states against locally; any other ref 404s, which
+  // exercises its "missing" state (phase-02 §8 acceptance criterion).
+  http.get(`${BACKEND_ORIGIN}/evidence/mock-evidence-valid`, () =>
+    HttpResponse.json({
+      ok: true,
+      data: {
+        ref: "mock-evidence-valid",
+        kind: "specialist_output",
+        correlation_id: "01JBQXMOCK0000000000000010",
+        feature_id: "F1",
+        body: { verdict: "CONFIRM", targets_evaluated: 3, blast_radius: "CRITICAL" },
+        sha256: "mock-evidence-valid",
+        verified: true,
+      },
+    }),
+  ),
+
+  http.get(`${BACKEND_ORIGIN}/evidence/mock-evidence-tampered`, () =>
+    HttpResponse.json({
+      ok: true,
+      data: {
+        ref: "mock-evidence-tampered",
+        kind: "specialist_output",
+        correlation_id: "01JBQXMOCK0000000000000011",
+        feature_id: "F6",
+        body: { verdict: "CONFIRM" },
+        sha256: "mock-evidence-tampered",
+        verified: false,
+      },
+    }),
+  ),
+
+  http.get(`${BACKEND_ORIGIN}/evidence/:ref`, ({ params }) =>
+    HttpResponse.json(
+      {
+        ok: false,
+        error: { code: "EVIDENCE_NOT_FOUND", message: `no evidence ${String(params.ref)}`, correlation_id: "mock" },
+      },
+      { status: 404 },
+    ),
   ),
 
   http.get(`${BACKEND_ORIGIN}/decisions`, () =>

@@ -80,6 +80,25 @@ export interface FindingsPage {
   next_token: string | null;
 }
 
+/**
+ * `GET /evidence/{ref}` (backend phase-04) doesn't exist in this codebase
+ * yet -- built in parallel on another branch. Shape assumed from
+ * `docs/DATA_CONTRACTS.md` §6 `EvidenceRecord` plus a `verified` flag: the
+ * browser can never do the KMS/RSA-PSS signature check itself (it doesn't
+ * hold the key), so the backend must return the verification result
+ * alongside the body, not just the raw signature. Revisit once backend
+ * phase-04 lands and publishes its real response schema.
+ */
+export interface EvidenceOut {
+  ref: string;
+  kind: "specialist_input" | "specialist_output" | "zelkova_invocation" | "policy_mutation" | "guardrail_intervention";
+  correlation_id: string;
+  feature_id: FeatureId;
+  body: Record<string, unknown>;
+  sha256: string;
+  verified: boolean;
+}
+
 export interface DecisionOut {
   decision_id: string;
   correlation_id: string;
