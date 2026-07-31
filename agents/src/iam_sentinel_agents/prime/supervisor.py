@@ -24,7 +24,7 @@ against explicit verdicts; wiring it to real trace parsing is deferred
 until a deployed Prime's trace can be inspected.
 
 `cost_meter`/`breaker` (agents-phase-16 §5 steps 2 and 5,
-docs/decisions/0032) are optional and default to `None`: a `PrimeSupervisor`
+docs/decisions/0033) are optional and default to `None`: a `PrimeSupervisor`
 built without them (every pre-phase-16 call site, including this module's
 own existing tests) skips the budget gate entirely rather than reaching
 for a default `CostMeter()`/`BreakerAccessor()` that would make a *real*

@@ -1,4 +1,4 @@
-# ADR 0032 — agents phase-16: cost guardrails scope, adapters phase-01 reuse, deferred infra
+# ADR 0033 — agents phase-16: cost guardrails scope, adapters phase-01 reuse, deferred infra
 
 Status: accepted
 Date: 2026-07-31

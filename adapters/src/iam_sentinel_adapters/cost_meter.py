@@ -36,7 +36,7 @@ class SpendKind(str, Enum):
     ATHENA_SCAN_BYTES = "athena_scan_bytes"
     LAMBDA_DURATION = "lambda_duration"
     ZELKOVA_INVOCATION = "zelkova_invocation"
-    # Added agents-phase-16 (cost guardrails, docs/decisions/0032): dollar-
+    # Added agents-phase-16 (cost guardrails, docs/decisions/0033): dollar-
     # denominated and count-denominated kinds the per-principal daily cap
     # and per-correlation tool-invocation cap need, distinct from the raw
     # token/byte counters above -- phase-01's five members are amounts in
@@ -96,7 +96,7 @@ class CostMeter:
                     "kind": kind.value,
                     "amount": str(amount),
                     "recorded_at": datetime.now(UTC).isoformat(),
-                    # Persisted starting agents-phase-16 (docs/decisions/0032):
+                    # Persisted starting agents-phase-16 (docs/decisions/0033):
                     # phase-01 only forwarded these as EMF dimensions, never
                     # to DDB, so the weekly cost-attribution report (phase-16
                     # §7 -- top principals, cost per feature, fast/slow

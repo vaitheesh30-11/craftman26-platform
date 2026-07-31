@@ -1,5 +1,5 @@
 """cost_report_weekly -- weekly cost-attribution report Lambda
-(agents-phase-16 §2, §5 step 7, docs/decisions/0032).
+(agents-phase-16 §2, §5 step 7, docs/decisions/0033).
 
 Scheduled, not agent-callable, mirroring `tools/f8/refresh.py`'s "plain
 EventBridge-scheduled Lambda handler, no `sentinel_handler` envelope"
@@ -53,7 +53,7 @@ def _week_id(when: datetime) -> str:
 def _dollar_amount(row: dict[str, str]) -> float:
     """`principal_daily_dollars` rows are `budget_gate`'s own daily-cap
     ledger keyed under a synthetic `daily#<principal>#<date>` correlation
-    id (docs/decisions/0032) -- excluded here so the report doesn't
+    id (docs/decisions/0033) -- excluded here so the report doesn't
     double-count every request's estimated spend once under its real
     correlation id and again under its daily bucket.
     """

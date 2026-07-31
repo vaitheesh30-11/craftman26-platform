@@ -1,4 +1,4 @@
-"""Cost-guardrail contracts (agents-phase-16 §4, docs/decisions/0032).
+"""Cost-guardrail contracts (agents-phase-16 §4, docs/decisions/0033).
 
 `SpendSample`/`BudgetSnapshot`/`CircuitBreakerState` match the phase-16 spec's
 interface contracts verbatim. They are the agents-module *reporting* view

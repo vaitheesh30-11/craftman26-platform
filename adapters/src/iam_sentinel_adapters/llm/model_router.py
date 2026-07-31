@@ -1,6 +1,6 @@
 """Haiku-default, Sonnet-on-demand, cost-aware downgrade (phase-01 §4
 step 3; three-tier refinement per agents-phase-16 §5 step 8,
-docs/decisions/0032). Downgrade always wins over an explicit Sonnet request
+docs/decisions/0033). Downgrade always wins over an explicit Sonnet request
 once a correlation is past 70% of its dollar cap -- staying on the cheaper
 model is worth more than the caller's preference.
 

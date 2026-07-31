@@ -1,5 +1,5 @@
 """Pre-invocation budget gate (agents-phase-16 §5 steps 2 and 5,
-docs/decisions/0032).
+docs/decisions/0033).
 
 `check_startable` is the one call `PrimeSupervisor.ask` makes before every
 `invoke_agent` -- it enforces the two budget layers phase-01's mid-
@@ -19,7 +19,7 @@ Daily-principal accounting reuses `CostMeter`'s existing `correlation_id`
 partition key rather than adding a new DDB table or GSI: the "correlation
 id" for a daily-cap sample is the synthetic key `daily#<principal>#<date>`
 (`daily_principal_key`). This is a deliberate, documented reuse (not a
-schema migration) -- see docs/decisions/0032 for why a new `SentinelBudget`
+schema migration) -- see docs/decisions/0033 for why a new `SentinelBudget`
 GSI was scoped out of this phase.
 """
 
