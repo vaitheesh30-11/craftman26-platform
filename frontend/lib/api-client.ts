@@ -9,13 +9,17 @@ import type {
   ApprovalResponse,
   ChatRequest,
   CostReportOut,
+  DashboardShareUrlOut,
   DecisionOut,
   DecisionsPage,
   EvidenceOut,
+  ExecutionStatusOut,
   FaultsPage,
   FindingOut,
   FindingsPage,
   HealthResponse,
+  HealthSnapshotOut,
+  ReportOut,
 } from "@/lib/api-types";
 
 export class ApiError extends Error {
@@ -117,4 +121,26 @@ export const apiClient = {
     }),
 
   latestCostReport: (): Promise<CostReportOut> => request("/operations/cost/weekly"),
+
+  getOperationsHealth: (): Promise<HealthSnapshotOut> => request("/operations/health"),
+
+  latestWeeklyReport: (reportKind: string): Promise<ReportOut> =>
+    request(`/reports/weekly/${encodeURIComponent(reportKind)}`),
+
+  getReportByKey: (key: string): Promise<ReportOut> => request(`/reports/${key}`),
+
+  // `/operations/dashboards/{name}/share-url` (frontend phase-04 §4) has no
+  // backend route yet -- see `DashboardShareUrlOut`'s doc comment. Wired up
+  // now so `DeepTelemetryTab` only needs its `ApiError` catch path deleted
+  // once the real endpoint ships, same precedent as `getEvidence` above.
+  getDashboardShareUrl: (name: string): Promise<DashboardShareUrlOut> =>
+    request(`/operations/dashboards/${encodeURIComponent(name)}/share-url`),
+
+  // `GET /operations/execution/{arn}` doesn't exist on `backend` yet (see
+  // `lib/api-types.ts`'s `ExecutionStatusOut` doc comment) -- callers
+  // (`ApprovalProgress`) must treat any rejection the same way
+  // `EvidenceViewer` treats a missing `/evidence/{ref}`: a graceful
+  // "not available" state, never a crash.
+  getExecutionStatus: (executionArn: string): Promise<ExecutionStatusOut> =>
+    request(`/operations/execution/${encodeURIComponent(executionArn)}`),
 };

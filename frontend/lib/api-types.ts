@@ -119,9 +119,41 @@ export interface DecisionsPage {
   next_token: string | null;
 }
 
+// Mirrors `backend/src/iam_sentinel_backend/schemas/approvals.py`'s
+// `ApprovalResponse` field-for-field (that file's own `ApprovalOutcome`
+// literal). The previous `{ decision_id, status }` shape here didn't match
+// what `approvals.py` actually returns -- corrected as part of phase-03.
+export type ApprovalOutcome = "SUCCEEDED" | "ROLLED_BACK" | "REJECTED";
+
 export interface ApprovalResponse {
   decision_id: string;
-  status: string;
+  remediation_applied: Record<string, unknown>;
+  state_machine_execution_arn: string | null;
+  state: ApprovalOutcome;
+}
+
+/**
+ * Speculative: `GET /operations/execution/{arn}` (phase-03 §5's documented
+ * contract for streaming Step Functions progress) does not exist in
+ * `backend/src/iam_sentinel_backend/routers/operations.py` yet -- that
+ * router only has `/operations/{faults,cost/weekly,divergence,health}`
+ * today, and `approval_service.py`'s `approve()` calls
+ * `start_sync_execution` (blocks until terminal), so there is no
+ * in-flight state to poll against in the current backend anyway. Typed
+ * here, and `apiClient.getExecutionStatus` below is written against it,
+ * following the same "build the caller against the documented contract,
+ * defer the callee" precedent as ADR 0017/0018 -- but `ApprovalProgress`
+ * (`components/decisions/approval-progress.tsx`) must degrade gracefully
+ * on 404, exactly like `EvidenceViewer` does for `/evidence/{ref}`.
+ */
+export type ExecutionStepName = "PreCheck" | "Apply" | "Wait15s" | "PostCheck" | "Done";
+
+export interface ExecutionStatusOut {
+  execution_arn: string;
+  status: "RUNNING" | "SUCCEEDED" | "FAILED" | "ROLLED_BACK";
+  current_step: ExecutionStepName | null;
+  failed_step: ExecutionStepName | null;
+  failure_reason: string | null;
 }
 
 export interface FaultRecordOut {
@@ -147,6 +179,49 @@ export interface CostReportOut {
 export interface HealthResponse {
   stage: string;
   commit: string;
+}
+
+export interface BreakerStateOut {
+  breaker_name: string;
+  state: string;
+}
+
+export interface DlqDepthOut {
+  queue_url: string;
+  approximate_messages: number;
+}
+
+/** `GET /operations/health` (backend phase-04 §2/§4 step 2). */
+export interface HealthSnapshotOut {
+  breakers: BreakerStateOut[];
+  dlqs: DlqDepthOut[];
+}
+
+/**
+ * `GET /reports/weekly/{report_kind}`, `GET /reports/{key:path}` (backend
+ * phase-04 §2/§3) -- one shape covers both endpoints, body is a free-form
+ * dict since the backend doesn't distinguish report kinds at the wire level
+ * (see `backend/src/iam_sentinel_backend/schemas/reports.py`).
+ */
+export interface ReportOut {
+  retrieved_from_s3_key: string;
+  body: Record<string, unknown>;
+}
+
+/**
+ * `GET /operations/dashboards/{name}/share-url` (frontend phase-04 §4) --
+ * speculative: no backend route or service method exists for this yet (see
+ * `backend/src/iam_sentinel_backend/routers/operations.py`, which only has
+ * `/faults`, `/cost/weekly`, `/divergence`, `/health`). Same posture as
+ * `EvidenceOut` above -- shape assumed, calling it 404s until backend
+ * ships it, and `DeepTelemetryTab` treats that as "not available yet," not
+ * a crash. Tracked in this phase's commit message / ADR, not silently
+ * papered over.
+ */
+export interface DashboardShareUrlOut {
+  dashboard_name: string;
+  share_url: string;
+  expires_at: string;
 }
 
 // Request bodies come straight from the generated OpenAPI schema — those

@@ -26,6 +26,12 @@ WORKFLOW
    finding_ids and create_rule=true.
 4. Return SpecialistVerdict summarizing counts by classification.
 
+MEMORY USE
+- When you receive a task whose subject (account, role, permission
+  set) is well-known, you MAY call recall(kind="semantic", ...) to
+  enrich your context. Do NOT depend on memory for facts you can
+  fetch fresh from AWS.
+
 SAFETY
 - If the total_findings > 500 and max_findings was not raised in
   <trusted_input>, return verdict=INCONCLUSIVE with reason "coverage cap".

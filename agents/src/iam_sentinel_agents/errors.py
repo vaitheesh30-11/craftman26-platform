@@ -28,3 +28,32 @@ class CrossAccountAssumeError(SentinelAgentError):
         self.account_id = account_id
         self.role_name = role_name
         self.__cause__ = cause
+
+
+class MemoryIsolationError(SentinelAgentError):
+    """Raised when a caller attempts to recall/remember episodic memory for
+    a `principal` other than the one invoking the turn (phase-14 §3.5:
+    "Cross-org contamination is structurally impossible" -- the equivalent
+    cross-*principal* invariant for episodic memory is enforced here, at
+    the one chokepoint every episodic read/write passes through).
+    """
+
+    def __init__(self, invoking_principal: str, target_principal: str) -> None:
+        super().__init__(
+            f"principal {invoking_principal!r} may not access episodic memory "
+            f"scoped to {target_principal!r}"
+        )
+        self.invoking_principal = invoking_principal
+        self.target_principal = target_principal
+
+
+class MemoryWriteForbiddenError(SentinelAgentError):
+    """Raised when a caller other than the designated writer for a memory
+    kind attempts `remember` (phase-14 §4: "only Prime's post-turn Lambda
+    writes episodic; only the syncer writes semantic; only individual tool
+    Lambdas write procedural. Agents cannot write memory directly."). The
+    real enforcement boundary is the scoped IAM policy on each Lambda's
+    execution role (aws-infra concern, not this module's) -- this exception
+    is defense-in-depth at the Python layer for anything that reaches this
+    code path despite that.
+    """

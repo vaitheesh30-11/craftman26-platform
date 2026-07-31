@@ -25,6 +25,7 @@ interface FindingsQueryParams {
   severity?: string;
   feature_id?: string;
   account_id?: string;
+  principal_arn?: string;
   since?: string;
   limit: number;
   next_token?: string;
@@ -38,6 +39,11 @@ interface FindingsQueryParams {
  * are selected we fetch unfiltered on that dimension and narrow client-side
  * after the fact, same posture as the free-text search the phase doc
  * explicitly allows to be client-side "until backend supports" it.
+ *
+ * `principal_arn` (added in frontend phase-04, for the Top Principals
+ * tile's click-through) has no filter-bar UI of its own -- it's a
+ * deep-link-only param, forwarded straight to the backend since it's
+ * always an exact ARN, never a multi-select.
  */
 function buildQueryParams(searchParams: URLSearchParams): FindingsQueryParams {
   const severities = parseCsv(searchParams.get("severity"));
@@ -50,6 +56,7 @@ function buildQueryParams(searchParams: URLSearchParams): FindingsQueryParams {
     severity: severities.length === 1 ? severities[0] : undefined,
     feature_id: features.length === 1 ? features[0] : undefined,
     account_id: account.length === 12 ? account : undefined,
+    principal_arn: searchParams.get("principal_arn") ?? undefined,
     since: sinceWindow === "custom" ? (sinceFrom ? new Date(sinceFrom).toISOString() : undefined) : sinceWindowToIso(sinceWindow),
     limit: PAGE_SIZE,
     next_token: searchParams.get("cursor") ?? undefined,

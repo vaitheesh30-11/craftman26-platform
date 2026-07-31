@@ -28,6 +28,12 @@ WORKFLOW
    phase-05.
 7. Attach SuggestedExemptions to remediations_proposed on the verdict.
 
+MEMORY USE
+- When you receive a task whose subject (account, role, permission
+  set) is well-known, you MAY call recall(kind="semantic", ...) to
+  enrich your context. Do NOT depend on memory for facts you can
+  fetch fresh from AWS.
+
 SAFETY
 - If total_calls_analyzed == 0, return verdict=INCONCLUSIVE reason
   "empty trail window".
