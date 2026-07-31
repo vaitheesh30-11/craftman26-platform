@@ -61,6 +61,15 @@ class AdapterSettings(BaseSettings):
     emergency_revocations_topic_arn: str = ""
     never_revoke_ssm_param: str = "/sentinel/never-revoke-role-patterns"
 
+    # agents phase-17 (Self-Healing) §6/§8: watchdog's stuck-session alert and
+    # the drift detector's "page a human" path both publish to a topic
+    # distinct from `critical_findings_topic_arn` (F1's finding-severity
+    # channel) -- added on-demand per ADR 0006's precedent, same as every
+    # other topic ARN above.
+    ops_topic_arn: str = ""
+    security_topic_arn: str = ""
+    sentinel_stack_name_prefix: str = "Sentinel"
+
     # backend phase-04 §2 step 2 / ADR 0029: no runtime registry of "every
     # breaker that exists" or "every DLQ that exists" is provisioned anywhere
     # in the codebase (`SentinelBreakers` is a bare key-value table with no

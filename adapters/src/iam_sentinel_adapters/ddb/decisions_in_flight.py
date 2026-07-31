@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from iam_sentinel_adapters.circuit_breaker import BreakerAccessor
 
 _TTL_HOURS = 1
+_MAX_SCAN_PAGES = 10
 
 
 class DecisionsInFlightClient:
@@ -61,3 +62,23 @@ class DecisionsInFlightClient:
     def is_canceled(self, correlation_id: str) -> bool:
         item = self.get(correlation_id)
         return bool(item and item.get("canceled"))
+
+    def list_all(self, *, max_pages: int = _MAX_SCAN_PAGES) -> list[dict[str, Any]]:
+        """Full-table scan, bounded by `max_pages` (agents phase-17 §6 Step
+        1: the watchdog scanner needs every in-flight row to find stuck
+        ones -- no GSI exists for "every row regardless of correlation_id",
+        same bounded-scan-fallback precedent as `FaultsClient.list_recent`
+        and `DecisionsClient.get_by_id` use for the same reason: this table
+        has no secondary index and none is warranted for a table whose rows
+        are always short-lived (1-hour TTL).
+        """
+        items: list[dict[str, Any]] = []
+        exclusive_start_key: dict[str, Any] | None = None
+        for _ in range(max_pages):
+            page, exclusive_start_key = self._helper.scan_page(
+                limit=100, exclusive_start_key=exclusive_start_key
+            )
+            items.extend(page)
+            if exclusive_start_key is None:
+                break
+        return items
