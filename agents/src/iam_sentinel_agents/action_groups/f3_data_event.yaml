@@ -1,0 +1,106 @@
+openapi: 3.0.3
+info:
+  title: F3 Data Event Actions
+  version: "1.0.0"
+paths:
+  /ensure-logging:
+    post:
+      operationId: data_event_ensure_logging
+      summary: Verify or enable S3 data-event logging on the org trail.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [account_id]
+              properties:
+                account_id: { type: string, pattern: "^[0-9]{12}$" }
+                dry_run: { type: boolean, default: true }
+      responses:
+        "200":
+          description: Logging status checked (and enabled, if consented).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [already_enabled, enabled_now, trail_arn]
+                properties:
+                  already_enabled: { type: boolean }
+                  enabled_now: { type: boolean }
+                  trail_arn: { type: string }
+  /query:
+    post:
+      operationId: data_event_query
+      summary: Query CloudTrail S3 data events for a role via Athena.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role_arn]
+              properties:
+                role_arn: { type: string }
+                days_back: { type: integer, minimum: 1, maximum: 90, default: 30 }
+      responses:
+        "200":
+          description: Usage grouped by (action, bucket).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [usage, rows_scanned]
+                properties:
+                  usage:
+                    type: array
+                    items: { $ref: "#/components/schemas/S3DataEventUsage" }
+                  rows_scanned: { type: integer, minimum: 0 }
+  /merge:
+    post:
+      operationId: data_event_merge
+      summary: Merge Access Analyzer's base policy with observed S3 data-event usage.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [base_policy, usage]
+              properties:
+                base_policy: { type: object }
+                usage:
+                  type: array
+                  items: { $ref: "#/components/schemas/S3DataEventUsage" }
+      responses:
+        "200":
+          description: Merged least-privilege policy artifact.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [merged_policy, merged_policy_bytes, truncated]
+                properties:
+                  merged_policy: { type: object }
+                  merged_policy_bytes: { type: integer, minimum: 0 }
+                  truncated: { type: boolean }
+components:
+  schemas:
+    S3DataEventUsage:
+      type: object
+      required: [action, bucket, prefixes, call_count]
+      properties:
+        action:
+          type: string
+          enum:
+            [
+              "s3:GetObject",
+              "s3:PutObject",
+              "s3:DeleteObject",
+              "s3:ListMultipartUploadParts",
+              "s3:AbortMultipartUpload",
+            ]
+        bucket: { type: string }
+        prefixes: { type: array, items: { type: string } }
+        consolidated_prefix: { type: string, nullable: true }
+        call_count: { type: integer, minimum: 0 }

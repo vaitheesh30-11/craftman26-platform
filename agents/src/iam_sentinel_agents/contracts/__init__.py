@@ -12,6 +12,11 @@ from iam_sentinel_agents.contracts.common import (
     ULID_PATTERN,
     Verdict,
 )
+from iam_sentinel_agents.contracts.data_event import (
+    DataEventPolicyPayload,
+    S3DataEventAction,
+    S3DataEventUsage,
+)
 from iam_sentinel_agents.contracts.decision import DecisionRecord
 from iam_sentinel_agents.contracts.evidence import EvidenceKind, EvidenceRecord, EvidenceRef
 from iam_sentinel_agents.contracts.finding import AwsDocCitation, Finding
@@ -39,6 +44,7 @@ __all__ = [
     "Base",
     "BlastPath",
     "Corpus",
+    "DataEventPolicyPayload",
     "DecisionRecord",
     "EvidenceKind",
     "EvidenceRecord",
@@ -52,6 +58,8 @@ __all__ = [
     "ReachedPrivilege",
     "RemediationAction",
     "RemediationPlan",
+    "S3DataEventAction",
+    "S3DataEventUsage",
     "SentinelQuery",
     "Severity",
     "SpecialistTask",
