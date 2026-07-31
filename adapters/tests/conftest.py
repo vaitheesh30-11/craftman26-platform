@@ -309,21 +309,3 @@ def connections_table(moto_session: None) -> Table:
 @pytest.fixture
 def moto_breaker(breakers_table: Table) -> BreakerAccessor:
     return BreakerAccessor(table=breakers_table)
-
-
-@pytest.fixture
-def policies_table(moto_session: None) -> Table:
-    ddb = boto3.resource("dynamodb", region_name=_REGION)
-    ddb.create_table(
-        TableName="SentinelPolicies-test",
-        KeySchema=[
-            {"AttributeName": "org_id", "KeyType": "HASH"},
-            {"AttributeName": "policy_arn", "KeyType": "RANGE"},
-        ],
-        AttributeDefinitions=[
-            {"AttributeName": "org_id", "AttributeType": "S"},
-            {"AttributeName": "policy_arn", "AttributeType": "S"},
-        ],
-        BillingMode="PAY_PER_REQUEST",
-    )
-    return ddb.Table("SentinelPolicies-test")

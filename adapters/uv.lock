@@ -128,6 +128,9 @@ bedrock-agent-runtime = [
 bedrock-runtime = [
     { name = "mypy-boto3-bedrock-runtime" },
 ]
+cloudwatch = [
+    { name = "mypy-boto3-cloudwatch" },
+]
 dynamodb = [
     { name = "mypy-boto3-dynamodb" },
 ]
@@ -391,7 +394,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "boto3-stubs", extra = ["bedrock-agent-runtime", "bedrock-runtime", "dynamodb", "iam", "kms", "lambda", "s3", "securityhub", "sns", "sqs", "ssm", "stepfunctions", "sts"] },
+    { name = "boto3-stubs", extra = ["bedrock-agent-runtime", "bedrock-runtime", "cloudwatch", "dynamodb", "iam", "kms", "lambda", "s3", "securityhub", "sns", "sqs", "ssm", "stepfunctions", "sts"] },
     { name = "hypothesis" },
     { name = "moto", extra = ["all"] },
     { name = "mypy" },
@@ -415,7 +418,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "boto3-stubs", extras = ["dynamodb", "kms", "s3", "iam", "ssm", "bedrock-runtime", "bedrock-agent-runtime", "securityhub", "sns", "sts", "lambda", "stepfunctions", "sqs"], specifier = "==1.35.36" },
+    { name = "boto3-stubs", extras = ["dynamodb", "kms", "s3", "iam", "ssm", "bedrock-runtime", "bedrock-agent-runtime", "securityhub", "sns", "sts", "lambda", "stepfunctions", "sqs", "cloudwatch"], specifier = "==1.35.36" },
     { name = "hypothesis", specifier = "==6.112.4" },
     { name = "moto", extras = ["all"], specifier = "==5.0.16" },
     { name = "mypy", specifier = "==1.11.2" },
@@ -684,6 +687,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/9a/d6/b38b12cebac3bcde9d30de23f69b4b40e94f7be7eeee820ea56e06d3b82f/mypy_boto3_bedrock_runtime-1.35.93.tar.gz", hash = "sha256:4e37bc176328719948ceafd757e1c06995ff191b91267a18c4b8eb073d72f957", size = 21911, upload-time = "2025-01-07T00:12:37.253Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e9/f0/f6c457ce2af7abf8ad5d7d61d9fc98986d5180f1a0d31c6c0ce668df327f/mypy_boto3_bedrock_runtime-1.35.93-py3-none-any.whl", hash = "sha256:17e0d2fe43f1df6c55c4567d6121696b5848e68f3975573c64c9f2fb48aeb902", size = 30729, upload-time = "2025-01-07T00:12:34.861Z" },
+]
+
+[[package]]
+name = "mypy-boto3-cloudwatch"
+version = "1.35.93"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/f0/81/83995cb28f37d9ae432c68432ae347f22befeb530b7d497e1fd87b0052e9/mypy_boto3_cloudwatch-1.35.93.tar.gz", hash = "sha256:2af0c2ab7ef69f49031e7487a4eaee1c06079ac8bd0a7a80b4e906da94aea496", size = 32438, upload-time = "2025-01-07T00:15:17.231Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8d/c7/5cc805a673072307a5e22a6c452522ce25b210f9433eae7ed3799513389d/mypy_boto3_cloudwatch-1.35.93-py3-none-any.whl", hash = "sha256:bd9b66952a85a71b137db8f605c9bb1fa862337ea3e8f854c802ef4d386f86fb", size = 43801, upload-time = "2025-01-07T00:15:13.203Z" },
 ]
 
 [[package]]

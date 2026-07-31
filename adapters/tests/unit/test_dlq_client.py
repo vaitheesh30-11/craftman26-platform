@@ -28,3 +28,36 @@ def test_get_depth_reads_approximate_message_count(dlq_queue_url: str) -> None:
     depth = client.get_depth(dlq_queue_url)
 
     assert depth >= 0  # moto's ApproximateNumberOfMessages is eventually-consistent by design
+
+
+def test_get_age_of_oldest_message_reads_the_cloudwatch_metric(
+    dlq_queue_url: str, moto_session: None
+) -> None:
+    from datetime import UTC, datetime
+
+    cloudwatch = boto3.client("cloudwatch", region_name=_REGION)
+    queue_name = dlq_queue_url.rsplit("/", maxsplit=1)[-1]
+    cloudwatch.put_metric_data(
+        Namespace="AWS/SQS",
+        MetricData=[
+            {
+                "MetricName": "ApproximateAgeOfOldestMessage",
+                "Dimensions": [{"Name": "QueueName", "Value": queue_name}],
+                "Timestamp": datetime.now(UTC),
+                "Value": 42.0,
+                "Unit": "Seconds",
+            }
+        ],
+    )
+    client = DlqClient(cloudwatch_client=cloudwatch)
+
+    age = client.get_age_of_oldest_message(dlq_queue_url)
+
+    assert age == 42
+
+
+def test_get_age_of_oldest_message_returns_zero_with_no_datapoints(dlq_queue_url: str) -> None:
+    cloudwatch = boto3.client("cloudwatch", region_name=_REGION)
+    client = DlqClient(cloudwatch_client=cloudwatch)
+
+    assert client.get_age_of_oldest_message(dlq_queue_url) == 0
