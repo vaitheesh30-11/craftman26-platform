@@ -13,6 +13,7 @@ import type {
   DecisionOut,
   DecisionsPage,
   EvidenceOut,
+  ExecutionStatusOut,
   FaultsPage,
   FindingOut,
   FindingsPage,
@@ -134,4 +135,12 @@ export const apiClient = {
   // once the real endpoint ships, same precedent as `getEvidence` above.
   getDashboardShareUrl: (name: string): Promise<DashboardShareUrlOut> =>
     request(`/operations/dashboards/${encodeURIComponent(name)}/share-url`),
+
+  // `GET /operations/execution/{arn}` doesn't exist on `backend` yet (see
+  // `lib/api-types.ts`'s `ExecutionStatusOut` doc comment) -- callers
+  // (`ApprovalProgress`) must treat any rejection the same way
+  // `EvidenceViewer` treats a missing `/evidence/{ref}`: a graceful
+  // "not available" state, never a crash.
+  getExecutionStatus: (executionArn: string): Promise<ExecutionStatusOut> =>
+    request(`/operations/execution/${encodeURIComponent(executionArn)}`),
 };
