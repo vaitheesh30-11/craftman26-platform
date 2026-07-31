@@ -137,6 +137,9 @@ bedrock-agent-runtime = [
 bedrock-runtime = [
     { name = "mypy-boto3-bedrock-runtime" },
 ]
+cloudformation = [
+    { name = "mypy-boto3-cloudformation" },
+]
 cloudtrail = [
     { name = "mypy-boto3-cloudtrail" },
 ]
@@ -448,7 +451,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "boto3-stubs", extra = ["accessanalyzer", "athena", "bedrock-agent", "bedrock-agent-runtime", "bedrock-runtime", "cloudtrail", "dynamodb", "glue", "iam", "kms", "organizations", "s3", "securityhub", "sns", "sqs", "ssm", "sso-admin", "sts"] },
+    { name = "boto3-stubs", extra = ["accessanalyzer", "athena", "bedrock-agent", "bedrock-agent-runtime", "bedrock-runtime", "cloudformation", "cloudtrail", "dynamodb", "glue", "iam", "kms", "organizations", "s3", "securityhub", "sns", "sqs", "ssm", "sso-admin", "sts"] },
     { name = "hypothesis" },
     { name = "moto", extra = ["all"] },
     { name = "mypy" },
@@ -477,7 +480,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "boto3-stubs", extras = ["iam", "organizations", "accessanalyzer", "cloudtrail", "dynamodb", "s3", "sns", "sqs", "sts", "sso-admin", "ssm", "bedrock-agent", "bedrock-agent-runtime", "bedrock-runtime", "kms", "athena", "glue", "securityhub"], specifier = "==1.35.36" },
+    { name = "boto3-stubs", extras = ["iam", "organizations", "accessanalyzer", "cloudtrail", "dynamodb", "s3", "sns", "sqs", "sts", "sso-admin", "ssm", "bedrock-agent", "bedrock-agent-runtime", "bedrock-runtime", "kms", "athena", "glue", "securityhub", "cloudformation"], specifier = "==1.35.36" },
     { name = "hypothesis", specifier = "==6.112.4" },
     { name = "moto", extras = ["all"], specifier = "==5.0.16" },
     { name = "mypy", specifier = "==1.11.2" },
@@ -774,6 +777,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/9a/d6/b38b12cebac3bcde9d30de23f69b4b40e94f7be7eeee820ea56e06d3b82f/mypy_boto3_bedrock_runtime-1.35.93.tar.gz", hash = "sha256:4e37bc176328719948ceafd757e1c06995ff191b91267a18c4b8eb073d72f957", size = 21911, upload-time = "2025-01-07T00:12:37.253Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e9/f0/f6c457ce2af7abf8ad5d7d61d9fc98986d5180f1a0d31c6c0ce668df327f/mypy_boto3_bedrock_runtime-1.35.93-py3-none-any.whl", hash = "sha256:17e0d2fe43f1df6c55c4567d6121696b5848e68f3975573c64c9f2fb48aeb902", size = 30729, upload-time = "2025-01-07T00:12:34.861Z" },
+]
+
+[[package]]
+name = "mypy-boto3-cloudformation"
+version = "1.35.93"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/f3/26/e59425e30fb1783aa718f1a8ac93cdc415e279e175c953ee0a72310f7490/mypy_boto3_cloudformation-1.35.93.tar.gz", hash = "sha256:57dc112ff3e2ddc1e9e621e428490b904c0da8c1532d30e9fa2a19aefde9f719", size = 54529, upload-time = "2025-01-07T00:14:23.902Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/17/52/6e73adba190fc65c5cf89ed9394cc8a1acb073989f4eda87f80f451c9b15/mypy_boto3_cloudformation-1.35.93-py3-none-any.whl", hash = "sha256:4111913cb2c9fd9099ecd616212923312fde0c126ee41f5821759ae9df4272b9", size = 66124, upload-time = "2025-01-07T00:14:19.542Z" },
 ]
 
 [[package]]

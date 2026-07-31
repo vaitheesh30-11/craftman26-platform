@@ -84,6 +84,15 @@ class MemoryClient:
             }
         )
 
+    def invalidate_procedural(self, pattern_kind: str, pattern_hash: str) -> None:
+        """agents phase-17 §7 `repair/corrupted_memory`: a corrupted
+        procedural entry is repaired by dropping the cache row outright
+        (procedural memory is a TTL'd cache, not a source of truth -- the
+        next cache-miss recomputes it), rather than attempting to
+        reconstruct its contents in place.
+        """
+        self._procedural.delete_item({"pattern_kind": pattern_kind, "pattern_hash": pattern_hash})
+
 
 def _canonical(item: dict[str, Any]) -> str:
     comparable = {k: v for k, v in item.items() if k not in ("entity_kind", "entity_key")}

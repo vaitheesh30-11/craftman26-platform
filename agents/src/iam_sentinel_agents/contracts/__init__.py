@@ -19,6 +19,7 @@ from iam_sentinel_agents.contracts.data_event import (
 )
 from iam_sentinel_agents.contracts.decision import DecisionRecord
 from iam_sentinel_agents.contracts.evidence import EvidenceKind, EvidenceRecord, EvidenceRef
+from iam_sentinel_agents.contracts.fault import ActionTaken, FaultClass, FaultRecord
 from iam_sentinel_agents.contracts.finding import AwsDocCitation, Finding
 from iam_sentinel_agents.contracts.knowledge_base import Corpus, KbManifest, QuoteHash
 from iam_sentinel_agents.contracts.memory import (
@@ -63,6 +64,7 @@ __all__ = [
     "FALSE_POSITIVE_CLASSIFICATIONS",
     "ORG_ID_PATTERN",
     "ULID_PATTERN",
+    "ActionTaken",
     "AwsDocCitation",
     "Base",
     "BlastPath",
@@ -74,6 +76,8 @@ __all__ = [
     "EvidenceKind",
     "EvidenceRecord",
     "EvidenceRef",
+    "FaultClass",
+    "FaultRecord",
     "FeatureID",
     "Finding",
     "KbManifest",

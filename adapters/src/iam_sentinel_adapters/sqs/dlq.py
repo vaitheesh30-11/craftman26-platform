@@ -47,3 +47,26 @@ class DlqClient:
                 f"failed to read queue attributes for {queue_url}: {exc}"
             ) from exc
         return int(response.get("Attributes", {}).get("ApproximateNumberOfMessages", 0))
+
+    def get_age_of_oldest_message(self, queue_url: str) -> int:
+        """`ApproximateAgeOfOldestMessage` in seconds -- agents phase-17 §6
+        Step 3: the watchdog scanner alarms `SessionKillQueue.fifo` when
+        this exceeds 5 minutes. Same eventually-consistent SQS-side
+        approximation caveat as `get_depth`.
+        """
+        return self._get_age_attribute(queue_url)
+
+    @retry(policy=Policy.CAUTIOUS, retry_on=(ThrottlingError,))
+    def _get_age_attribute(self, queue_url: str) -> int:
+        try:
+            response = self._sqs.get_queue_attributes(
+                QueueUrl=queue_url, AttributeNames=["ApproximateAgeOfOldestMessage"]
+            )
+        except ClientError as exc:
+            code = exc.response.get("Error", {}).get("Code", "")
+            if code in _THROTTLE_CODES:
+                raise ThrottlingError(str(exc)) from exc
+            raise NonRetryableError(
+                f"failed to read queue attributes for {queue_url}: {exc}"
+            ) from exc
+        return int(response.get("Attributes", {}).get("ApproximateAgeOfOldestMessage", 0))
