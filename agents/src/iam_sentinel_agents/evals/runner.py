@@ -15,9 +15,9 @@ structure and Pydantic's field validators (`Finding.aws_doc_citation`,
 `Verdict` enum) are the ground truth. Only grounding needs a second LLM
 call.
 
-If `XAI_API_KEY` is unprovisioned (ADR 0007; still true as of ADR 0032),
+If `XAI_API_KEY` is unprovisioned (ADR 0007; still true as of ADR 0036),
 every phase reports `blocked` rather than inventing a score -- see
-docs/decisions/0032-agents-phase-12-observability-evals-scope.md.
+docs/decisions/0036-agents-phase-12-observability-evals-scope.md.
 """
 
 from __future__ import annotations
@@ -317,7 +317,7 @@ def main(argv: Iterable[str] | None = None) -> int:
     if adapter_settings.llm_provider == "grok" and not adapter_settings.xai_api_key:
         print(
             f"phase {phase}: NOT RUN -- XAI_API_KEY unprovisioned "
-            "(ADR 0007, ADR 0032). This is a real, pre-existing blocker, not a failure."
+            "(ADR 0007, ADR 0036). This is a real, pre-existing blocker, not a failure."
         )
         return 0
 

@@ -1,4 +1,4 @@
-# ADR 0032 — agents phase-12: observability + evals scope, and the
+# ADR 0036 — agents phase-12: observability + evals scope, and the
 XAI_API_KEY blocker that closes (and reopens) every prior phase's deferral
 
 Status: accepted
