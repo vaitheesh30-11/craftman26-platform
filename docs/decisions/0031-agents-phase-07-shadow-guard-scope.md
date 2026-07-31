@@ -16,20 +16,27 @@ dependency were resolved building this phase, same shape of gap as ADR 0015
 ## Decision
 
 - **The shared SCP evaluation engine phase-07 §4 Step 2 calls
-  `scp_engine.evaluate_action` and credits to "phase-05" does not exist.**
-  Only agents phase-00 (foundation) and phase-02 (F1) are built on `main`;
-  phase-05 (F4 SCP Impact Analyst, `agents/docs/phase-05-scp-impact-
-  analyst.txt`), the module's originally-planned author, hasn't landed.
-  `agents/src/iam_sentinel_agents/tools/common/scp_engine.py` implements
-  phase-05 §4 Step 2's algorithm now, under F6, matching its published
+  `scp_engine.evaluate_action` and credits to "phase-05" did not exist at
+  the time this phase's build started.** Only agents phase-00 (foundation)
+  and phase-02 (F1) were on `main` then; phase-05 (F4 SCP Impact Analyst,
+  `agents/docs/phase-05-scp-impact-analyst.txt`), the module's originally-
+  planned author, had not yet landed. `agents/src/iam_sentinel_agents/
+  tools/common/shadow_guard_scp_evaluator.py` implements phase-05 §4 Step
+  2's algorithm here, under F6, matching phase-05's published
   `evaluate_action(chain, action, resource, principal_tags, principal_arn)
-  -> EvaluationResult` signature exactly (not a narrowed F6-only variant) so
-  phase-05 can adopt it unmodified. `EvaluationResult` tracks a boolean
-  allowed-so-far rather than materializing phase-05's literal "set of all
-  actions" `effective_allowed` description -- no AWS API enumerates that
-  set, and every real consumer (`BlockedInvocation`, `ShadowViolation`)
-  only ever asks "is this one action allowed," which is what
-  `evaluate_action` answers per call.
+  -> EvaluationResult` signature (not a narrowed F6-only variant) so it
+  would have been trivial for phase-05 to adopt unmodified had it landed
+  first. `EvaluationResult` tracks a boolean allowed-so-far rather than
+  materializing phase-05's literal "set of all actions" `effective_allowed`
+  description -- no AWS API enumerates that set, and every real consumer
+  (`BlockedInvocation`, `ShadowViolation`) only ever asks "is this one
+  action allowed," which is what `evaluate_action` answers per call.
+  Phase-05 in fact merged to `main` before this phase did (see Consequences
+  §5) with its own, independently-written `tools/common/
+  scp_policy_evaluator.py` implementing the same algorithm under a
+  different module name -- reconciling the two was evaluated at merge time
+  and deliberately deferred rather than attempted under merge pressure; see
+  Consequences §5(a) for why.
 - **The `SentinelPolicies` DDB table (docs/DATA_CONTRACTS.md §9) had no
   client.** ADR 0006 scoped adapters/ddb to 3 representative table clients
   plus "add the remaining 9 on-demand when the specialist ... that
@@ -111,10 +118,17 @@ dependency were resolved building this phase, same shape of gap as ADR 0015
    entries), not just a naming collision, so it was properly unified rather
    than renamed: `PoliciesCacheClient` gained `put_policy`/`get_chain`/
    `is_stale` (this phase's needs) while keeping F4's exact `get`/`put`
-   signature and return shape unchanged. This phase's own duplicate
-   `adapters/tests/unit/test_policies_client.py` and `policies_table`
-   conftest fixture were dropped in favor of F4's already-merged, now-
-   extended versions. (c) a real bug in this phase's own test fixture was
+   signature and return shape unchanged -- every item still carries F4's
+   `policy_ref`/`expires_at` attributes; F6's writer (`put_policy`) adds
+   `level`/`cached_at` alongside them on the same item rather than a second,
+   incompatible shape. This phase's own `adapters/tests/unit/
+   test_policies_client.py` was merged with F4's already-merged version
+   (kept F4's original test names/fixtures verbatim, added this phase's
+   `put_policy`/`get_chain`/`is_stale` coverage plus two tests asserting an
+   item written by F4's original `put()` -- no `level`/`cached_at` -- is
+   still read safely by F6's new methods) rather than dropped; the
+   `policies_table` conftest fixture this phase added did not collide (F4
+   had none) and was kept as-is. (c) a real bug in this phase's own test fixture was
    found while re-verifying post-merge: `tests/unit/f6/test_scp_refresh.py`'s
    mock `list_organizational_units_for_parent` paginator ignored `ParentId`
    entirely, returning the same OU list for every parent -- causing the
@@ -128,3 +142,19 @@ dependency were resolved building this phase, same shape of gap as ADR 0015
    `service:Action` string and filters write verbs; this phase only maps
    an `eventSource` hostname to its bare service prefix and tracks curation
    drift). Renamed to `tools/common/shadow_guard_service_map.py`.
+6. Test-plan gaps closed after the WIP resumed (phase-07 §8): a mypy
+   `--strict` Literal-typing gap in `ingest.py`'s `_principal_type` (it
+   returned bare `str`); a moto-backed `adapters/tests/unit/
+   test_policies_client.py` (the WIP's `PoliciesCacheClient` had zero
+   direct test coverage before merge -- only reachable indirectly through
+   `tools/f6` tests using a `MagicMock`); a Hypothesis property test
+   (`tests/unit/f6/test_service_map_properties.py`) for the top-50-service
+   prefix mapping §8 calls for; a prompt-injection test on `ingest.py`'s
+   `principal_arn` handling (a crafted directive-shaped ARN must be
+   embedded as literal `Finding.detail` text, never change the computed
+   verdict); a fixture-driven CDK-snippet snapshot test
+   (`tests/unit/f6/test_cdk_templates.py`, plus a `compile()`-based syntax
+   check standing in for the deferred `cdk synth`); and an F6 golden-eval
+   schema gate (`tests/unit/test_f6_golden_schema.py`) mirroring
+   `test_f1_golden_schema.py`, which the WIP's `evals/f6/golden.jsonl` had
+   no schema test enforcing.
