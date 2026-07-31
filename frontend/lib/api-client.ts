@@ -11,6 +11,7 @@ import type {
   CostReportOut,
   DecisionOut,
   DecisionsPage,
+  EvidenceOut,
   FaultsPage,
   FindingOut,
   FindingsPage,
@@ -89,6 +90,11 @@ export const apiClient = {
     }),
 
   getFinding: (findingId: string): Promise<FindingOut> => request(`/findings/${encodeURIComponent(findingId)}`),
+
+  // `/evidence/{ref}` (backend phase-04) is being built in parallel and may
+  // 404/502 until that branch merges -- callers (EvidenceViewer) must treat
+  // any rejection as "not verifiable yet," not a crash.
+  getEvidence: (ref: string): Promise<EvidenceOut> => request(`/evidence/${encodeURIComponent(ref)}`),
 
   listDecisions: (params: { next_token?: string; limit?: number } = {}): Promise<DecisionsPage> =>
     request("/decisions", {

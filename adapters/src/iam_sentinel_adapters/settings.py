@@ -29,6 +29,7 @@ class AdapterSettings(BaseSettings):
     evidence_bucket: str = "sentinel-evidence-dev"
     evidence_kms_key_arn: str = ""
     findings_table: str = "SentinelFindings-dev"
+    slrs_table: str = "SentinelSLRs-dev"
     decisions_table: str = "SentinelDecisions-dev"
     decisions_in_flight_table: str = "SentinelDecisionsInFlight-dev"
     idempotency_table: str = "SentinelIdempotency-dev"
@@ -54,6 +55,29 @@ class AdapterSettings(BaseSettings):
     router_function_name: str = ""
     connections_table: str = "SentinelConnections-dev"
     policies_table: str = "SentinelPolicies-dev"
+    divergence_table: str = "SentinelDivergence-dev"
+    revocations_table: str = "SentinelRevocations-dev"
+    session_kill_queue_url: str = ""
+    emergency_revocations_topic_arn: str = ""
+    never_revoke_ssm_param: str = "/sentinel/never-revoke-role-patterns"
+
+    # backend phase-04 §2 step 2 / ADR 0029: no runtime registry of "every
+    # breaker that exists" or "every DLQ that exists" is provisioned anywhere
+    # in the codebase (`SentinelBreakers` is a bare key-value table with no
+    # scan-all convention, and DLQ queue URLs are only known inside CDK synth
+    # output, not published to SSM by any deployed stack yet) -- both lists
+    # are therefore settings-driven (comma-separated) rather than
+    # dynamically discovered. Defaults cover the breaker names already real
+    # in code today (every `DynamoDbHelper`-backed table name, `bedrock`,
+    # `zelkova`); `dlq_queue_urls` defaults empty until aws-infra publishes
+    # real queue URLs for this environment.
+    known_breaker_names: str = (
+        "SentinelFindings-dev,SentinelDecisions-dev,SentinelDecisionsInFlight-dev,"
+        "SentinelMemoryEpisodic-dev,SentinelMemorySemantic-dev,SentinelMemoryProcedural-dev,"
+        "SentinelBudget-dev,SentinelFaults-dev,SentinelDivergence-dev,SentinelConnections-dev,"
+        "SentinelIdempotency-dev,bedrock,zelkova"
+    )
+    dlq_queue_urls: str = ""
 
 
 settings = AdapterSettings()

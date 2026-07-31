@@ -15,6 +15,8 @@ from iam_sentinel_agents.contracts import (
     DecisionRecord,
     EvidenceRef,
     Finding,
+    OrgContextClassification,
+    OrgContextPayload,
     PassRoleBlastPayload,
     PassRoleEdge,
     RemediationPlan,
@@ -183,6 +185,38 @@ def make_passrole_blast_payload() -> PassRoleBlastPayload:
         blast_score="CRITICAL",
         graph_stats={"nodes": 2, "edges": 1, "depth": 2, "aborted": 0},
     )
+
+
+VALID_ANALYZER_ARN = "arn:aws:access-analyzer:us-east-1:111122223333:analyzer/org-analyzer"
+VALID_ORG_ID = "o-a1b2c3d4e5"
+
+
+def make_org_context_classification(**overrides: Any) -> OrgContextClassification:
+    defaults: dict[str, Any] = {
+        "finding_id": "8f2e6b1c-1234-4abc-9def-0123456789ab",
+        "analyzer_arn": VALID_ANALYZER_ARN,
+        "classification": "FALSE_POSITIVE_ORG_SCOPED",
+        "org_id": VALID_ORG_ID,
+        "matched_condition_key": "aws:PrincipalOrgId",
+        "matched_condition_value": VALID_ORG_ID,
+        "real_ou_paths": [f"{VALID_ORG_ID}/r-ab12/"],
+        "real_account_ids": [VALID_ACCOUNT],
+        "rationale": "condition aws:PrincipalOrgId matches real org",
+    }
+    defaults.update(overrides)
+    return OrgContextClassification(**defaults)
+
+
+def make_org_context_payload(**overrides: Any) -> OrgContextPayload:
+    defaults: dict[str, Any] = {
+        "analyzer_arn": VALID_ANALYZER_ARN,
+        "total_findings": 1,
+        "classifications": [make_org_context_classification()],
+        "archived_count": 0,
+        "archive_rule_id": None,
+    }
+    defaults.update(overrides)
+    return OrgContextPayload(**defaults)
 
 
 def make_decision() -> DecisionRecord:

@@ -149,8 +149,14 @@ securityhub = [
 sns = [
     { name = "mypy-boto3-sns" },
 ]
+sqs = [
+    { name = "mypy-boto3-sqs" },
+]
 ssm = [
     { name = "mypy-boto3-ssm" },
+]
+stepfunctions = [
+    { name = "mypy-boto3-stepfunctions" },
 ]
 sts = [
     { name = "mypy-boto3-sts" },
@@ -385,7 +391,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "boto3-stubs", extra = ["bedrock-agent-runtime", "bedrock-runtime", "dynamodb", "iam", "kms", "lambda", "s3", "securityhub", "sns", "ssm", "sts"] },
+    { name = "boto3-stubs", extra = ["bedrock-agent-runtime", "bedrock-runtime", "dynamodb", "iam", "kms", "lambda", "s3", "securityhub", "sns", "sqs", "ssm", "stepfunctions", "sts"] },
     { name = "hypothesis" },
     { name = "moto", extra = ["all"] },
     { name = "mypy" },
@@ -409,7 +415,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "boto3-stubs", extras = ["dynamodb", "kms", "s3", "iam", "ssm", "bedrock-runtime", "bedrock-agent-runtime", "securityhub", "sns", "sts", "lambda"], specifier = "==1.35.36" },
+    { name = "boto3-stubs", extras = ["dynamodb", "kms", "s3", "iam", "ssm", "bedrock-runtime", "bedrock-agent-runtime", "securityhub", "sns", "sts", "lambda", "stepfunctions", "sqs"], specifier = "==1.35.36" },
     { name = "hypothesis", specifier = "==6.112.4" },
     { name = "moto", extras = ["all"], specifier = "==5.0.16" },
     { name = "mypy", specifier = "==1.11.2" },
@@ -744,12 +750,30 @@ wheels = [
 ]
 
 [[package]]
+name = "mypy-boto3-sqs"
+version = "1.35.93"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/29/5b/040ba82c53d5edf578ad0aafcac501b91a259b40f296ef6662db975b6595/mypy_boto3_sqs-1.35.93.tar.gz", hash = "sha256:8ea7f63e0878544705c31996ae4c064095fbb4f780f8323a84f7a75281d643fe", size = 23344, upload-time = "2025-01-07T00:49:44.507Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/82/eb/d8c10da3f905921f70f008f3bca092711e316ced49287e42f45309860aca/mypy_boto3_sqs-1.35.93-py3-none-any.whl", hash = "sha256:341974f77e66851b9a4190d0014481e6baabae82d32f9ee559faa823b693609b", size = 33491, upload-time = "2025-01-07T00:49:41.734Z" },
+]
+
+[[package]]
 name = "mypy-boto3-ssm"
 version = "1.35.93"
 source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/b4/c9/8ca5f557882bf3c5aa9ae8ad886259b4602a2bea621b088dad154d5ae712/mypy_boto3_ssm-1.35.93.tar.gz", hash = "sha256:2e2610e33ca4a075595d30fa061ef2e54c9d9b6ced14a196316dcd032372dd8c", size = 93771, upload-time = "2025-01-07T00:50:01.48Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/09/96/2b7e48115dd2ba4f477dbafd426337986d3f7b9875a5965459cafe78cf98/mypy_boto3_ssm-1.35.93-py3-none-any.whl", hash = "sha256:7c115ee920e994ffc12408685b4236f4ad72f64a971c380aa63be21becf297ad", size = 95094, upload-time = "2025-01-07T00:49:58.344Z" },
+]
+
+[[package]]
+name = "mypy-boto3-stepfunctions"
+version = "1.35.93"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/ec/f9/44a59a6c84edfd94477e5427befcbecdb4f92ae34d897536671dc4994e23/mypy_boto3_stepfunctions-1.35.93.tar.gz", hash = "sha256:20230615c42e7aabbd43b62657ca3534e96767245705d12d42672ac87cd1b59c", size = 30894, upload-time = "2025-01-07T00:50:40.635Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/da/39/0964782eff12ec9c22a5dd78bc19f755df313fb6aa1215293444899dc40e/mypy_boto3_stepfunctions-1.35.93-py3-none-any.whl", hash = "sha256:7994450153298b87382119680d7fae4d8b5a6e6250cef364148ad8d0b84bd237", size = 35602, upload-time = "2025-01-07T00:50:36.48Z" },
 ]
 
 [[package]]

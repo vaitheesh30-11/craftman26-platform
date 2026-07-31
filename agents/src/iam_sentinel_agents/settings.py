@@ -27,6 +27,13 @@ class AgentSettings(BaseSettings):
     evidence_bucket: str = "sentinel-evidence-dev"
     kms_key_arn: str = ""
     cross_account_role_name: str = "SentinelCrossAccountRole"
+    # F3 (agents phase-04 §4 Step 1): "name from SSM" — no SSM Parameter
+    # Store client exists yet in adapters/, so this carries the same
+    # placeholder-default convention aws-infra ADR 0009 used for
+    # `org_trail_bucket_name` (an external, not-yet-real resource this
+    # phase only references, not provisions).
+    org_trail_name: str = "sentinel-org-trail"
+    athena_output_location: str = "s3://sentinel-athena-results-dev/f3/"
     log_level: str = "INFO"
     metric_namespace: str = "IAMSentinel"
     kb_manifest_path: str = ""
@@ -39,6 +46,11 @@ class AgentSettings(BaseSettings):
     mgmt_org_id: str = ""
     mgmt_account_id: str = "000000000000"
     mgmt_cloudtrail_log_group_ssm_param: str = "/sentinel/mgmt-cloudtrail-log-group"
+    athena_database: str = "sentinel_cloudtrail"
+    revocations_table: str = "SentinelRevocations-dev"
+    session_kill_queue_url: str = ""
+    emergency_revocations_topic_arn: str = ""
+    never_revoke_ssm_param: str = "/sentinel/never-revoke-role-patterns"
 
 
 settings = AgentSettings()

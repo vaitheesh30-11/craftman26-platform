@@ -11,15 +11,22 @@ from typing import TYPE_CHECKING
 
 from fastapi import Depends, Request, status
 from iam_sentinel_adapters.apigw.management import ManagementApiClient
+from iam_sentinel_adapters.circuit_breaker import BreakerAccessor
 from iam_sentinel_adapters.compute.lambda_client import LambdaInvokeClient
+from iam_sentinel_adapters.compute.step_functions_client import StepFunctionsClient
 from iam_sentinel_adapters.ddb.connections import ConnectionsClient
 from iam_sentinel_adapters.ddb.decisions import DecisionsClient
 from iam_sentinel_adapters.ddb.decisions_in_flight import DecisionsInFlightClient
+from iam_sentinel_adapters.ddb.divergence import DivergenceClient
 from iam_sentinel_adapters.ddb.faults import FaultsClient
 from iam_sentinel_adapters.ddb.findings import FindingsClient
+from iam_sentinel_adapters.ddb.idempotency import IdempotencyClient
+from iam_sentinel_adapters.evidence.client import EvidenceClient
 from iam_sentinel_adapters.llm.factory import get_provider
 from iam_sentinel_adapters.s3.reports import ReportsClient
 from iam_sentinel_adapters.settings import settings as adapter_settings
+from iam_sentinel_adapters.sqs.dlq import DlqClient
+from iam_sentinel_adapters.ssm.params import SsmParameterClient
 
 from iam_sentinel_backend.auth.breakglass import (
     BreakGlassVerificationError,
@@ -35,8 +42,10 @@ from iam_sentinel_backend.errors import SentinelHTTPException
 from iam_sentinel_backend.services.approval_service import ApprovalService
 from iam_sentinel_backend.services.chat_service import ChatService
 from iam_sentinel_backend.services.decisions_service import DecisionsService
+from iam_sentinel_backend.services.evidence_service import EvidenceService
 from iam_sentinel_backend.services.findings_service import FindingsService
 from iam_sentinel_backend.services.operations_service import OperationsService
+from iam_sentinel_backend.services.reports_service import ReportsService
 from iam_sentinel_backend.services.router_bridge_service import RouterBridgeService
 from iam_sentinel_backend.settings import settings
 from iam_sentinel_backend.ws.fanout import StreamFanoutService
@@ -173,6 +182,41 @@ def get_management_client() -> ManagementApiClient:
     return ManagementApiClient()
 
 
+@lru_cache(maxsize=1)
+def get_idempotency_client() -> IdempotencyClient:
+    return IdempotencyClient()
+
+
+@lru_cache(maxsize=1)
+def get_step_functions_client() -> StepFunctionsClient:
+    return StepFunctionsClient()
+
+
+@lru_cache(maxsize=1)
+def get_ssm_parameter_client() -> SsmParameterClient:
+    return SsmParameterClient()
+
+
+@lru_cache(maxsize=1)
+def get_divergence_client() -> DivergenceClient:
+    return DivergenceClient()
+
+
+@lru_cache(maxsize=1)
+def get_breaker_accessor() -> BreakerAccessor:
+    return BreakerAccessor()
+
+
+@lru_cache(maxsize=1)
+def get_dlq_client() -> DlqClient:
+    return DlqClient()
+
+
+@lru_cache(maxsize=1)
+def get_evidence_client() -> EvidenceClient:
+    return EvidenceClient()
+
+
 def get_findings_service(
     findings_client: FindingsClient = Depends(get_findings_client),
 ) -> FindingsService:
@@ -188,8 +232,25 @@ def get_decisions_service(
 def get_operations_service(
     faults_client: FaultsClient = Depends(get_faults_client),
     reports_client: ReportsClient = Depends(get_reports_client),
+    divergence_client: DivergenceClient = Depends(get_divergence_client),
+    breaker_accessor: BreakerAccessor = Depends(get_breaker_accessor),
+    dlq_client: DlqClient = Depends(get_dlq_client),
 ) -> OperationsService:
-    return OperationsService(faults_client, reports_client)
+    return OperationsService(
+        faults_client, reports_client, divergence_client, breaker_accessor, dlq_client
+    )
+
+
+def get_reports_service(
+    reports_client: ReportsClient = Depends(get_reports_client),
+) -> ReportsService:
+    return ReportsService(reports_client)
+
+
+def get_evidence_service(
+    evidence_client: EvidenceClient = Depends(get_evidence_client),
+) -> EvidenceService:
+    return EvidenceService(evidence_client)
 
 
 def get_router_bridge_service(
@@ -207,8 +268,18 @@ def get_chat_service(
 
 def get_approval_service(
     decisions_client: DecisionsClient = Depends(get_decisions_client),
+    idempotency_client: IdempotencyClient = Depends(get_idempotency_client),
+    step_functions_client: StepFunctionsClient = Depends(get_step_functions_client),
+    ssm_client: SsmParameterClient = Depends(get_ssm_parameter_client),
+    evidence_client: EvidenceClient = Depends(get_evidence_client),
 ) -> ApprovalService:
-    return ApprovalService(decisions_client)
+    return ApprovalService(
+        decisions_client,
+        idempotency_client=idempotency_client,
+        step_functions_client=step_functions_client,
+        ssm_client=ssm_client,
+        evidence_client=evidence_client,
+    )
 
 
 @lru_cache(maxsize=1)

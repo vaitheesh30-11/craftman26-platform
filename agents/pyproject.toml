@@ -36,7 +36,7 @@ dev = [
     "ruff==0.6.9",
     "mypy==1.11.2",
     "types-boto3==1.0.2",
-    "boto3-stubs[iam,organizations,accessanalyzer,cloudtrail,dynamodb,s3,sns,sqs,sts,bedrock-agent,bedrock-agent-runtime,bedrock-runtime,kms,athena,glue,securityhub]==1.35.36",
+    "boto3-stubs[iam,organizations,accessanalyzer,cloudtrail,dynamodb,s3,sns,sqs,sts,sso-admin,ssm,bedrock-agent,bedrock-agent-runtime,bedrock-runtime,kms,athena,glue,securityhub]==1.35.36",
 ]
 
 [build-system]

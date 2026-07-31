@@ -70,5 +70,14 @@ class BackendSettings(BaseSettings):
     # phase-02 §4 step 4: 128 KB per WebSocket frame.
     ws_max_frame_bytes: int = 128 * 1024
 
+    @property
+    def approval_state_machine_ssm_param(self) -> str:
+        """backend phase-03 §3 step 3: `SentinelApprovalApply`'s ARN is
+        resolved at call time from SSM rather than a required env var, so
+        `aws-infra` can publish it once the state machine is actually built
+        (it is not yet) without a backend redeploy.
+        """
+        return f"/sentinel/{self.stage}/approval/state-machine-arn"
+
 
 settings = BackendSettings()

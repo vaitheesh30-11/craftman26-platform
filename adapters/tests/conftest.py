@@ -117,6 +117,18 @@ def policies_table(moto_session: None) -> Table:
 
 
 @pytest.fixture
+def slrs_table(moto_session: None) -> Table:
+    ddb = boto3.resource("dynamodb", region_name=_REGION)
+    ddb.create_table(
+        TableName="SentinelSLRs-test",
+        KeySchema=[{"AttributeName": "service_principal", "KeyType": "HASH"}],
+        AttributeDefinitions=[{"AttributeName": "service_principal", "AttributeType": "S"}],
+        BillingMode="PAY_PER_REQUEST",
+    )
+    return ddb.Table("SentinelSLRs-test")
+
+
+@pytest.fixture
 def decisions_in_flight_table(moto_session: None) -> Table:
     ddb = boto3.resource("dynamodb", region_name=_REGION)
     ddb.create_table(
@@ -184,6 +196,36 @@ def faults_table(moto_session: None) -> Table:
         BillingMode="PAY_PER_REQUEST",
     )
     return ddb.Table("SentinelFaults-test")
+
+
+@pytest.fixture
+def divergence_table(moto_session: None) -> Table:
+    ddb = boto3.resource("dynamodb", region_name=_REGION)
+    ddb.create_table(
+        TableName="SentinelDivergence-test",
+        KeySchema=[
+            {"AttributeName": "correlation_id", "KeyType": "HASH"},
+            {"AttributeName": "detected_at", "KeyType": "RANGE"},
+        ],
+        AttributeDefinitions=[
+            {"AttributeName": "correlation_id", "AttributeType": "S"},
+            {"AttributeName": "detected_at", "AttributeType": "S"},
+            {"AttributeName": "feature_id", "AttributeType": "S"},
+            {"AttributeName": "divergence_kind", "AttributeType": "S"},
+        ],
+        GlobalSecondaryIndexes=[
+            {
+                "IndexName": "feature-divergence-index",
+                "KeySchema": [
+                    {"AttributeName": "feature_id", "KeyType": "HASH"},
+                    {"AttributeName": "divergence_kind", "KeyType": "RANGE"},
+                ],
+                "Projection": {"ProjectionType": "ALL"},
+            }
+        ],
+        BillingMode="PAY_PER_REQUEST",
+    )
+    return ddb.Table("SentinelDivergence-test")
 
 
 @pytest.fixture
@@ -267,3 +309,21 @@ def connections_table(moto_session: None) -> Table:
 @pytest.fixture
 def moto_breaker(breakers_table: Table) -> BreakerAccessor:
     return BreakerAccessor(table=breakers_table)
+
+
+@pytest.fixture
+def policies_table(moto_session: None) -> Table:
+    ddb = boto3.resource("dynamodb", region_name=_REGION)
+    ddb.create_table(
+        TableName="SentinelPolicies-test",
+        KeySchema=[
+            {"AttributeName": "org_id", "KeyType": "HASH"},
+            {"AttributeName": "policy_arn", "KeyType": "RANGE"},
+        ],
+        AttributeDefinitions=[
+            {"AttributeName": "org_id", "AttributeType": "S"},
+            {"AttributeName": "policy_arn", "AttributeType": "S"},
+        ],
+        BillingMode="PAY_PER_REQUEST",
+    )
+    return ddb.Table("SentinelPolicies-test")
