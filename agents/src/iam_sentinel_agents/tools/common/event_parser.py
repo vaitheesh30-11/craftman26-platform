@@ -49,7 +49,15 @@ def _coerce_typed_value(raw_type: str, raw_value: str) -> Any:
         return float(raw_value)
     if normalized == "boolean":
         return raw_value.strip().lower() in {"true", "1", "yes"}
-    if normalized == "array":
+    if normalized in ("array", "object"):
+        # Bedrock JSON-encodes both `array` and `object` typed parameters
+        # into the same string `value` field every scalar type uses --
+        # F1..F7's action groups only ever declare scalar parameters
+        # (string/integer/boolean), so this branch was untested until F8's
+        # `slr_scan(proposed_scp: object)` became the first caller to pass
+        # a JSON object parameter. Real bug found while building phase-09;
+        # fixed here rather than left for whichever specialist first needed
+        # an object-typed tool parameter (docs/decisions/0023).
         return json.loads(raw_value)
     return raw_value
 

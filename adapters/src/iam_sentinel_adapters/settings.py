@@ -29,6 +29,7 @@ class AdapterSettings(BaseSettings):
     evidence_bucket: str = "sentinel-evidence-dev"
     evidence_kms_key_arn: str = ""
     findings_table: str = "SentinelFindings-dev"
+    slrs_table: str = "SentinelSLRs-dev"
     decisions_table: str = "SentinelDecisions-dev"
     decisions_in_flight_table: str = "SentinelDecisionsInFlight-dev"
     idempotency_table: str = "SentinelIdempotency-dev"
