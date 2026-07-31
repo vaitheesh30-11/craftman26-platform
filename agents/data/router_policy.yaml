@@ -1,0 +1,63 @@
+# Router policy (agents phase-15 §4 Router Policy Matrix). Data-driven so
+# ops can hot-swap it via SSM param `/sentinel/router/policy` (cached 5 min,
+# `tools/common/router.load_policy`) without a redeploy. `RequestRouter`
+# implements the decision *tree* in code (agents/README.md §1's "policy is
+# data, logic is code" split, same as F6's service_prefixes curated table);
+# this file only supplies the thresholds and lookup tables that tree reads.
+version: 1
+
+# API path -> fast-path dispatch target + the fields that must be present
+# (with no `query_text`) for the path to actually qualify as Fast per the
+# matrix's first row ("Structured payload only"). `/emergency/kill-session`
+# is listed for completeness even though rule R0 in router.py matches it
+# unconditionally (F5's dispatcher is deterministic; no ambiguity path).
+fast_path_routes:
+  /analyze/passrole:
+    target: F1
+    required_fields: [account_id]
+  /analyze/org-context:
+    target: F2
+    required_fields: [account_id]
+  /enrich/policy:
+    target: F3
+    required_fields: [role_arn]
+  /analyze/scp-impact:
+    target: F4
+    required_fields: [proposed_scp, target_ou_id]
+  /emergency/kill-session:
+    target: F5
+    required_fields: [permission_set_arn]
+  /resolve/scp-collisions:
+    target: F7
+    required_fields: [account_id]
+  /scan/slr-breakage:
+    target: F8
+    required_fields: [proposed_scp]
+
+# §4 row: "Any query mentioning why/explain/compare/recommend" -> Slow.
+reasoning_keywords:
+  - why
+  - explain
+  - compare
+  - recommend
+
+# §4 row: "include_narrative=true in query hints" -> Slow.
+narrative_hint_key: include_narrative
+
+# §4 row: "Query touches >= 2 features (routing decision)" -> Slow.
+multi_feature_threshold: 2
+
+# §3: "sampled rate (default 5%)" in prod; dev/staging shadow continuously.
+shadow_sampling_rate:
+  dev: 1.0
+  staging: 1.0
+  prod: 0.05
+
+# §10 risk mitigation: every fast-path Finding severity >= HIGH is randomly
+# shadow-verified at 100% for the first 30 days after a router change (the
+# `router_change_window_days` bound; `high_severity_shadow_rate` is what
+# `RequestRouter.execute` upgrades a would-be `fast` decision to `shadow`
+# with, when the caller signals `min_severity_hint >= HIGH` and the policy
+# was changed within this window).
+high_severity_shadow_rate: 1.0
+router_change_window_days: 30
