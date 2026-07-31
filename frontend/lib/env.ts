@@ -20,6 +20,10 @@ const publicEnvSchema = z.object({
   // params into this env var must compose the region suffix.
   NEXT_PUBLIC_COGNITO_DOMAIN: z.string().min(1).default("local-dev.auth.invalid"),
   NEXT_PUBLIC_APP_ORIGIN: z.string().url().default("http://localhost:3000"),
+  // aws-infra publishes the real value to `/sentinel/{stage}/api/websocket/url`
+  // (see ADR 0022) -- wiring that SSM param into a build-time env var is a
+  // deploy-pipeline concern, not this repo's frontend code.
+  NEXT_PUBLIC_WS_URL: z.string().url().default("ws://localhost:8081/dev"),
   NEXT_PUBLIC_USE_LIVE_BACKEND: z
     .enum(["true", "false"])
     .default("false")
@@ -49,6 +53,7 @@ export function getPublicEnv(): PublicEnv {
       NEXT_PUBLIC_COGNITO_CLIENT_ID: process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID,
       NEXT_PUBLIC_COGNITO_DOMAIN: process.env.NEXT_PUBLIC_COGNITO_DOMAIN,
       NEXT_PUBLIC_APP_ORIGIN: process.env.NEXT_PUBLIC_APP_ORIGIN,
+      NEXT_PUBLIC_WS_URL: process.env.NEXT_PUBLIC_WS_URL,
       NEXT_PUBLIC_USE_LIVE_BACKEND: process.env.NEXT_PUBLIC_USE_LIVE_BACKEND,
     });
   }

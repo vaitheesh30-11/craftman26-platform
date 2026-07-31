@@ -124,6 +124,13 @@ class StreamFanoutService:
     ) -> None:
         min_interval = 1.0 / self._rate_limit_per_second
         next_allowed_send = time.monotonic()
+        # `correlation_id` is minted server-side (`ws/default.py`) and, until
+        # now, was never surfaced to the client before the turn completed --
+        # a real protocol gap frontend phase-01 found while building the
+        # Cancel button (`POST {action: "cancel", correlation_id}` per
+        # phase-01 §4 has nothing to send without this). One extra frame,
+        # sent before invoking Prime, closes it.
+        self._send(endpoint_url, connection_id, "started", {"correlation_id": correlation_id})
         try:
             chunks = self._provider.invoke_agent_stream(
                 agent_id=settings.prime_agent_id,

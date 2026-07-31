@@ -92,6 +92,31 @@ export const handlers = [
     }),
   ),
 
+  http.get(`${BACKEND_ORIGIN}/decisions`, () =>
+    HttpResponse.json({
+      ok: true,
+      data: {
+        items: [
+          {
+            decision_id: "01JBQXMOCK0000000000000005",
+            correlation_id: "01JBQXMOCK0000000000000006",
+            principal: "arn:aws:iam::111122223333:user/dev",
+            query: {},
+            specialist_verdicts: [],
+            findings: [],
+            remediations_proposed: [],
+            remediations_applied: [],
+            status: "ANSWERED",
+            narrative: "Reviewed PassRole exposure for example-role.",
+            evidence_ref: {},
+            decided_at: nowIso(),
+          },
+        ],
+        next_token: null,
+      },
+    }),
+  ),
+
   http.get(`${BACKEND_ORIGIN}/decisions/:decisionId`, ({ params }) =>
     HttpResponse.json({
       ok: true,

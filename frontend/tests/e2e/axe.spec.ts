@@ -24,3 +24,19 @@ test("authenticated dashboard layout has no serious or critical accessibility vi
   const serious = results.violations.filter((v) => v.impact === "serious" || v.impact === "critical");
   expect(serious, JSON.stringify(serious, null, 2)).toEqual([]);
 });
+
+// phase-01 §8: "axe-core clean." No `page.routeWebSocket` here -- the
+// composer and session rail are static/queryable regardless of whether the
+// live socket connects, and this scan only cares about the DOM shape.
+test("chat page has no serious or critical accessibility violations", async ({ page }) => {
+  await page.goto("/auth/login");
+  const signInHref = await page.getByRole("link", { name: "Sign in" }).getAttribute("href");
+  const state = new URL(signInHref!).searchParams.get("state");
+  await page.goto(`/auth/callback?code=mock-auth-code&state=${state}`);
+  await page.goto("/chat");
+  await expect(page.getByLabel("Message Sentinel Prime")).toBeVisible();
+
+  const results = await new AxeBuilder({ page }).analyze();
+  const serious = results.violations.filter((v) => v.impact === "serious" || v.impact === "critical");
+  expect(serious, JSON.stringify(serious, null, 2)).toEqual([]);
+});
