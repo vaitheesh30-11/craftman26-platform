@@ -42,7 +42,10 @@ class KbManifestProvider:
 
     def __call__(self) -> QuoteManifest | None:
         now = time.monotonic()
-        if self._cached is not None and now - self._loaded_at < settings.kb_manifest_refresh_seconds:
+        if (
+            self._cached is not None
+            and now - self._loaded_at < settings.kb_manifest_refresh_seconds
+        ):
             return self._cached
 
         parsed = self._client.get_verified()

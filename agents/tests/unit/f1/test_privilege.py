@@ -18,7 +18,10 @@ def test_administrator_access_by_managed_policy_name() -> None:
 
 def test_administrator_access_by_equivalent_statement() -> None:
     statements = [{"Effect": "Allow", "Action": "*", "Resource": "*"}]
-    assert classify_role_privilege(attached_policy_arns=[], statements=statements) == "AdministratorAccess"
+    assert (
+        classify_role_privilege(attached_policy_arns=[], statements=statements)
+        == "AdministratorAccess"
+    )
 
 
 def test_power_user_access_by_managed_policy_name() -> None:
@@ -40,16 +43,24 @@ def test_create_role_is_iam_write() -> None:
 
 def test_sensitive_service_kms() -> None:
     statements = [{"Effect": "Allow", "Action": "kms:Decrypt", "Resource": "*"}]
-    assert classify_role_privilege(attached_policy_arns=[], statements=statements) == "SensitiveService"
+    assert (
+        classify_role_privilege(attached_policy_arns=[], statements=statements)
+        == "SensitiveService"
+    )
 
 
 def test_sensitive_service_broad_assume_role() -> None:
     statements = [{"Effect": "Allow", "Action": "sts:AssumeRole", "Resource": "*"}]
-    assert classify_role_privilege(attached_policy_arns=[], statements=statements) == "SensitiveService"
+    assert (
+        classify_role_privilege(attached_policy_arns=[], statements=statements)
+        == "SensitiveService"
+    )
 
 
 def test_other_for_contained_permissions() -> None:
-    statements = [{"Effect": "Allow", "Action": "s3:GetObject", "Resource": "arn:aws:s3:::bucket/*"}]
+    statements = [
+        {"Effect": "Allow", "Action": "s3:GetObject", "Resource": "arn:aws:s3:::bucket/*"}
+    ]
     assert classify_role_privilege(attached_policy_arns=[], statements=statements) == "Other"
 
 

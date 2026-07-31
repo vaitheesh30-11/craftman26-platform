@@ -28,6 +28,11 @@ from iam_sentinel_agents.contracts.remediation import (
     RemediationPlan,
     ZelkovaCheck,
 )
+from iam_sentinel_agents.contracts.shadow_guard import (
+    CompensatingControl,
+    ShadowViolation,
+    ShadowViolationPayload,
+)
 from iam_sentinel_agents.contracts.task import SpecialistTask, UntrustedContextBlock
 from iam_sentinel_agents.contracts.verdict import SpecialistVerdict, ToolInvocation
 
@@ -38,6 +43,7 @@ __all__ = [
     "AwsDocCitation",
     "Base",
     "BlastPath",
+    "CompensatingControl",
     "Corpus",
     "DecisionRecord",
     "EvidenceKind",
@@ -54,6 +60,8 @@ __all__ = [
     "RemediationPlan",
     "SentinelQuery",
     "Severity",
+    "ShadowViolation",
+    "ShadowViolationPayload",
     "SpecialistTask",
     "SpecialistVerdict",
     "ToolInvocation",

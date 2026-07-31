@@ -51,8 +51,12 @@ def test_assume_caches_credentials_across_calls() -> None:
     with patch.object(
         cross_account, "_assume_role_once", wraps=cross_account._assume_role_once
     ) as spy:
-        cross_account.assume(ACCOUNT_ID, feature_id="F1", correlation_id="01JBP2VHF9K3Q0Z8R7X6M5N4A3")
-        cross_account.assume(ACCOUNT_ID, feature_id="F1", correlation_id="01JBP2VHF9K3Q0Z8R7X6M5N4A4")
+        cross_account.assume(
+            ACCOUNT_ID, feature_id="F1", correlation_id="01JBP2VHF9K3Q0Z8R7X6M5N4A3"
+        )
+        cross_account.assume(
+            ACCOUNT_ID, feature_id="F1", correlation_id="01JBP2VHF9K3Q0Z8R7X6M5N4A4"
+        )
 
     assert spy.call_count == 1
 
@@ -86,9 +90,7 @@ def test_invalid_account_id_rejected() -> None:
 
 
 def test_access_denied_is_never_retried() -> None:
-    error = ClientError(
-        {"Error": {"Code": "AccessDenied", "Message": "nope"}}, "AssumeRole"
-    )
+    error = ClientError({"Error": {"Code": "AccessDenied", "Message": "nope"}}, "AssumeRole")
     with (
         patch.object(cross_account, "_assume_role_once", side_effect=error),
         patch.object(cross_account.time, "sleep") as sleep_spy,
@@ -177,9 +179,7 @@ def _create_assumable_role() -> None:
     iam = boto3.client("iam", region_name="us-east-1")
     trust_policy: dict[str, Any] = {
         "Version": "2012-10-17",
-        "Statement": [
-            {"Effect": "Allow", "Principal": {"AWS": "*"}, "Action": "sts:AssumeRole"}
-        ],
+        "Statement": [{"Effect": "Allow", "Principal": {"AWS": "*"}, "Action": "sts:AssumeRole"}],
     }
     iam.create_role(
         RoleName=ROLE_NAME,

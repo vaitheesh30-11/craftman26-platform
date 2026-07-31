@@ -36,6 +36,9 @@ class AgentSettings(BaseSettings):
     prime_agent_id: str = ""
     prime_agent_alias_id: str = ""
     security_hub_account_id: str = ""
+    mgmt_org_id: str = ""
+    mgmt_account_id: str = "000000000000"
+    mgmt_cloudtrail_log_group_ssm_param: str = "/sentinel/mgmt-cloudtrail-log-group"
 
 
 settings = AgentSettings()

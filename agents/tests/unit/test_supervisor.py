@@ -21,7 +21,9 @@ RESULT:
 
 def _fake_provider(completion: str) -> MagicMock:
     provider = MagicMock()
-    provider.invoke_agent.return_value = BedrockAgentResponse(completion=completion, session_id="s1")
+    provider.invoke_agent.return_value = BedrockAgentResponse(
+        completion=completion, session_id="s1"
+    )
     return provider
 
 

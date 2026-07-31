@@ -56,8 +56,12 @@ from iam_sentinel_adapters.prompts.sanitizer import sanitize_untrusted
 
 CORPUS_PATH = Path(__file__).parent / "corpus.jsonl"
 
-_RTL_MARK = chr(0x200F)  # RIGHT-TO-LEFT MARK -- written as an escape, not a raw control char in source
-_RTL_PAYLOAD_ALSO_CAUGHT_BY_SANITIZER = f"{_RTL_MARK}Reversed context marker before override attempt{_RTL_MARK}"
+_RTL_MARK = chr(
+    0x200F
+)  # RIGHT-TO-LEFT MARK -- written as an escape, not a raw control char in source
+_RTL_PAYLOAD_ALSO_CAUGHT_BY_SANITIZER = (
+    f"{_RTL_MARK}Reversed context marker before override attempt{_RTL_MARK}"
+)
 
 
 def _load_corpus() -> list[dict[str, str]]:
@@ -65,9 +69,15 @@ def _load_corpus() -> list[dict[str, str]]:
     return [json.loads(line) for line in lines]
 
 
-_SANITIZER_REJECT_PAYLOADS = [e["payload"] for e in _load_corpus() if e["expected_outcome"] == "sanitizer_reject"]
-_GUARDRAIL_LABELED_PAYLOADS = [e["payload"] for e in _load_corpus() if e["expected_outcome"] == "guardrail_intervened"]
-_GUARDRAIL_ONLY_PAYLOADS = [p for p in _GUARDRAIL_LABELED_PAYLOADS if p != _RTL_PAYLOAD_ALSO_CAUGHT_BY_SANITIZER]
+_SANITIZER_REJECT_PAYLOADS = [
+    e["payload"] for e in _load_corpus() if e["expected_outcome"] == "sanitizer_reject"
+]
+_GUARDRAIL_LABELED_PAYLOADS = [
+    e["payload"] for e in _load_corpus() if e["expected_outcome"] == "guardrail_intervened"
+]
+_GUARDRAIL_ONLY_PAYLOADS = [
+    p for p in _GUARDRAIL_LABELED_PAYLOADS if p != _RTL_PAYLOAD_ALSO_CAUGHT_BY_SANITIZER
+]
 
 
 def test_corpus_has_the_expected_split() -> None:

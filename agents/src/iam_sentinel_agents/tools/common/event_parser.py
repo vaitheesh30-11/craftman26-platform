@@ -144,9 +144,7 @@ def build_action_group_response(
             "apiPath": invocation.api_path,
             "httpMethod": invocation.http_method,
             "httpStatusCode": http_status,
-            "responseBody": {
-                _JSON_CONTENT_TYPE: {"body": json.dumps(body, separators=(",", ":"))}
-            },
+            "responseBody": {_JSON_CONTENT_TYPE: {"body": json.dumps(body, separators=(",", ":"))}},
         },
     }
 

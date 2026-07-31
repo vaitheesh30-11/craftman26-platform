@@ -74,9 +74,9 @@ def classify_role_privilege(
 ) -> ReachedPrivilege:
     allow_statements = [s for s in statements if s.get("Effect") == "Allow"]
 
-    if any(_is_admin_policy_arn(arn) for arn in attached_policy_arns) or _has_admin_equivalent_statement(
-        allow_statements
-    ):
+    if any(
+        _is_admin_policy_arn(arn) for arn in attached_policy_arns
+    ) or _has_admin_equivalent_statement(allow_statements):
         return "AdministratorAccess"
     if any(_is_power_user_policy_arn(arn) for arn in attached_policy_arns):
         return "PowerUserAccess"

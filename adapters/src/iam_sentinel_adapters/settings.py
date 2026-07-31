@@ -53,6 +53,7 @@ class AdapterSettings(BaseSettings):
     reports_bucket: str = "sentinel-reports-dev"
     router_function_name: str = ""
     connections_table: str = "SentinelConnections-dev"
+    policies_table: str = "SentinelPolicies-dev"
 
 
 settings = AdapterSettings()

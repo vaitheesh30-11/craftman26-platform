@@ -32,7 +32,9 @@ def test_generate_spans_produces_1_2_and_3_sentence_windows() -> None:
     # 3 sentences -> 3 one-sentence + 2 two-sentence + 1 three-sentence = 6.
     assert len(spans) == 6
     assert all(span.span_end > span.span_start for span in spans)
-    three_sentence_span = next(s for s in spans if s.span_end - s.span_start == len(_TEXT.encode("utf-8")))
+    three_sentence_span = next(
+        s for s in spans if s.span_end - s.span_start == len(_TEXT.encode("utf-8"))
+    )
     assert three_sentence_span.quote_sha256 == canonical_quote_hash(_TEXT)
 
 

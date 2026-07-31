@@ -36,7 +36,11 @@ def _run_pipeline(fixture_name: str) -> _PipelineResult:
     session = boto3.Session(region_name="us-east-1")
 
     scan_result = scan.scan_account(
-        ACCOUNT_ID, None, feature_id="F1", correlation_id="01JBP2VHF9K3Q0Z8R7X6M5N4A3", session=session
+        ACCOUNT_ID,
+        None,
+        feature_id="F1",
+        correlation_id="01JBP2VHF9K3Q0Z8R7X6M5N4A3",
+        session=session,
     )
     edges = [PassRoleEdge.model_validate(raw) for raw in scan_result["edges"]]
     graph_result = graph.build_blast_paths(edges, iam_client=iam)

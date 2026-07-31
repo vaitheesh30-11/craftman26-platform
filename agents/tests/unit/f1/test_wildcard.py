@@ -41,10 +41,17 @@ def test_wildcard_excludes_non_matching_role_names() -> None:
 
 
 def test_no_match_returns_empty_list() -> None:
-    assert resolve_role_pattern("arn:aws:iam::123456789012:role/nope-*", ["arn:aws:iam::123456789012:role/x"]) == []
+    assert (
+        resolve_role_pattern(
+            "arn:aws:iam::123456789012:role/nope-*", ["arn:aws:iam::123456789012:role/x"]
+        )
+        == []
+    )
 
 
-@given(role_name=st.text(alphabet=st.characters(blacklist_characters="*?[]"), min_size=1, max_size=20))
+@given(
+    role_name=st.text(alphabet=st.characters(blacklist_characters="*?[]"), min_size=1, max_size=20)
+)
 @settings(max_examples=200)
 def test_concrete_pattern_never_matches_a_different_role_name(role_name: str) -> None:
     pattern = f"arn:aws:iam::123456789012:role/{role_name}"

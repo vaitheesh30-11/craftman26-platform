@@ -175,9 +175,7 @@ def untrusted_context_blocks() -> st.SearchStrategy[UntrustedContextBlock]:
     return st.builds(
         UntrustedContextBlock,
         type=st.text(alphabet="abcdefghijklmnopqrstuvwxyz_", min_size=1, max_size=64),
-        body=st.text(
-            alphabet=st.characters(min_codepoint=33, max_codepoint=126), max_size=200
-        ),
+        body=st.text(alphabet=st.characters(min_codepoint=33, max_codepoint=126), max_size=200),
     )
 
 

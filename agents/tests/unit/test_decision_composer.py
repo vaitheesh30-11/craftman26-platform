@@ -14,7 +14,9 @@ def test_all_confirm_yields_answered() -> None:
 def test_any_reject_yields_rejected_even_alongside_inconclusive() -> None:
     verdicts = [
         make_verdict(verdict="REJECT", findings=[]),
-        make_verdict(verdict="INCONCLUSIVE", findings=[], correlation_id="01JBP2VHF9K3Q0Z8R7X6M5N4A4"),
+        make_verdict(
+            verdict="INCONCLUSIVE", findings=[], correlation_id="01JBP2VHF9K3Q0Z8R7X6M5N4A4"
+        ),
     ]
     assert compose_status(verdicts) == "REJECTED"
 

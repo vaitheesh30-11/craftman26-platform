@@ -147,7 +147,9 @@ def make_task() -> SpecialistTask:
         tool_hint="passrole_scan",
         trusted_input={"account_id": VALID_ACCOUNT},
         untrusted_context=[
-            UntrustedContextBlock(type="role_names", body="role/DevOpsEngineer\nrole/PipelineDeployer")
+            UntrustedContextBlock(
+                type="role_names", body="role/DevOpsEngineer\nrole/PipelineDeployer"
+            )
         ],
         retry_count=0,
     )

@@ -72,15 +72,21 @@ def _role_statements(
     iam: IAMClient, role_name: str, cache: dict[str, dict[str, Any]]
 ) -> tuple[list[str], list[dict[str, Any]]]:
     attached_arns: list[str] = []
-    for attached_page in iam.get_paginator("list_attached_role_policies").paginate(RoleName=role_name):
-        attached_arns.extend(attached["PolicyArn"] for attached in attached_page["AttachedPolicies"])
+    for attached_page in iam.get_paginator("list_attached_role_policies").paginate(
+        RoleName=role_name
+    ):
+        attached_arns.extend(
+            attached["PolicyArn"] for attached in attached_page["AttachedPolicies"]
+        )
 
     statements: list[dict[str, Any]] = []
     for policy_arn in attached_arns:
         document = cache.get(policy_arn)
         if document is None:
             policy = iam.get_policy(PolicyArn=policy_arn)["Policy"]
-            version = iam.get_policy_version(PolicyArn=policy_arn, VersionId=policy["DefaultVersionId"])
+            version = iam.get_policy_version(
+                PolicyArn=policy_arn, VersionId=policy["DefaultVersionId"]
+            )
             document = normalize_policy_document(version["PolicyVersion"]["Document"])
             cache[policy_arn] = document
         statements.extend(_statements_from_document(document))
@@ -108,7 +114,9 @@ def classify_reachable_roles(role_arns: set[str], iam: IAMClient) -> dict[str, s
             attached_arns, statements = _role_statements(iam, role_name, cache)
         except iam.exceptions.NoSuchEntityException:
             return role_arn, "Other"
-        return role_arn, classify_role_privilege(attached_policy_arns=attached_arns, statements=statements)
+        return role_arn, classify_role_privilege(
+            attached_policy_arns=attached_arns, statements=statements
+        )
 
     if not role_arns:
         return {}

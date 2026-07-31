@@ -1,0 +1,77 @@
+openapi: 3.0.3
+info: { title: F6 Shadow Guard Actions, version: "1.0.0" }
+paths:
+  /report:
+    post:
+      operationId: shadow_guard_report
+      summary: Aggregate shadow violations and produce compensating controls.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                days_back: { type: integer, minimum: 1, maximum: 30, default: 7 }
+                severity_filter:
+                  type: string
+                  enum: [INFO, LOW, MEDIUM, HIGH, CRITICAL]
+                  default: MEDIUM
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [payload, compensating_controls]
+                properties:
+                  payload: { $ref: "#/components/schemas/ShadowViolationPayload" }
+                  compensating_controls:
+                    type: array
+                    items: { $ref: "#/components/schemas/CompensatingControl" }
+components:
+  schemas:
+    ShadowViolation:
+      type: object
+      required:
+        - action
+        - principal_arn
+        - principal_type
+        - would_be_denied_by_scp_arn
+        - would_be_denied_at_level
+        - event_id
+        - event_time
+        - severity
+      properties:
+        action: { type: string }
+        principal_arn: { type: string }
+        principal_type:
+          type: string
+          enum: [Root, IAMUser, AssumedRole, FederatedUser]
+        would_be_denied_by_scp_arn: { type: string }
+        denying_statement_id: { type: string, nullable: true }
+        would_be_denied_at_level: { type: string, enum: [root, ou] }
+        event_id: { type: string }
+        event_time: { type: string, format: date-time }
+        severity:
+          type: string
+          enum: [INFO, LOW, MEDIUM, HIGH, CRITICAL]
+    ShadowViolationPayload:
+      type: object
+      required: [days_back, total_events_ingested, violation_count, violations, top_actions]
+      properties:
+        days_back: { type: integer }
+        total_events_ingested: { type: integer }
+        violation_count: { type: integer }
+        violations: { type: array, items: { $ref: "#/components/schemas/ShadowViolation" } }
+        top_actions: { type: array, items: { type: object } }
+        weekly_trend: { type: object, nullable: true, additionalProperties: { type: integer } }
+    CompensatingControl:
+      type: object
+      required: [for_action, control_kind, cdk_snippet, rationale]
+      properties:
+        for_action: { type: string }
+        control_kind: { type: string, enum: [EventBridgeRule, ConfigRule] }
+        cdk_snippet: { type: string }
+        rationale: { type: string }

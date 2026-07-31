@@ -83,7 +83,9 @@ def test_passrole_graph_classifies_admin_shortcut_as_critical() -> None:
     body = json.loads(response["response"]["responseBody"]["application/json"]["body"])
     principal_arn = f"arn:aws:iam::{ACCOUNT_ID}:user/Deployer"
     assert principal_arn in body["critical_principals"]
-    assert body["paths_by_principal"][principal_arn][0]["reached_privilege"] == "AdministratorAccess"
+    assert (
+        body["paths_by_principal"][principal_arn][0]["reached_privilege"] == "AdministratorAccess"
+    )
     assert body["paths_by_principal"][principal_arn][0]["hop_count"] == 1
 
 

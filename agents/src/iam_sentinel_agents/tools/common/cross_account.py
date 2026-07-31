@@ -162,9 +162,7 @@ def assume(
             error_code = exc.response.get("Error", {}).get("Code", "")
             last_error = exc
             if error_code not in _RETRYABLE_ERROR_CODES:
-                raise CrossAccountAssumeError(
-                    account_id, resolved_role_name, cause=exc
-                ) from exc
+                raise CrossAccountAssumeError(account_id, resolved_role_name, cause=exc) from exc
             continue
         else:
             _CACHE.put(account_id, resolved_role_name, credentials)

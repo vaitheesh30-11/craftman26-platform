@@ -45,11 +45,13 @@ def _list_principals(iam: IAMClient, principal_arn: str | None) -> list[dict[str
     principals: list[dict[str, str]] = []
     for user_page in iam.get_paginator("list_users").paginate():
         principals.extend(
-            {"type": "user", "name": user["UserName"], "arn": user["Arn"]} for user in user_page["Users"]
+            {"type": "user", "name": user["UserName"], "arn": user["Arn"]}
+            for user in user_page["Users"]
         )
     for role_page in iam.get_paginator("list_roles").paginate():
         principals.extend(
-            {"type": "role", "name": role["RoleName"], "arn": role["Arn"]} for role in role_page["Roles"]
+            {"type": "role", "name": role["RoleName"], "arn": role["Arn"]}
+            for role in role_page["Roles"]
         )
     if principal_arn is not None:
         principals = [p for p in principals if p["arn"] == principal_arn]
@@ -57,7 +59,9 @@ def _list_principals(iam: IAMClient, principal_arn: str | None) -> list[dict[str
 
 
 def _list_role_arns(iam: IAMClient) -> list[str]:
-    return [role["Arn"] for page in iam.get_paginator("list_roles").paginate() for role in page["Roles"]]
+    return [
+        role["Arn"] for page in iam.get_paginator("list_roles").paginate() for role in page["Roles"]
+    ]
 
 
 def normalize_policy_document(raw: Any) -> dict[str, Any]:
@@ -71,15 +75,21 @@ def normalize_policy_document(raw: Any) -> dict[str, Any]:
     return dict(raw)
 
 
-def _inline_policy_documents(iam: IAMClient, principal: dict[str, str]) -> list[tuple[str, dict[str, Any]]]:
+def _inline_policy_documents(
+    iam: IAMClient, principal: dict[str, str]
+) -> list[tuple[str, dict[str, Any]]]:
     is_user = principal["type"] == "user"
     documents: list[tuple[str, dict[str, Any]]] = []
     policy_names: list[str] = []
     if is_user:
-        for user_page in iam.get_paginator("list_user_policies").paginate(UserName=principal["name"]):
+        for user_page in iam.get_paginator("list_user_policies").paginate(
+            UserName=principal["name"]
+        ):
             policy_names.extend(user_page["PolicyNames"])
     else:
-        for role_page in iam.get_paginator("list_role_policies").paginate(RoleName=principal["name"]):
+        for role_page in iam.get_paginator("list_role_policies").paginate(
+            RoleName=principal["name"]
+        ):
             policy_names.extend(role_page["PolicyNames"])
 
     for policy_name in policy_names:
@@ -103,10 +113,14 @@ def _attached_policy_arns(iam: IAMClient, principal: dict[str, str]) -> list[str
     is_user = principal["type"] == "user"
     policy_arns: list[str] = []
     if is_user:
-        for user_page in iam.get_paginator("list_attached_user_policies").paginate(UserName=principal["name"]):
+        for user_page in iam.get_paginator("list_attached_user_policies").paginate(
+            UserName=principal["name"]
+        ):
             policy_arns.extend(attached["PolicyArn"] for attached in user_page["AttachedPolicies"])
     else:
-        for role_page in iam.get_paginator("list_attached_role_policies").paginate(RoleName=principal["name"]):
+        for role_page in iam.get_paginator("list_attached_role_policies").paginate(
+            RoleName=principal["name"]
+        ):
             policy_arns.extend(attached["PolicyArn"] for attached in role_page["AttachedPolicies"])
     return policy_arns
 

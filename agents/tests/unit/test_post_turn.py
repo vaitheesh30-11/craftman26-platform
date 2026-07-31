@@ -61,7 +61,9 @@ def test_process_escalates_to_sns_and_security_hub_on_critical_finding() -> None
     query = make_query()
     verdicts = [make_verdict(verdict="CONFIRM", findings=[make_finding(severity="CRITICAL")])]
 
-    decision = processor.process(query=query, verdicts=verdicts, narrative="critical exposure found")
+    decision = processor.process(
+        query=query, verdicts=verdicts, narrative="critical exposure found"
+    )
 
     assert decision is not None
     mocks["sns"].publish_critical_finding.assert_called_once()

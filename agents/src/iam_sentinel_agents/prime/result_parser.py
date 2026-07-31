@@ -24,7 +24,13 @@ class ParsedPrimeTurn:
     result: dict[str, Any] = field(default_factory=dict)
 
 
-_REQUIRED_RESULT_KEYS = ("status", "narrative", "findings", "remediations_proposed", "specialist_calls")
+_REQUIRED_RESULT_KEYS = (
+    "status",
+    "narrative",
+    "findings",
+    "remediations_proposed",
+    "specialist_calls",
+)
 
 
 def parse_prime_completion(completion_text: str) -> ParsedPrimeTurn:

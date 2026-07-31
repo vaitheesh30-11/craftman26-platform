@@ -31,7 +31,7 @@ MAX_PARALLEL_COLLABORATORS = 4
 
 _SECTION_HEADER = "ROUTING HEURISTICS"
 _NEXT_SECTION_HEADER = "OUTPUT PROTOCOL"
-_HEURISTIC_LINE = re.compile(r'^-\s*(?P<phrases>.+?)\s*→\s*(?P<feature_id>F[1-8])\s*$')
+_HEURISTIC_LINE = re.compile(r"^-\s*(?P<phrases>.+?)\s*→\s*(?P<feature_id>F[1-8])\s*$")
 _PHRASE = re.compile(r'"([^"]+)"')
 
 
@@ -63,7 +63,9 @@ def parse_routing_heuristics(prompt_text: str) -> dict[FeatureID, list[str]]:
     return heuristics
 
 
-def route(query_text: str, *, heuristics: dict[FeatureID, list[str]] | None = None) -> list[FeatureID]:
+def route(
+    query_text: str, *, heuristics: dict[FeatureID, list[str]] | None = None
+) -> list[FeatureID]:
     """Keyword-match approximation of Prime's routing, capped to
     `MAX_PARALLEL_COLLABORATORS`. Feature IDs are returned in descending
     order of how many of their phrases matched, ties broken by F1..F8
