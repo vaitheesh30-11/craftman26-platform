@@ -60,9 +60,10 @@ def test_stream_chat_forwards_progress_chunks_then_posts_the_decision_result() -
     )
 
     events = _events_sent(mocks["management_client"])
-    assert events[0].startswith(b"event: progress\ndata: thinking...")
-    assert events[1].startswith(b"event: progress\ndata: almost done...")
-    assert events[2].startswith(b"event: result\ndata: ")
+    assert events[0] == b'event: started\ndata: {"correlation_id": "c1"}\n\n'
+    assert events[1].startswith(b"event: progress\ndata: thinking...")
+    assert events[2].startswith(b"event: progress\ndata: almost done...")
+    assert events[3].startswith(b"event: result\ndata: ")
     mocks["decisions_in_flight_client"].start.assert_called_once()
     mocks["decisions_in_flight_client"].complete.assert_called_once_with("c1")
 
@@ -110,7 +111,7 @@ def test_stream_chat_stops_and_sends_canceled_when_marked_canceled_mid_stream() 
     )
 
     events = _events_sent(mocks["management_client"])
-    assert len(events) == 2  # one progress chunk, then the CANCELED error
+    assert len(events) == 3  # started, one progress chunk, then the CANCELED error
     assert events[-1].startswith(b"event: error\ndata: ")
     assert b"CANCELED" in events[-1]
     mocks["decisions_client"].get_by_correlation_id.assert_not_called()
