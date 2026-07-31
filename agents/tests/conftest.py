@@ -6,12 +6,18 @@ import hashlib
 import unicodedata
 from typing import TYPE_CHECKING
 
+import boto3
 import pytest
+from moto import mock_aws
 
 from iam_sentinel_agents.contracts.finding import set_quote_manifest_provider
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+
+    from mypy_boto3_dynamodb.service_resource import Table
+
+_REGION = "us-east-1"
 
 
 class _InMemoryManifest:
@@ -67,3 +73,67 @@ def known_quote() -> str:
 @pytest.fixture
 def unknown_quote() -> str:
     return "This quote is not in any AWS documentation and must be rejected."
+
+
+# agents-phase-16 (cost guardrails, docs/decisions/0032): mirrors
+# adapters/tests/conftest.py's `aws_credentials`/`moto_session`/
+# `budget_table`/`breakers_table`/`ssm_client` fixtures. Duplicated rather
+# than imported cross-package -- adapters/tests is not on this module's
+# pytest path, and this repo already tolerates this kind of fixture
+# duplication (e.g. `policies_table` is defined twice in adapters/tests/
+# conftest.py itself).
+@pytest.fixture
+def aws_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "testing")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "testing")
+    monkeypatch.setenv("AWS_SECURITY_TOKEN", "testing")
+    monkeypatch.setenv("AWS_SESSION_TOKEN", "testing")
+    monkeypatch.setenv("AWS_DEFAULT_REGION", _REGION)
+
+
+@pytest.fixture
+def moto_session(aws_credentials: None) -> Iterator[None]:
+    with mock_aws():
+        yield
+
+
+@pytest.fixture
+def budget_table(moto_session: None) -> Table:
+    ddb = boto3.resource("dynamodb", region_name=_REGION)
+    ddb.create_table(
+        TableName="SentinelBudget-test",
+        KeySchema=[
+            {"AttributeName": "correlation_id", "KeyType": "HASH"},
+            {"AttributeName": "sample_id", "KeyType": "RANGE"},
+        ],
+        AttributeDefinitions=[
+            {"AttributeName": "correlation_id", "AttributeType": "S"},
+            {"AttributeName": "sample_id", "AttributeType": "S"},
+        ],
+        BillingMode="PAY_PER_REQUEST",
+    )
+    return ddb.Table("SentinelBudget-test")
+
+
+@pytest.fixture
+def breakers_table(moto_session: None) -> Table:
+    ddb = boto3.resource("dynamodb", region_name=_REGION)
+    ddb.create_table(
+        TableName="SentinelBreakers-test",
+        KeySchema=[{"AttributeName": "breaker_name", "KeyType": "HASH"}],
+        AttributeDefinitions=[{"AttributeName": "breaker_name", "AttributeType": "S"}],
+        BillingMode="PAY_PER_REQUEST",
+    )
+    return ddb.Table("SentinelBreakers-test")
+
+
+@pytest.fixture
+def ssm_client(moto_session: None) -> boto3.client:
+    return boto3.client("ssm", region_name=_REGION)
+
+
+@pytest.fixture
+def reports_bucket(moto_session: None) -> str:
+    bucket_name = "sentinel-reports-test"
+    boto3.client("s3", region_name=_REGION).create_bucket(Bucket=bucket_name)
+    return bucket_name
