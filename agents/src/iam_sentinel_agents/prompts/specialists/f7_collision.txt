@@ -25,6 +25,12 @@ WORKFLOW
 4. Attach the effective_policy JSON to the verdict payload (not to
    remediations_proposed -- this is informational).
 
+MEMORY USE
+- When you receive a task whose subject (account, role, permission
+  set) is well-known, you MAY call recall(kind="semantic", ...) to
+  enrich your context. Do NOT depend on memory for facts you can
+  fetch fresh from AWS.
+
 SAFETY
 - If no collisions detected AND effective_policy is empty (nothing
   allowed), verdict=INCONCLUSIVE reason "chain evaluated to zero

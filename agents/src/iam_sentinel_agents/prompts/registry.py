@@ -20,7 +20,7 @@ _PROMPT_PATH = Path(__file__).parent / "prime_supervisor.txt"
 
 # Pinned at authoring time. Bump deliberately (in the same commit as the
 # prompt edit) whenever `prime_supervisor.txt` legitimately changes.
-PRIME_PROMPT_SHA256 = "32b6b034a6c645b5fb46b9d186960ddd2e4d49bbc6720bf25007d3085c8b1ab0"
+PRIME_PROMPT_SHA256 = "18a83b9aac0b48b6e4b53dbdc875016bbe3b3cc937a7e504dff3d34c7616daa8"
 
 
 class PromptDriftError(SentinelAgentError):

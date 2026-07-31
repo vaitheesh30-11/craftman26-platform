@@ -32,6 +32,14 @@ class ParsedInvocation(Base):
     http_method: str = Field(min_length=1, max_length=16)
     parameters: dict[str, Any] = Field(default_factory=dict)
     action_group: str = Field(min_length=1, max_length=256)
+    # phase-14 §3.5 / §6: the invoking human, carried in `promptSessionAttributes`
+    # (set by `PrimeSupervisor.ask`, see prime/supervisor.py) so the memory
+    # adapter layer can enforce cross-principal isolation without trusting a
+    # request-body field the caller could otherwise spoof. Empty string for
+    # any tool invocation that predates this phase or never populated it --
+    # callers that need the isolation guarantee (memory tools) treat "" as
+    # "no invoking principal" and fail closed rather than defaulting open.
+    principal: str = Field(default="", max_length=2048)
 
 
 def _require(mapping: dict[str, Any], key: str, *, envelope_kind: str) -> Any:
@@ -105,6 +113,8 @@ def parse_action_group(event: Any) -> ParsedInvocation:
     correlation_id = session_attributes.get("correlation_id")
     if not correlation_id:
         raise ContractError("sessionAttributes.correlation_id is required")
+    prompt_session_attributes = event.get("promptSessionAttributes", {}) or {}
+    principal = prompt_session_attributes.get("principal") or session_attributes.get("principal") or ""
 
     action_group = _require(event, "actionGroup", envelope_kind="action-group")
 
@@ -133,6 +143,7 @@ def parse_action_group(event: Any) -> ParsedInvocation:
             http_method=http_method,
             parameters=parameters,
             action_group=action_group,
+            principal=principal,
         )
     except Exception as exc:
         raise ContractError(f"failed to build ParsedInvocation: {exc}") from exc

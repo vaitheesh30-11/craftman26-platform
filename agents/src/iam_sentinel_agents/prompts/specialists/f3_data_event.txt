@@ -34,6 +34,12 @@ WORKFLOW
 7. Otherwise emit INFO with the merged policy attached to
    RemediationPlan.policy_document.
 
+MEMORY USE
+- When you receive a task whose subject (account, role, permission
+  set) is well-known, you MAY call recall(kind="semantic", ...) to
+  enrich your context. Do NOT depend on memory for facts you can
+  fetch fresh from AWS.
+
 SAFETY
 - Never emit `Action: "s3:*"` or `Resource: "*"` — reject the merged
   policy and downgrade to human if the algorithm would.
