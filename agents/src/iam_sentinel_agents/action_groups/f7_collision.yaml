@@ -1,0 +1,72 @@
+openapi: 3.0.3
+info:
+  title: F7 Collision Actions
+  version: "1.0.0"
+paths:
+  /resolve:
+    post:
+      operationId: collision_resolve
+      summary: Compute the effective SCP policy and collisions for an account.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [account_id]
+              properties:
+                account_id: { type: string, pattern: "^[0-9]{12}$" }
+                exclude_statement_ids:
+                  type: array
+                  items: { type: string }
+                  nullable: true
+      responses:
+        "200":
+          description: Effective policy and collisions computed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScpCollisionPayload" }
+components:
+  schemas:
+    ScpCollision:
+      type: object
+      required:
+        [
+          action_pattern,
+          resource_pattern,
+          denied_by_scp_arn,
+          denied_at_level,
+          plain_english,
+          minimal_fix,
+        ]
+      properties:
+        action_pattern: { type: string }
+        resource_pattern: { type: string }
+        allowed_by_scp_arn: { type: string, nullable: true }
+        allowed_at_level:
+          type: string
+          enum: [root, ou, account]
+          nullable: true
+        denied_by_scp_arn: { type: string }
+        denied_at_level: { type: string, enum: [root, ou, account] }
+        denying_statement_id: { type: string, nullable: true }
+        plain_english: { type: string }
+        minimal_fix: { type: object }
+    ScpCollisionPayload:
+      type: object
+      required:
+        [
+          account_id,
+          scp_chain,
+          effective_policy,
+          collision_count,
+          collisions,
+          engine_version,
+        ]
+      properties:
+        account_id: { type: string, pattern: "^[0-9]{12}$" }
+        scp_chain: { type: array, items: { type: object } }
+        effective_policy: { type: object }
+        collision_count: { type: integer, minimum: 0 }
+        collisions: { type: array, items: { $ref: "#/components/schemas/ScpCollision" } }
+        engine_version: { type: string }
