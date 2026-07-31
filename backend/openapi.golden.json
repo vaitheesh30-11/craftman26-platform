@@ -4,11 +4,22 @@
       "ApprovalRequest": {
         "additionalProperties": false,
         "properties": {
+          "dry_run": {
+            "default": false,
+            "title": "Dry Run",
+            "type": "boolean"
+          },
           "reason": {
             "default": "",
             "maxLength": 2048,
             "title": "Reason",
             "type": "string"
+          },
+          "remediation_index": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Remediation Index",
+            "type": "integer"
           }
         },
         "title": "ApprovalRequest",

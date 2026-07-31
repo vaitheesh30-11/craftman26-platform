@@ -39,7 +39,9 @@ class IdempotencyClient:
         table: Table | None = None,
         breaker: BreakerAccessor | None = None,
     ) -> None:
-        self._helper = DynamoDbHelper(table_name or settings.idempotency_table, table=table, breaker=breaker)
+        self._helper = DynamoDbHelper(
+            table_name or settings.idempotency_table, table=table, breaker=breaker
+        )
 
     def claim(self, correlation_id: str) -> bool:
         """Attempt to claim `correlation_id`. Returns True on first claim,
@@ -49,7 +51,11 @@ class IdempotencyClient:
         expires_at = int((datetime.now(UTC) + timedelta(hours=_TTL_HOURS)).timestamp())
         try:
             self._helper.put_item(
-                {"correlation_id": correlation_id, "claimed_at": datetime.now(UTC).isoformat(), "expires_at": expires_at},
+                {
+                    "correlation_id": correlation_id,
+                    "claimed_at": datetime.now(UTC).isoformat(),
+                    "expires_at": expires_at,
+                },
                 condition_expression="attribute_not_exists(correlation_id)",
             )
         except ValidationError:
@@ -58,3 +64,45 @@ class IdempotencyClient:
 
     def already_claimed(self, correlation_id: str) -> bool:
         return self._helper.get_item({"correlation_id": correlation_id}) is not None
+
+    def claim_for_result(self, key: str, *, input_hash: str) -> bool:
+        """Approval-workflow variant (backend phase-03 §2 step 2) of
+        `claim()`: same conditional-put guard, but the stored item also
+        carries `input_hash` and a `status` so `get_record`/`store_result`
+        can later distinguish "same request replayed" from "same key, a
+        different request body" -- `claim()` above only ever needed the
+        bare claim marker, never a payload to replay.
+        """
+        expires_at = int((datetime.now(UTC) + timedelta(hours=_TTL_HOURS)).timestamp())
+        try:
+            self._helper.put_item(
+                {
+                    "correlation_id": key,
+                    "input_hash": input_hash,
+                    "status": "RUNNING",
+                    "claimed_at": datetime.now(UTC).isoformat(),
+                    "expires_at": expires_at,
+                },
+                condition_expression="attribute_not_exists(correlation_id)",
+            )
+        except ValidationError:
+            return False
+        return True
+
+    def get_record(self, key: str) -> dict[str, object] | None:
+        return self._helper.get_item({"correlation_id": key})
+
+    def store_result(
+        self, key: str, *, input_hash: str, status: str, result: dict[str, object]
+    ) -> None:
+        """Completes (or fails) a claim made via `claim_for_result` with the
+        actual outcome, so a replayed request with the same `input_hash`
+        can be answered from this record instead of re-running the state
+        machine (or, on `status="FAILED"`, so a caller can decide to retry).
+        """
+        self._helper.update_item(
+            {"correlation_id": key},
+            update_expression="SET #s = :status, #r = :result, input_hash = :hash",
+            expression_attribute_names={"#s": "status", "#r": "result"},
+            expression_attribute_values={":status": status, ":result": result, ":hash": input_hash},
+        )

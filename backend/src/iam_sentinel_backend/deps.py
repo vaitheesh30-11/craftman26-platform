@@ -12,14 +12,18 @@ from typing import TYPE_CHECKING
 from fastapi import Depends, Request, status
 from iam_sentinel_adapters.apigw.management import ManagementApiClient
 from iam_sentinel_adapters.compute.lambda_client import LambdaInvokeClient
+from iam_sentinel_adapters.compute.step_functions_client import StepFunctionsClient
 from iam_sentinel_adapters.ddb.connections import ConnectionsClient
 from iam_sentinel_adapters.ddb.decisions import DecisionsClient
 from iam_sentinel_adapters.ddb.decisions_in_flight import DecisionsInFlightClient
 from iam_sentinel_adapters.ddb.faults import FaultsClient
 from iam_sentinel_adapters.ddb.findings import FindingsClient
+from iam_sentinel_adapters.ddb.idempotency import IdempotencyClient
+from iam_sentinel_adapters.evidence.client import EvidenceClient
 from iam_sentinel_adapters.llm.factory import get_provider
 from iam_sentinel_adapters.s3.reports import ReportsClient
 from iam_sentinel_adapters.settings import settings as adapter_settings
+from iam_sentinel_adapters.ssm.params import SsmParameterClient
 
 from iam_sentinel_backend.auth.breakglass import (
     BreakGlassVerificationError,
@@ -173,6 +177,26 @@ def get_management_client() -> ManagementApiClient:
     return ManagementApiClient()
 
 
+@lru_cache(maxsize=1)
+def get_idempotency_client() -> IdempotencyClient:
+    return IdempotencyClient()
+
+
+@lru_cache(maxsize=1)
+def get_step_functions_client() -> StepFunctionsClient:
+    return StepFunctionsClient()
+
+
+@lru_cache(maxsize=1)
+def get_ssm_parameter_client() -> SsmParameterClient:
+    return SsmParameterClient()
+
+
+@lru_cache(maxsize=1)
+def get_evidence_client() -> EvidenceClient:
+    return EvidenceClient()
+
+
 def get_findings_service(
     findings_client: FindingsClient = Depends(get_findings_client),
 ) -> FindingsService:
@@ -207,8 +231,18 @@ def get_chat_service(
 
 def get_approval_service(
     decisions_client: DecisionsClient = Depends(get_decisions_client),
+    idempotency_client: IdempotencyClient = Depends(get_idempotency_client),
+    step_functions_client: StepFunctionsClient = Depends(get_step_functions_client),
+    ssm_client: SsmParameterClient = Depends(get_ssm_parameter_client),
+    evidence_client: EvidenceClient = Depends(get_evidence_client),
 ) -> ApprovalService:
-    return ApprovalService(decisions_client)
+    return ApprovalService(
+        decisions_client,
+        idempotency_client=idempotency_client,
+        step_functions_client=step_functions_client,
+        ssm_client=ssm_client,
+        evidence_client=evidence_client,
+    )
 
 
 @lru_cache(maxsize=1)
