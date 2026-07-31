@@ -99,6 +99,18 @@ def findings_table(moto_session: None) -> Table:
 
 
 @pytest.fixture
+def slrs_table(moto_session: None) -> Table:
+    ddb = boto3.resource("dynamodb", region_name=_REGION)
+    ddb.create_table(
+        TableName="SentinelSLRs-test",
+        KeySchema=[{"AttributeName": "service_principal", "KeyType": "HASH"}],
+        AttributeDefinitions=[{"AttributeName": "service_principal", "AttributeType": "S"}],
+        BillingMode="PAY_PER_REQUEST",
+    )
+    return ddb.Table("SentinelSLRs-test")
+
+
+@pytest.fixture
 def decisions_in_flight_table(moto_session: None) -> Table:
     ddb = boto3.resource("dynamodb", region_name=_REGION)
     ddb.create_table(

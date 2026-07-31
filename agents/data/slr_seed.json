@@ -1,0 +1,147 @@
+{
+  "autoscaling.amazonaws.com": {
+    "slr_name": "AWSServiceRoleForAutoScaling",
+    "required_actions": [
+      "ec2:DescribeAccountAttributes",
+      "ec2:DescribeInstances",
+      "ec2:DescribeImages",
+      "ec2:DescribeSubnets",
+      "ec2:CreateLaunchTemplate",
+      "ec2:CreateFleet",
+      "ec2:RunInstances",
+      "ec2:TerminateInstances",
+      "ec2:CreateTags",
+      "elasticloadbalancing:RegisterInstancesWithLoadBalancer",
+      "elasticloadbalancing:DeregisterInstancesFromLoadBalancer",
+      "elasticloadbalancing:RegisterTargets",
+      "elasticloadbalancing:DeregisterTargets"
+    ],
+    "optional_actions": ["cloudwatch:PutMetricAlarm", "sns:Publish"],
+    "core_actions": ["ec2:RunInstances", "ec2:TerminateInstances"],
+    "source": "AWS Service Authorization Reference",
+    "source_url": "https://docs.aws.amazon.com/service-authorization/latest/reference/list_autoscaling.html"
+  },
+  "elasticloadbalancing.amazonaws.com": {
+    "slr_name": "AWSServiceRoleForElasticLoadBalancing",
+    "required_actions": [
+      "ec2:DescribeSubnets",
+      "ec2:DescribeVpcs",
+      "ec2:CreateNetworkInterface",
+      "ec2:DeleteNetworkInterface",
+      "ec2:AttachNetworkInterface",
+      "ec2:DetachNetworkInterface",
+      "ec2:CreateSecurityGroup",
+      "ec2:AuthorizeSecurityGroupIngress"
+    ],
+    "optional_actions": ["ec2:DescribeSecurityGroups"],
+    "core_actions": ["ec2:CreateNetworkInterface", "ec2:DeleteNetworkInterface"],
+    "source": "AWS Service Authorization Reference",
+    "source_url": "https://docs.aws.amazon.com/service-authorization/latest/reference/list_elasticloadbalancing.html"
+  },
+  "guardduty.amazonaws.com": {
+    "slr_name": "AWSServiceRoleForAmazonGuardDuty",
+    "required_actions": [
+      "ec2:DescribeInstances",
+      "ec2:DescribeSubnets",
+      "ec2:DescribeVpcs",
+      "s3:GetBucketPublicAccessBlock",
+      "s3:ListAllMyBuckets",
+      "iam:ListAccountAliases"
+    ],
+    "optional_actions": ["organizations:DescribeOrganization"],
+    "core_actions": ["ec2:DescribeInstances"],
+    "source": "AWS Service Authorization Reference",
+    "source_url": "https://docs.aws.amazon.com/service-authorization/latest/reference/list_amazonguardduty.html"
+  },
+  "config.amazonaws.com": {
+    "slr_name": "AWSServiceRoleForConfig",
+    "required_actions": [
+      "config:PutEvaluations",
+      "config:PutConfigurationRecorder",
+      "s3:PutObject",
+      "s3:GetBucketAcl",
+      "sns:Publish",
+      "ec2:DescribeInstances",
+      "iam:GetPolicy",
+      "iam:GetPolicyVersion",
+      "iam:GetRole"
+    ],
+    "optional_actions": ["ec2:DescribeSubnets"],
+    "core_actions": ["s3:PutObject"],
+    "source": "AWS Service Authorization Reference",
+    "source_url": "https://docs.aws.amazon.com/service-authorization/latest/reference/list_awsconfig.html"
+  },
+  "rds.amazonaws.com": {
+    "slr_name": "AWSServiceRoleForRDS",
+    "required_actions": [
+      "ec2:DescribeSecurityGroups",
+      "ec2:AuthorizeSecurityGroupIngress",
+      "ec2:CreateNetworkInterface",
+      "ec2:DeleteNetworkInterface",
+      "ec2:ModifyNetworkInterfaceAttribute",
+      "cloudwatch:PutMetricData",
+      "sns:Publish"
+    ],
+    "optional_actions": [],
+    "core_actions": ["ec2:CreateNetworkInterface"],
+    "source": "AWS Service Authorization Reference",
+    "source_url": "https://docs.aws.amazon.com/service-authorization/latest/reference/list_amazonrds.html"
+  },
+  "ecs.amazonaws.com": {
+    "slr_name": "AWSServiceRoleForECS",
+    "required_actions": [
+      "ec2:AttachNetworkInterface",
+      "ec2:CreateNetworkInterface",
+      "ec2:DeleteNetworkInterface",
+      "ec2:DetachNetworkInterface",
+      "elasticloadbalancing:RegisterTargets",
+      "elasticloadbalancing:DeregisterTargets",
+      "elasticloadbalancing:RegisterInstancesWithLoadBalancer",
+      "elasticloadbalancing:DeregisterInstancesFromLoadBalancer",
+      "route53:ChangeResourceRecordSets"
+    ],
+    "optional_actions": ["servicediscovery:DeregisterInstance"],
+    "core_actions": ["ec2:CreateNetworkInterface"],
+    "source": "AWS Service Authorization Reference",
+    "source_url": "https://docs.aws.amazon.com/service-authorization/latest/reference/list_amazonelasticcontainerservice.html"
+  },
+  "sagemaker.amazonaws.com": {
+    "slr_name": "AWSServiceRoleForSageMaker",
+    "required_actions": [
+      "ec2:CreateNetworkInterface",
+      "ec2:CreateNetworkInterfacePermission",
+      "ec2:DeleteNetworkInterface",
+      "ec2:DeleteNetworkInterfacePermission",
+      "ec2:DescribeNetworkInterfaces",
+      "ec2:DescribeVpcs",
+      "ec2:DescribeDhcpOptions",
+      "ec2:DescribeSubnets",
+      "ec2:DescribeSecurityGroups",
+      "logs:CreateLogGroup",
+      "logs:CreateLogStream",
+      "logs:PutLogEvents"
+    ],
+    "optional_actions": ["cloudwatch:PutMetricData"],
+    "core_actions": ["ec2:CreateNetworkInterface"],
+    "source": "AWS Service Authorization Reference",
+    "source_url": "https://docs.aws.amazon.com/service-authorization/latest/reference/list_amazonsagemaker.html"
+  },
+  "lambda.amazonaws.com": {
+    "slr_name": "AWSServiceRoleForLambda",
+    "required_actions": [
+      "ec2:DescribeNetworkInterfaces",
+      "ec2:CreateNetworkInterface",
+      "ec2:DeleteNetworkInterface",
+      "ec2:DescribeSecurityGroups",
+      "ec2:DescribeSubnets",
+      "ec2:DescribeVpcs",
+      "logs:CreateLogGroup",
+      "logs:CreateLogStream",
+      "logs:PutLogEvents"
+    ],
+    "optional_actions": [],
+    "core_actions": ["ec2:CreateNetworkInterface", "logs:PutLogEvents"],
+    "source": "AWS Service Authorization Reference",
+    "source_url": "https://docs.aws.amazon.com/service-authorization/latest/reference/list_awslambda.html"
+  }
+}

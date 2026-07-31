@@ -88,6 +88,18 @@ def test_missing_api_path_and_function_raises_contract_error() -> None:
         parse_action_group(broken)
 
 
+def test_object_typed_property_is_json_decoded() -> None:
+    # Regression: F8's `slr_scan(proposed_scp: object)` is the first tool
+    # parameter typed `object` -- Bedrock JSON-encodes it into the same
+    # string `value` field every scalar type uses (docs/decisions/0023).
+    event = json.loads(json.dumps(OPENAPI_EVENT))
+    event["requestBody"]["content"]["application/json"]["properties"].append(
+        {"name": "proposed_scp", "type": "object", "value": '{"Effect": "Deny"}'}
+    )
+    invocation = parse_action_group(event)
+    assert invocation.parameters["proposed_scp"] == {"Effect": "Deny"}
+
+
 def test_missing_property_value_raises_contract_error() -> None:
     broken = json.loads(json.dumps(OPENAPI_EVENT))
     del broken["requestBody"]["content"]["application/json"]["properties"][0]["value"]

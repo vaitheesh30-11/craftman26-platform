@@ -1,0 +1,58 @@
+openapi: 3.0.3
+info:
+  title: F8 SLR Guardian Actions
+  version: "1.0.0"
+paths:
+  /scan:
+    post:
+      operationId: slr_scan
+      summary: Evaluate a proposed SCP against every known Service-Linked Role.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [proposed_scp]
+              properties:
+                proposed_scp: { type: object }
+      responses:
+        "200":
+          description: Impact report computed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SlrImpactPayload" }
+components:
+  schemas:
+    SlrConflict:
+      type: object
+      required: [service_principal, slr_name, blocked_actions, impact, proposed_exemption_statement]
+      properties:
+        service_principal: { type: string }
+        slr_name: { type: string }
+        blocked_actions: { type: array, items: { type: string } }
+        impact: { type: string, enum: [CRITICAL, HIGH, MEDIUM] }
+        proposed_exemption_statement: { type: object }
+        alternative_condition: { type: object, nullable: true }
+    SlrImpactPayload:
+      type: object
+      required:
+        [
+          proposed_scp,
+          proposed_scp_bytes,
+          slr_db_version,
+          total_slrs_checked,
+          conflicts,
+          safe_scp,
+          safe_scp_bytes,
+          exceeds_size_limit,
+        ]
+      properties:
+        proposed_scp: { type: object }
+        proposed_scp_bytes: { type: integer, minimum: 0 }
+        slr_db_version: { type: string }
+        total_slrs_checked: { type: integer, minimum: 0 }
+        conflicts: { type: array, items: { $ref: "#/components/schemas/SlrConflict" } }
+        safe_scp: { type: object }
+        safe_scp_bytes: { type: integer, minimum: 0 }
+        exceeds_size_limit: { type: boolean }
