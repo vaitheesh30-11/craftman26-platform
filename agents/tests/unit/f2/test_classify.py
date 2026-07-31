@@ -84,7 +84,7 @@ def test_get_findings_bounded_never_exceeds_four_concurrent_calls() -> None:
     state = {"current": 0, "peak": 0}
 
     class _FakeAccessAnalyzerClient:
-        def get_finding(self, *, analyzerArn: str, id: str) -> dict[str, object]:  # noqa: N803
+        def get_finding(self, *, analyzerArn: str, id: str) -> dict[str, object]:
             with lock:
                 state["current"] += 1
                 state["peak"] = max(state["peak"], state["current"])
@@ -112,7 +112,7 @@ def test_scan_and_classify_end_to_end_classifies_and_reports_total() -> None:
         {"findings": [{"id": "f-1"}, {"id": "f-2"}]}
     ]
 
-    def _get_finding(*, analyzerArn: str, id: str) -> dict[str, object]:  # noqa: N803
+    def _get_finding(*, analyzerArn: str, id: str) -> dict[str, object]:
         condition = {"aws:PrincipalOrgId": org_id} if id == "f-1" else {}
         return {"finding": {"id": id, "condition": condition}}
 
@@ -138,7 +138,7 @@ def test_scan_and_classify_caps_classifications_but_reports_true_total() -> None
     fake_aa = MagicMock()
     all_findings = [{"id": f"f-{i}"} for i in range(10)]
     fake_aa.get_paginator.return_value.paginate.return_value = [{"findings": all_findings}]
-    fake_aa.get_finding.side_effect = lambda *, analyzerArn, id: {  # noqa: N803
+    fake_aa.get_finding.side_effect = lambda *, analyzerArn, id: {
         "finding": {"id": id, "condition": {}}
     }
 

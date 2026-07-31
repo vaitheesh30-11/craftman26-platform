@@ -1,0 +1,73 @@
+name: agents-e2e
+
+# phase-13 §4 Step 7. `unit-integration` needs no AWS credentials -- every
+# test under agents/tests/{e2e,chaos,contract,prompt_injection} is
+# moto-mocked or a documented in-process test double (docs/runbooks/
+# e2e-scenarios.md). `dev-alias` is manual-dispatch-only and intentionally
+# has no working implementation yet -- see docs/decisions/0033; it fails
+# fast rather than silently skipping so a future dev-account owner sees
+# exactly what is left to wire up.
+
+on:
+  push:
+    branches:
+      - "release/**"
+  workflow_dispatch:
+    inputs:
+      run_dev_alias:
+        description: "Also attempt the live Bedrock dev-alias run (requires SENTINEL_PRIME_DEV_ALIAS_ID + AWS creds; not yet implemented, see ADR 0033)"
+        type: boolean
+        default: false
+
+jobs:
+  unit-integration:
+    name: contract + chaos + prompt-injection + e2e (moto, no AWS creds)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: agents
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          python-version: "3.12"
+      - name: Sync dependencies
+        run: uv sync
+      - name: ruff
+        run: uv run ruff check src tests
+      - name: mypy --strict
+        run: uv run mypy --strict src
+      - name: pytest (contract, chaos, prompt_injection, e2e)
+        run: >
+          uv run pytest tests/contract tests/chaos tests/prompt_injection tests/e2e
+          -q --junitxml=junit.xml
+          --cov=iam_sentinel_agents --cov-report=html:htmlcov
+      - name: Upload JUnit + coverage HTML + DecisionRecord evidence samples
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agents-e2e-report
+          path: |
+            agents/junit.xml
+            agents/htmlcov/**
+
+  dev-alias:
+    name: live Bedrock dev-alias run (manual, not yet implemented)
+    if: github.event_name == 'workflow_dispatch' && inputs.run_dev_alias
+    runs-on: ubuntu-latest
+    needs: unit-integration
+    defaults:
+      run:
+        working-directory: agents
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          python-version: "3.12"
+      - name: Sync dependencies
+        run: uv sync
+      - name: Attempt live dev-alias run (expected to fail until a dev account exists)
+        run: |
+          python -c "from tests.e2e.runner import run_dev_alias; run_dev_alias('E-01')"
