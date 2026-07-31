@@ -12,6 +12,7 @@ import type {
   DecisionOut,
   DecisionsPage,
   EvidenceOut,
+  ExecutionStatusOut,
   FaultsPage,
   FindingOut,
   FindingsPage,
@@ -117,4 +118,12 @@ export const apiClient = {
     }),
 
   latestCostReport: (): Promise<CostReportOut> => request("/operations/cost/weekly"),
+
+  // `GET /operations/execution/{arn}` doesn't exist on `backend` yet (see
+  // `lib/api-types.ts`'s `ExecutionStatusOut` doc comment) -- callers
+  // (`ApprovalProgress`) must treat any rejection the same way
+  // `EvidenceViewer` treats a missing `/evidence/{ref}`: a graceful
+  // "not available" state, never a crash.
+  getExecutionStatus: (executionArn: string): Promise<ExecutionStatusOut> =>
+    request(`/operations/execution/${encodeURIComponent(executionArn)}`),
 };

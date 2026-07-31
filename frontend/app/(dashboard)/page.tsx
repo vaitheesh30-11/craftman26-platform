@@ -19,6 +19,17 @@ export default function DashboardPage() {
       <p className="mt-1 text-muted-foreground">
         Eight specialist agents watching for the IAM/SCP gaps AWS documentation itself acknowledges.
       </p>
+      <nav className="mt-4 flex gap-3 text-sm">
+        <a href="/findings" className="underline-offset-4 hover:underline">
+          Findings
+        </a>
+        <a href="/decisions" className="underline-offset-4 hover:underline">
+          Decisions
+        </a>
+        <a href="/chat" className="underline-offset-4 hover:underline">
+          Chat
+        </a>
+      </nav>
       <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {FEATURES.map((feature) => (
           <Card key={feature.id}>
