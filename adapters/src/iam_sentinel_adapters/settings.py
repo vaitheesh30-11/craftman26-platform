@@ -47,6 +47,16 @@ class AdapterSettings(BaseSettings):
     grok_model_id: str = "grok-4-latest"
     xai_api_key: str = ""
     correlation_dollar_cap: float = 1.00
+    # agents-phase-16 §3 (docs/decisions/0032): the per-correlation cap
+    # above is phase-01's; these three are the phase-16 layers phase-01
+    # didn't need -- per-principal daily spend, per-correlation tool-call
+    # count, and the fast/slow-path cost estimate table §5 step 2 uses for
+    # the pre-invocation gate before any real Bedrock usage is known.
+    principal_daily_dollar_cap: float = 50.00
+    correlation_tool_invocation_cap: int = 30
+    estimated_cost_fast: float = 0.001
+    estimated_cost_slow_single: float = 0.10
+    estimated_cost_slow_multi: float = 0.30
     kb_manifest_bucket: str = "sentinelkb-manifest-dev"
     kb_manifest_key: str = "manifest.json"
     kb_manifest_kms_key_arn: str = ""

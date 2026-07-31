@@ -36,6 +36,24 @@ class SpendKind(str, Enum):
     ATHENA_SCAN_BYTES = "athena_scan_bytes"
     LAMBDA_DURATION = "lambda_duration"
     ZELKOVA_INVOCATION = "zelkova_invocation"
+    # Added agents-phase-16 (cost guardrails, docs/decisions/0032): dollar-
+    # denominated and count-denominated kinds the per-principal daily cap
+    # and per-correlation tool-invocation cap need, distinct from the raw
+    # token/byte counters above -- phase-01's five members are amounts in
+    # their own natural unit (tokens, bytes, ms, invocation count), while
+    # a *daily* cap is naturally expressed in dollars, not mixed units
+    # across Sonnet/Haiku pricing. Additive only; no existing member is
+    # renamed or removed, so every phase-01 call site keeps working.
+    BEDROCK_DOLLARS = "bedrock_dollars"
+    ATHENA_DOLLARS = "athena_dollars"
+    TOOL_INVOCATIONS = "tool_invocations"
+    # Distinct from BEDROCK_DOLLARS on purpose: `check_budget`'s cap lookup
+    # is keyed by `kind` alone (one SSM parameter per kind, phase-01 §3),
+    # so the $1.00 per-correlation cap and the $50/day per-principal cap
+    # (phase-16 §3.1 vs §3.2 -- genuinely different caps for the same
+    # dollar unit) need their own kind/SSM-parameter pair, not just a
+    # different `correlation_id` bucket under the same kind.
+    PRINCIPAL_DAILY_DOLLARS = "principal_daily_dollars"
 
 
 class CostMeter:
@@ -78,9 +96,30 @@ class CostMeter:
                     "kind": kind.value,
                     "amount": str(amount),
                     "recorded_at": datetime.now(UTC).isoformat(),
+                    # Persisted starting agents-phase-16 (docs/decisions/0032):
+                    # phase-01 only forwarded these as EMF dimensions, never
+                    # to DDB, so the weekly cost-attribution report (phase-16
+                    # §7 -- top principals, cost per feature, fast/slow
+                    # split) had nothing to group by once a sample's EMF
+                    # metric aged out of CloudWatch's queryable window.
+                    "feature_id": feature_id,
+                    "principal": principal,
+                    "mode": mode,
                 }
             )
             self._projection_cache.pop(correlation_id, None)
+
+    def samples(self, correlation_id: str) -> list[dict[str, str]]:
+        """Raw attribution rows for `correlation_id`, newest DDB semantics
+        aside (no ordering guarantee) -- the weekly report Lambda scans the
+        whole table itself; this is the per-correlation read `budget_gate`
+        and tests use to build a `BudgetSnapshot` (phase-16 §4).
+        """
+        response = self._table.query(
+            KeyConditionExpression="correlation_id = :cid",
+            ExpressionAttributeValues={":cid": correlation_id},
+        )
+        return [{str(k): str(v) for k, v in item.items()} for item in response.get("Items", [])]
 
     def projected(self, correlation_id: str) -> float:
         now = time.monotonic()

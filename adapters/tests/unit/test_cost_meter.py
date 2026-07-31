@@ -54,3 +54,36 @@ def test_check_budget_passes_within_cap(budget_table: Table, ssm_client: boto3.c
     meter.record("corr-3", SpendKind.BEDROCK_TOKENS, 8.0)
 
     meter.check_budget("corr-3", SpendKind.BEDROCK_TOKENS, 5.0)
+
+
+def test_record_persists_attribution_fields(budget_table: Table, ssm_client: boto3.client) -> None:
+    """agents-phase-16 §7 (docs/decisions/0032): a weekly cost report needs
+    feature_id/principal/mode on every sample, not just as EMF dimensions
+    that age out of CloudWatch -- `samples()` is the read path the report
+    Lambda and `budget_gate` use.
+    """
+    meter = _meter(budget_table, ssm_client)
+    meter.record(
+        "corr-attrib",
+        SpendKind.BEDROCK_DOLLARS,
+        0.02,
+        feature_id="F1",
+        principal="arn:aws:iam::111122223333:user/auditor",
+        mode="fast",
+    )
+
+    rows = meter.samples("corr-attrib")
+
+    assert len(rows) == 1
+    assert rows[0]["feature_id"] == "F1"
+    assert rows[0]["principal"] == "arn:aws:iam::111122223333:user/auditor"
+    assert rows[0]["mode"] == "fast"
+    assert rows[0]["kind"] == SpendKind.BEDROCK_DOLLARS.value
+
+
+def test_samples_returns_empty_list_for_unknown_correlation(
+    budget_table: Table, ssm_client: boto3.client
+) -> None:
+    meter = _meter(budget_table, ssm_client)
+
+    assert meter.samples("no-such-correlation") == []
