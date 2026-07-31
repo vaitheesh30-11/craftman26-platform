@@ -1,4 +1,4 @@
-# ADR 0032 — agents phase-13: integration & E2E tests — moto/in-process real coverage, live Bedrock dev-alias runs deferred
+# ADR 0033 — agents phase-13: integration & E2E tests — moto/in-process real coverage, live Bedrock dev-alias runs deferred
 
 Status: accepted
 Date: 2026-07-31

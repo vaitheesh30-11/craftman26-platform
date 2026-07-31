@@ -4,7 +4,7 @@ name: agents-e2e
 # test under agents/tests/{e2e,chaos,contract,prompt_injection} is
 # moto-mocked or a documented in-process test double (docs/runbooks/
 # e2e-scenarios.md). `dev-alias` is manual-dispatch-only and intentionally
-# has no working implementation yet -- see docs/decisions/0032; it fails
+# has no working implementation yet -- see docs/decisions/0033; it fails
 # fast rather than silently skipping so a future dev-account owner sees
 # exactly what is left to wire up.
 
@@ -15,7 +15,7 @@ on:
   workflow_dispatch:
     inputs:
       run_dev_alias:
-        description: "Also attempt the live Bedrock dev-alias run (requires SENTINEL_PRIME_DEV_ALIAS_ID + AWS creds; not yet implemented, see ADR 0032)"
+        description: "Also attempt the live Bedrock dev-alias run (requires SENTINEL_PRIME_DEV_ALIAS_ID + AWS creds; not yet implemented, see ADR 0033)"
         type: boolean
         default: false
 

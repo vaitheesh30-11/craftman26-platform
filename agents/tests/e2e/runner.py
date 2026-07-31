@@ -14,7 +14,7 @@ multi-agent turn has never been inspected against real credentials), and
 `agents/tests/e2e/test_e*.py` already exercise every scenario's *specialist
 and post-turn* logic for real against moto. Calling this function without
 a configured dev alias raises `DevAliasNotConfiguredError` rather than
-returning a fabricated result -- see docs/decisions/0032.
+returning a fabricated result -- see docs/decisions/0033.
 """
 
 from __future__ import annotations
@@ -105,16 +105,16 @@ SCENARIOS: tuple[Scenario, ...] = (
 
 def run_dev_alias(scenario_id: str) -> None:
     """Real Bedrock dev-alias invocation for one scenario. Deferred: see
-    module docstring and docs/decisions/0032. Raises unconditionally in
+    module docstring and docs/decisions/0033. Raises unconditionally in
     this environment because `SENTINEL_PRIME_DEV_ALIAS_ID` is never set --
     there is no dev AWS account to point it at yet.
     """
     if not os.environ.get("SENTINEL_PRIME_DEV_ALIAS_ID"):
         raise DevAliasNotConfiguredError(
             f"cannot run {scenario_id!r} against a live Bedrock dev alias: "
-            "SENTINEL_PRIME_DEV_ALIAS_ID is not set (see docs/decisions/0032)"
+            "SENTINEL_PRIME_DEV_ALIAS_ID is not set (see docs/decisions/0033)"
         )
     raise NotImplementedError(
         "live InvokeAgent dev-alias runner is not yet built -- "
-        "see docs/decisions/0032 for what this phase built instead"
+        "see docs/decisions/0033 for what this phase built instead"
     )

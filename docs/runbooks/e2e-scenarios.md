@@ -13,7 +13,7 @@ Source of truth for scenario IDs/wording: `agents/docs/phase-13-integration-test
 - **Deferred (needs Bedrock dev alias)** — the scenario's own criteria
   require a deployed Prime agent with all 8 specialists associated and a
   real `bedrock-agent-runtime:InvokeAgent` call. No dev AWS account exists
-  yet (docs/decisions/0013, docs/decisions/0032). `runner.run_dev_alias`
+  yet (docs/decisions/0013, docs/decisions/0033). `runner.run_dev_alias`
   raises `DevAliasNotConfiguredError` rather than fabricating a pass.
 
 | ID   | Name                                              | Feature | Status | Test |
@@ -33,7 +33,7 @@ Source of truth for scenario IDs/wording: `agents/docs/phase-13-integration-test
 
 ## The one honest caveat that applies to E-09, E-10, E-11, E-12
 
-Per docs/decisions/0013 (agents phase-01) and reaffirmed by docs/decisions/0032
+Per docs/decisions/0013 (agents phase-01) and reaffirmed by docs/decisions/0033
 (this phase): Sentinel Prime's own specialist routing/fan-out and its
 mapping of a caught exception (sanitizer rejection, Guardrail intervention,
 Zelkova failure) to an explicit `SpecialistVerdict` are Bedrock's
