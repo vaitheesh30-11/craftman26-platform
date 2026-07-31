@@ -1,0 +1,146 @@
+openapi: 3.0.3
+info:
+  title: F4 SCP Impact Actions
+  version: "1.0.0"
+paths:
+  /walk-ou:
+    post:
+      operationId: scp_impact_walk_ou
+      summary: Fetch the full SCP chain from root down to the target OU/account.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [target]
+              properties:
+                target: { type: string, pattern: "^(ou-[a-z0-9-]+|[0-9]{12}|r-[a-z0-9]+)$" }
+      responses:
+        "200":
+          description: Chain walked.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [chain]
+                properties:
+                  chain: { type: array, items: { $ref: "#/components/schemas/LevelPolicies" } }
+  /replay-history:
+    post:
+      operationId: scp_impact_replay_history
+      summary: Replay 90 days of successful write calls from CloudTrail via Athena.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [target]
+              properties:
+                target: { type: string }
+                days_back: { type: integer, minimum: 1, maximum: 90, default: 90 }
+      responses:
+        "200":
+          description: History replayed.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [history, accounts_scanned, total_calls_analyzed, sampled, sample_seed]
+                properties:
+                  history: { type: array, items: { $ref: "#/components/schemas/HistoricalCall" } }
+                  accounts_scanned: { type: integer, minimum: 0 }
+                  total_calls_analyzed: { type: integer, minimum: 0 }
+                  sampled: { type: boolean }
+                  sample_seed: { type: integer }
+  /simulate:
+    post:
+      operationId: scp_impact_simulate
+      summary: Overlay the proposed SCP and predict which historical calls would be blocked.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [chain, proposed_scp, history]
+              properties:
+                chain: { type: array, items: { $ref: "#/components/schemas/LevelPolicies" } }
+                proposed_scp: { type: object }
+                history: { type: array, items: { $ref: "#/components/schemas/HistoricalCall" } }
+                mode: { type: string, enum: [replace, add], default: add }
+      responses:
+        "200":
+          description: Impact simulated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScpImpactPayload" }
+components:
+  schemas:
+    PolicyRef:
+      type: object
+      required: [arn, name, document]
+      properties:
+        arn: { type: string }
+        name: { type: string }
+        document: { type: object }
+    LevelPolicies:
+      type: object
+      required: [level, target, policies]
+      properties:
+        level: { type: string, enum: [root, ou, account] }
+        target: { type: string }
+        policies: { type: array, items: { $ref: "#/components/schemas/PolicyRef" } }
+    HistoricalCall:
+      type: object
+      required: [role_arn, event_source, event_name, action, call_count]
+      properties:
+        role_arn: { type: string }
+        event_source: { type: string }
+        event_name: { type: string }
+        action: { type: string }
+        call_count: { type: integer, minimum: 0 }
+    BlockedInvocation:
+      type: object
+      required:
+        [role_arn, action, event_source, call_count_last_90_days, denying_scp_arn, denying_level]
+      properties:
+        role_arn: { type: string }
+        action: { type: string }
+        event_source: { type: string }
+        call_count_last_90_days: { type: integer, minimum: 0 }
+        denying_scp_arn: { type: string }
+        denying_statement_id: { type: string, nullable: true }
+        denying_level: { type: string, enum: [root, ou, account] }
+    SuggestedExemption:
+      type: object
+      required: [statement_to_add, rationale]
+      properties:
+        statement_to_add: { type: object }
+        rationale: { type: string }
+        references_service: { type: string, nullable: true }
+    ScpImpactPayload:
+      type: object
+      required:
+        [
+          proposed_scp_target,
+          proposed_scp,
+          proposed_scp_bytes,
+          total_calls_analyzed,
+          calls_that_would_be_blocked,
+          impacted_roles,
+          suggested_exemptions,
+          scp_chain,
+          engine_version,
+        ]
+      properties:
+        proposed_scp_target: { type: string, pattern: "^(ou-[a-z0-9-]+|[0-9]{12}|r-[a-z0-9]+)$" }
+        proposed_scp: { type: object }
+        proposed_scp_bytes: { type: integer, minimum: 0 }
+        total_calls_analyzed: { type: integer, minimum: 0 }
+        calls_that_would_be_blocked: { type: integer, minimum: 0 }
+        impacted_roles: { type: array, items: { $ref: "#/components/schemas/BlockedInvocation" } }
+        suggested_exemptions: { type: array, items: { $ref: "#/components/schemas/SuggestedExemption" } }
+        scp_chain: { type: array, items: { $ref: "#/components/schemas/LevelPolicies" } }
+        engine_version: { type: string }
