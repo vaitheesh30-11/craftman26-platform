@@ -36,6 +36,8 @@ class AgentSettings(BaseSettings):
     prime_agent_id: str = ""
     prime_agent_alias_id: str = ""
     security_hub_account_id: str = ""
+    athena_database: str = "sentinel_cloudtrail"
+    athena_output_location: str = ""
 
 
 settings = AgentSettings()
