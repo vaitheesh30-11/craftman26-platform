@@ -12,6 +12,8 @@ from iam_sentinel_agents.contracts import (
     DecisionRecord,
     EvidenceRef,
     Finding,
+    OrgContextClassification,
+    OrgContextPayload,
     PassRoleBlastPayload,
     PassRoleEdge,
     RemediationPlan,
@@ -28,6 +30,8 @@ from tests.contract._factories import (
     make_decision,
     make_evidence_ref,
     make_finding,
+    make_org_context_classification,
+    make_org_context_payload,
     make_passrole_blast_payload,
     make_passrole_edge,
     make_query,
@@ -61,6 +65,8 @@ if TYPE_CHECKING:
         (PassRoleEdge, make_passrole_edge),
         (BlastPath, make_blast_path),
         (PassRoleBlastPayload, make_passrole_blast_payload),
+        (OrgContextClassification, make_org_context_classification),
+        (OrgContextPayload, make_org_context_payload),
     ],
 )
 def test_roundtrip_is_lossless(model_cls: type[BaseModel], instance_factory: object) -> None:
