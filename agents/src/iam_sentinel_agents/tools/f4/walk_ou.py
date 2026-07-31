@@ -28,7 +28,12 @@ if TYPE_CHECKING:
     from iam_sentinel_agents.tools.common.event_parser import ParsedInvocation
 
 _POLICY_FILTER: Literal["SERVICE_CONTROL_POLICY"] = "SERVICE_CONTROL_POLICY"
-_LEVEL_BY_NODE_TYPE = {"ROOT": "root", "ORGANIZATIONAL_UNIT": "ou", "ACCOUNT": "account"}
+_Level = Literal["root", "ou", "account"]
+_LEVEL_BY_NODE_TYPE: dict[str, _Level] = {
+    "ROOT": "root",
+    "ORGANIZATIONAL_UNIT": "ou",
+    "ACCOUNT": "account",
+}
 
 
 def _target_node_type(target: str) -> str:
