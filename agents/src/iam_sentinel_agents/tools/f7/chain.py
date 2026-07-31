@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from typing import Any, TYPE_CHECKING
 
+import boto3
+
 from iam_sentinel_agents.tools.common.scp_engine import (
     normalize_policy_document,
     ScpLevel,
@@ -21,7 +23,6 @@ from iam_sentinel_agents.tools.common.scp_engine import (
 )
 
 if TYPE_CHECKING:
-    import boto3
     from mypy_boto3_organizations.client import OrganizationsClient
 
 _SCP_FILTER = "SERVICE_CONTROL_POLICY"
@@ -85,9 +86,7 @@ def walk_scp_chain(
     if org is None:
         boto_session = session
         if boto_session is None:
-            import boto3 as _boto3
-
-            boto_session = _boto3.Session()
+            boto_session = boto3.Session()
         org = boto_session.client("organizations")
 
     account_up_to_root = _climb_to_root(org, account_id)

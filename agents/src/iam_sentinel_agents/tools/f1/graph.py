@@ -103,7 +103,7 @@ def classify_reachable_roles(role_arns: set[str], iam: IAMClient) -> dict[str, s
     cache: dict[str, dict[str, Any]] = {}
 
     def _classify_one(role_arn: str) -> tuple[str, str]:
-        role_name = role_arn.split("/")[-1]
+        role_name = role_arn.rsplit("/", maxsplit=1)[-1]
         try:
             attached_arns, statements = _role_statements(iam, role_name, cache)
         except iam.exceptions.NoSuchEntityException:
