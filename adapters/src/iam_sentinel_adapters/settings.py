@@ -53,6 +53,10 @@ class AdapterSettings(BaseSettings):
     reports_bucket: str = "sentinel-reports-dev"
     router_function_name: str = ""
     connections_table: str = "SentinelConnections-dev"
+    revocations_table: str = "SentinelRevocations-dev"
+    session_kill_queue_url: str = ""
+    emergency_revocations_topic_arn: str = ""
+    never_revoke_ssm_param: str = "/sentinel/never-revoke-role-patterns"
 
 
 settings = AdapterSettings()

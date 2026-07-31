@@ -36,6 +36,10 @@ class AgentSettings(BaseSettings):
     prime_agent_id: str = ""
     prime_agent_alias_id: str = ""
     security_hub_account_id: str = ""
+    revocations_table: str = "SentinelRevocations-dev"
+    session_kill_queue_url: str = ""
+    emergency_revocations_topic_arn: str = ""
+    never_revoke_ssm_param: str = "/sentinel/never-revoke-role-patterns"
 
 
 settings = AgentSettings()

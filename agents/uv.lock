@@ -167,6 +167,12 @@ sns = [
 sqs = [
     { name = "mypy-boto3-sqs" },
 ]
+ssm = [
+    { name = "mypy-boto3-ssm" },
+]
+sso-admin = [
+    { name = "mypy-boto3-sso-admin" },
+]
 sts = [
     { name = "mypy-boto3-sts" },
 ]
@@ -411,7 +417,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "boto3-stubs", extras = ["dynamodb", "kms", "s3", "iam", "ssm", "bedrock-runtime", "bedrock-agent-runtime", "securityhub", "sns"], specifier = "==1.35.36" },
+    { name = "boto3-stubs", extras = ["dynamodb", "kms", "s3", "iam", "ssm", "sqs", "bedrock-runtime", "bedrock-agent-runtime", "securityhub", "sns", "sts", "lambda"], specifier = "==1.35.36" },
     { name = "hypothesis", specifier = "==6.112.4" },
     { name = "moto", extras = ["all"], specifier = "==5.0.16" },
     { name = "mypy", specifier = "==1.11.2" },
@@ -441,7 +447,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "boto3-stubs", extra = ["accessanalyzer", "athena", "bedrock-agent", "bedrock-agent-runtime", "bedrock-runtime", "cloudtrail", "dynamodb", "glue", "iam", "kms", "organizations", "s3", "securityhub", "sns", "sqs", "sts"] },
+    { name = "boto3-stubs", extra = ["accessanalyzer", "athena", "bedrock-agent", "bedrock-agent-runtime", "bedrock-runtime", "cloudtrail", "dynamodb", "glue", "iam", "kms", "organizations", "s3", "securityhub", "sns", "sqs", "ssm", "sso-admin", "sts"] },
     { name = "hypothesis" },
     { name = "moto", extra = ["all"] },
     { name = "mypy" },
@@ -468,7 +474,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "boto3-stubs", extras = ["iam", "organizations", "accessanalyzer", "cloudtrail", "dynamodb", "s3", "sns", "sqs", "sts", "bedrock-agent", "bedrock-agent-runtime", "bedrock-runtime", "kms", "athena", "glue", "securityhub"], specifier = "==1.35.36" },
+    { name = "boto3-stubs", extras = ["iam", "organizations", "accessanalyzer", "cloudtrail", "dynamodb", "s3", "sns", "sqs", "sts", "sso-admin", "ssm", "bedrock-agent", "bedrock-agent-runtime", "bedrock-runtime", "kms", "athena", "glue", "securityhub"], specifier = "==1.35.36" },
     { name = "hypothesis", specifier = "==6.112.4" },
     { name = "moto", extras = ["all"], specifier = "==5.0.16" },
     { name = "mypy", specifier = "==1.11.2" },
@@ -854,6 +860,24 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/29/5b/040ba82c53d5edf578ad0aafcac501b91a259b40f296ef6662db975b6595/mypy_boto3_sqs-1.35.93.tar.gz", hash = "sha256:8ea7f63e0878544705c31996ae4c064095fbb4f780f8323a84f7a75281d643fe", size = 23344, upload-time = "2025-01-07T00:49:44.507Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/82/eb/d8c10da3f905921f70f008f3bca092711e316ced49287e42f45309860aca/mypy_boto3_sqs-1.35.93-py3-none-any.whl", hash = "sha256:341974f77e66851b9a4190d0014481e6baabae82d32f9ee559faa823b693609b", size = 33491, upload-time = "2025-01-07T00:49:41.734Z" },
+]
+
+[[package]]
+name = "mypy-boto3-ssm"
+version = "1.35.93"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/b4/c9/8ca5f557882bf3c5aa9ae8ad886259b4602a2bea621b088dad154d5ae712/mypy_boto3_ssm-1.35.93.tar.gz", hash = "sha256:2e2610e33ca4a075595d30fa061ef2e54c9d9b6ced14a196316dcd032372dd8c", size = 93771, upload-time = "2025-01-07T00:50:01.48Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/09/96/2b7e48115dd2ba4f477dbafd426337986d3f7b9875a5965459cafe78cf98/mypy_boto3_ssm-1.35.93-py3-none-any.whl", hash = "sha256:7c115ee920e994ffc12408685b4236f4ad72f64a971c380aa63be21becf297ad", size = 95094, upload-time = "2025-01-07T00:49:58.344Z" },
+]
+
+[[package]]
+name = "mypy-boto3-sso-admin"
+version = "1.35.93"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/29/48/5e50d0ddee8e92036d7e427516957efb8e49c33fd1f69e285ca1a386450a/mypy_boto3_sso_admin-1.35.93.tar.gz", hash = "sha256:b0ee32e8889462027e81e821d1e2d9631651b4cac7d55862377030693665cffe", size = 39415, upload-time = "2025-01-07T00:50:17.121Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/07/b5/5329f54e9793fb6910483ba99c192ad3bae68cf7911fbdc52f845e95b4fb/mypy_boto3_sso_admin-1.35.93-py3-none-any.whl", hash = "sha256:7f9be7ac61c9710d0a45a19ac135a5d605f5e51cf6a5246705a21b344a453d8f", size = 43296, upload-time = "2025-01-07T00:50:14.231Z" },
 ]
 
 [[package]]
