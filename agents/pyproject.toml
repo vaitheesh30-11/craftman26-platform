@@ -74,7 +74,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S101", "S105", "S106", "PLR2004", "ARG"]
+"tests/**" = ["S101", "S105", "S106", "PLR2004", "ARG", "N803"]
 
 [tool.ruff.lint.flake8-type-checking]
 # Pydantic (and anything deriving from our own Base) resolves field
