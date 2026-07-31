@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { Route } from "next";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -86,7 +86,18 @@ export function FindingsTable() {
   const [revealedAccounts, setRevealedAccounts] = useState<Set<string>>(new Set());
   const [cursorStack, setCursorStack] = useState<(string | undefined)[]>([]);
 
-  const params = buildQueryParams(searchParams);
+  // `buildQueryParams` resolves relative windows ("24h", "7d") through
+  // `sinceWindowToIso`, which anchors on `Date.now()` -- calling it fresh
+  // on every render put a new `since` timestamp into `queryKey` every
+  // render, which React Query treats as a brand new query and refetches
+  // immediately, which re-renders, which computes a newer `since`, ad
+  // infinitum. Memoizing on the URL's own string form freezes `since` for
+  // as long as the URL doesn't change, breaking the loop; found by
+  // driving this page with Playwright, where it fired hundreds of
+  // /api/proxy/findings requests in under 5 seconds and the table never
+  // left its loading-skeleton state.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const params = useMemo(() => buildQueryParams(searchParams), [searchParams.toString()]);
   const queryKey = ["findings", params] as const;
 
   const { data, isPending, isError } = useQuery({

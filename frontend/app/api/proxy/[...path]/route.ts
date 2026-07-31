@@ -4,8 +4,6 @@
  * control). Every browser-to-backend call passes through here so the
  * bearer token never reaches client JS.
  */
-import "@/mocks/server-bootstrap";
-
 import { randomUUID } from "node:crypto";
 
 import { cookies } from "next/headers";
@@ -13,6 +11,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { refreshTokens } from "@/lib/auth";
 import { getServerEnv } from "@/lib/env";
+import { ensureMockServerListening } from "@/mocks/server-bootstrap";
 import {
   createSessionCookieValue,
   SESSION_COOKIE_MAX_AGE_SECONDS,
@@ -44,6 +43,7 @@ function forbiddenCsrf(correlationId: string) {
 }
 
 async function proxy(request: NextRequest, path: string[]): Promise<NextResponse> {
+  ensureMockServerListening();
   const correlationId = request.headers.get("x-correlation-id") ?? randomUUID();
   const method = request.method.toUpperCase();
 
