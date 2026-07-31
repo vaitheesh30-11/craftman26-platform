@@ -9,7 +9,7 @@ import {
   SESSION_COOKIE_NAME,
   CSRF_COOKIE_NAME,
 } from "@/lib/session";
-import { OAUTH_STATE_COOKIE } from "@/app/auth/login/page";
+import { OAUTH_STATE_COOKIE } from "@/lib/oauth-state";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
