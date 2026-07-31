@@ -20,9 +20,13 @@ from hypothesis import strategies as st
 
 from iam_sentinel_agents.contracts import (
     AwsDocCitation,
+    EpisodicMemory,
     EvidenceRef,
     Finding,
+    ProceduralHit,
+    RecallResult,
     RemediationPlan,
+    SemanticEntity,
     ToolInvocation,
     UntrustedContextBlock,
     ZelkovaCheck,
@@ -210,6 +214,65 @@ def findings(draw: st.DrawFn) -> Finding:
         detected_at=draw(aware_datetimes()),
         expires_at=draw(st.one_of(st.none(), aware_datetimes())),
         evidence_ref=None,
+    )
+
+
+@st.composite
+def episodic_memories(draw: st.DrawFn) -> EpisodicMemory:
+    n_features = draw(st.integers(min_value=1, max_value=8))
+    feature_ids = draw(
+        st.lists(st.sampled_from(FEATURE_IDS), min_size=n_features, max_size=n_features)
+    )
+    return EpisodicMemory(
+        principal=draw(iam_role_arns()),
+        decision_id=draw(ulids()),
+        correlation_id=draw(ulids()),
+        feature_ids_involved=feature_ids,
+        finding_summary=draw(printable_text(1, 200)),
+        narrative_excerpt=draw(printable_text(1, 400)),
+        evidence_ref=draw(evidence_refs()),
+        tags=draw(st.dictionaries(printable_text(1, 20), printable_text(1, 40), max_size=5)),
+        decided_at=draw(aware_datetimes()),
+    )
+
+
+def semantic_entities() -> st.SearchStrategy[SemanticEntity]:
+    return st.builds(
+        SemanticEntity,
+        entity_kind=st.sampled_from(
+            ["account", "ou", "role", "permission_set", "slr", "policy", "service_principal", "tag"]
+        ),
+        entity_key=printable_text(1, 100),
+        body=st.dictionaries(printable_text(1, 20), printable_text(0, 40), max_size=5),
+        synced_at=aware_datetimes(),
+        source_of_truth=printable_text(1, 60),
+        related_entities=st.lists(printable_text(1, 50), max_size=5),
+        body_sha256=sha256_hexes(),
+    )
+
+
+def procedural_hits() -> st.SearchStrategy[ProceduralHit]:
+    return st.builds(
+        ProceduralHit,
+        pattern_kind=printable_text(1, 60),
+        pattern_hash=sha256_hexes(),
+        result=st.dictionaries(printable_text(1, 20), printable_text(0, 40), max_size=5),
+        ttl=st.integers(min_value=1, max_value=86_400 * 30),
+        first_computed_at=aware_datetimes(),
+        last_hit_at=aware_datetimes(),
+        hit_count=st.integers(min_value=1, max_value=10_000),
+    )
+
+
+def recall_results() -> st.SearchStrategy[RecallResult]:
+    return st.builds(
+        RecallResult,
+        kind=st.sampled_from(["episodic", "semantic", "procedural"]),
+        hits=st.lists(
+            st.dictionaries(printable_text(1, 20), printable_text(0, 40), max_size=5), max_size=10
+        ),
+        latency_ms=st.integers(min_value=0, max_value=60_000),
+        total_scanned=st.integers(min_value=0, max_value=100_000),
     )
 
 

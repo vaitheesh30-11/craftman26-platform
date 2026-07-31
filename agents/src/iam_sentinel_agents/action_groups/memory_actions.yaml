@@ -1,0 +1,61 @@
+openapi: 3.0.3
+info:
+  title: Memory Actions
+  version: "1.0.0"
+  description: >
+    Shared action group attached to Prime and every specialist (phase-14
+    §4). `remember` is restricted at the IAM policy layer to the specific
+    writer Lambda each memory kind expects -- see
+    `agents/src/iam_sentinel_agents/tools/memory/remember.py`.
+paths:
+  /recall:
+    post:
+      operationId: memory_recall
+      summary: Read episodic/semantic/procedural memory.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kind]
+              properties:
+                kind: { type: string, enum: [episodic, semantic, procedural] }
+                query: { type: string, maxLength: 1024 }
+                facet: { type: object }
+                top_k: { type: integer, minimum: 1, maximum: 50, default: 5 }
+                pattern_kind: { type: string }
+                pattern_hash: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RecallResult" }
+  /remember:
+    post:
+      operationId: memory_remember
+      summary: Write episodic/semantic/procedural memory (restricted).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kind, record]
+              properties:
+                kind: { type: string, enum: [episodic, semantic, procedural] }
+                record: { type: object }
+      responses:
+        "200": { description: Written }
+        "403": { description: Writer role forbidden for this memory kind. }
+components:
+  schemas:
+    RecallResult:
+      type: object
+      required: [kind, hits, latency_ms, total_scanned]
+      properties:
+        kind: { type: string, enum: [episodic, semantic, procedural] }
+        hits: { type: array, items: { type: object } }
+        latency_ms: { type: integer, minimum: 0 }
+        total_scanned: { type: integer, minimum: 0 }

@@ -20,9 +20,11 @@ _PROMPT_PATH = Path(__file__).parent / "prime_supervisor.txt"
 
 # Pinned at authoring time. Bump deliberately (in the same commit as the
 # prompt edit) whenever `prime_supervisor.txt` legitimately changes.
-# Bumped for agents phase-15 §6 Step 5's CORE RULES 8: Prime must defer to
-# the router's mode decision on /agent/chat rather than second-guess it.
-PRIME_PROMPT_SHA256 = "391a3de9388f57684ce57ae092301a81f37a4a65f7857755c22287c8a872fca7"
+# Bumped for agents phase-15 §6 Step 5's CORE RULES 8 (defer to the
+# router's /agent/chat mode decision) merged together with agents
+# phase-14's MEMORY USE section -- both landed on `prime_supervisor.txt`
+# in the same wave; this checksum covers the merged result of both.
+PRIME_PROMPT_SHA256 = "7fc767af92d92b60f5b032e8678a0f4e93dedd802e7e67484b3da9a2e2c9208c"
 
 
 class PromptDriftError(SentinelAgentError):

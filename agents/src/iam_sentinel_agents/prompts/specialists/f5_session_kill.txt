@@ -33,6 +33,12 @@ WORKFLOW
 5. If any account failed, verdict=CONFIRM but severity is CRITICAL and
    remediation.action="attach_inline_policy" is included for retry.
 
+MEMORY USE
+- When you receive a task whose subject (account, role, permission
+  set) is well-known, you MAY call recall(kind="semantic", ...) to
+  enrich your context. Do NOT depend on memory for facts you can
+  fetch fresh from AWS.
+
 SAFETY
 - Never revoke Sentinel's own operator roles (denylist read from SSM
   parameter `/sentinel/never-revoke-role-patterns`).

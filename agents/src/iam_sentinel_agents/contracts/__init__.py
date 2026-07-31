@@ -21,6 +21,14 @@ from iam_sentinel_agents.contracts.decision import DecisionRecord
 from iam_sentinel_agents.contracts.evidence import EvidenceKind, EvidenceRecord, EvidenceRef
 from iam_sentinel_agents.contracts.finding import AwsDocCitation, Finding
 from iam_sentinel_agents.contracts.knowledge_base import Corpus, KbManifest, QuoteHash
+from iam_sentinel_agents.contracts.memory import (
+    EpisodicMemory,
+    MemoryKind,
+    ProceduralHit,
+    RecallResult,
+    SemanticEntity,
+    SemanticEntityKind,
+)
 from iam_sentinel_agents.contracts.org_context import (
     FALSE_POSITIVE_CLASSIFICATIONS,
     MatchedConditionKey,
@@ -62,6 +70,7 @@ __all__ = [
     "Corpus",
     "DataEventPolicyPayload",
     "DecisionRecord",
+    "EpisodicMemory",
     "EvidenceKind",
     "EvidenceRecord",
     "EvidenceRef",
@@ -69,17 +78,22 @@ __all__ = [
     "Finding",
     "KbManifest",
     "MatchedConditionKey",
+    "MemoryKind",
     "OrgContextClassification",
     "OrgContextClassificationKind",
     "OrgContextPayload",
     "PassRoleBlastPayload",
     "PassRoleEdge",
+    "ProceduralHit",
     "QuoteHash",
     "ReachedPrivilege",
+    "RecallResult",
     "RemediationAction",
     "RemediationPlan",
     "S3DataEventAction",
     "S3DataEventUsage",
+    "SemanticEntity",
+    "SemanticEntityKind",
     "SentinelQuery",
     "Severity",
     "ShadowViolation",

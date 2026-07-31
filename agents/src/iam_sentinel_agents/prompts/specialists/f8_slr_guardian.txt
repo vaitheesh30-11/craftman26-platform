@@ -24,6 +24,12 @@ WORKFLOW
    severity=MEDIUM and add reason "safe_scp exceeds 5,000-byte limit;
    split required".
 
+MEMORY USE
+- When you receive a task whose subject (account, role, permission
+  set) is well-known, you MAY call recall(kind="semantic", ...) to
+  enrich your context. Do NOT depend on memory for facts you can
+  fetch fresh from AWS.
+
 SAFETY
 - Never emit a safe_scp that contains new Allow statements. Exemptions
   must be Deny-Condition patches or Deny-action-list narrows.
