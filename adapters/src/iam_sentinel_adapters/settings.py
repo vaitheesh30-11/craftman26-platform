@@ -56,6 +56,10 @@ class AdapterSettings(BaseSettings):
     connections_table: str = "SentinelConnections-dev"
     policies_table: str = "SentinelPolicies-dev"
     divergence_table: str = "SentinelDivergence-dev"
+    revocations_table: str = "SentinelRevocations-dev"
+    session_kill_queue_url: str = ""
+    emergency_revocations_topic_arn: str = ""
+    never_revoke_ssm_param: str = "/sentinel/never-revoke-role-patterns"
 
     # backend phase-04 §2 step 2 / ADR 0029: no runtime registry of "every
     # breaker that exists" or "every DLQ that exists" is provisioned anywhere

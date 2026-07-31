@@ -1,0 +1,107 @@
+openapi: 3.0.3
+info:
+  title: F5 Session Kill Actions
+  version: "1.0.0"
+paths:
+  /dispatch:
+    post:
+      operationId: session_kill_dispatch
+      summary: Discover assigned accounts and fan out emergency revocations.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [permission_set_arn, ttl_seconds, reason, trigger_source]
+              properties:
+                permission_set_arn: { type: string }
+                principal_arn: { type: string, nullable: true }
+                ttl_seconds: { type: integer, minimum: 60, maximum: 14400 }
+                reason: { type: string, minLength: 1, maxLength: 1024 }
+                trigger_source:
+                  type: string
+                  enum: [guardduty, manual, identity_center_revoke]
+      responses:
+        "200":
+          description: Fan-out dispatched.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SessionKillPayload" }
+  /list-terminations:
+    post:
+      operationId: list_terminations
+      summary: Poll termination completion status for a correlation_id.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [correlation_id]
+              properties:
+                correlation_id: { type: string }
+      responses:
+        "200":
+          description: Completion status.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [correlation_id, accounts_targeted, accounts_completed, terminations]
+                properties:
+                  correlation_id: { type: string }
+                  accounts_targeted: { type: integer, minimum: 0 }
+                  accounts_completed: { type: integer, minimum: 0 }
+                  terminations:
+                    type: array
+                    items: { $ref: "#/components/schemas/TerminationRecord" }
+components:
+  schemas:
+    TerminationRecord:
+      type: object
+      required:
+        - account_id
+        - role_arn
+        - revocation_policy_name
+        - token_issue_time_cutoff
+        - attached_at
+        - ttl_expires_at
+        - verify_attempts
+        - verified_attached
+      properties:
+        account_id: { type: string, pattern: "^[0-9]{12}$" }
+        role_arn: { type: string }
+        revocation_policy_name: { type: string }
+        token_issue_time_cutoff: { type: string, format: date-time }
+        attached_at: { type: string, format: date-time }
+        ttl_expires_at: { type: string, format: date-time }
+        verify_attempts: { type: integer, minimum: 0, maximum: 5 }
+        verified_attached: { type: boolean }
+    SessionKillPayload:
+      type: object
+      required:
+        - trigger_source
+        - permission_set_arn
+        - reason
+        - ttl_seconds
+        - accounts_targeted
+        - accounts_completed
+        - accounts_failed
+        - terminations
+        - correlation_id
+      properties:
+        trigger_source:
+          type: string
+          enum: [guardduty, manual, identity_center_revoke]
+        principal_arn: { type: string, nullable: true }
+        permission_set_arn: { type: string }
+        reason: { type: string }
+        ttl_seconds: { type: integer, minimum: 60, maximum: 14400 }
+        accounts_targeted: { type: integer, minimum: 0 }
+        accounts_completed: { type: integer, minimum: 0 }
+        accounts_failed: { type: array, items: { type: string } }
+        terminations:
+          type: array
+          items: { $ref: "#/components/schemas/TerminationRecord" }
+        correlation_id: { type: string }
