@@ -21,6 +21,7 @@ EvidenceKind = Literal[
     "guardrail_intervention",
     "repair_action",
     "fault",
+    "approval_decision",
 ]
 
 

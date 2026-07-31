@@ -1,6 +1,4 @@
-"""`POST /decisions/{id}/approve|reject` (backend phase-01 §3; full apply
-workflow deferred to phase-03, see `services/approval_service.py`).
-"""
+"""`POST /decisions/{id}/approve|reject` (backend phase-03 §3)."""
 
 from __future__ import annotations
 
@@ -27,7 +25,11 @@ def approve_decision(
     approval_service: ApprovalService = Depends(get_approval_service),
 ) -> dict[str, Any]:
     result = approval_service.approve(
-        principal=principal, decision_id=decision_id, reason=request.reason
+        principal=principal,
+        decision_id=decision_id,
+        remediation_index=request.remediation_index,
+        reason=request.reason,
+        dry_run=request.dry_run,
     )
     return ok(result)
 
@@ -40,6 +42,9 @@ def reject_decision(
     approval_service: ApprovalService = Depends(get_approval_service),
 ) -> dict[str, Any]:
     result = approval_service.reject(
-        principal=principal, decision_id=decision_id, reason=request.reason
+        principal=principal,
+        decision_id=decision_id,
+        remediation_index=request.remediation_index,
+        reason=request.reason,
     )
     return ok(result)
